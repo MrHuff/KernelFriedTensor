@@ -202,8 +202,7 @@ class benchmark_data(abstract_data_class):
 class data_tensor(abstract_data_class):
     def __init__(self, path='generated_data.csv'):
         super().__init__(path)
-        self.t_kernel_data = torch.Tensor(
-            list(map(get_int_dates, self.df['timestamp'].unique().tolist())))  # Get dates in int form to tensor
+        self.t_kernel_data = torch.Tensor(list(map(get_int_dates, self.df['timestamp'].unique().tolist())))  # Get dates in int form to tensor
         tensor_dim = tuple(self.df.nunique().tolist()[0:-1])
         self.numpy_tensor = self.df['sales_val'].values.reshape(tensor_dim)
         self.indices = np.argwhere(~np.isnan(self.numpy_tensor))

@@ -1,11 +1,14 @@
 import pandas as pd
 import numpy as np
 import sklearn.datasets as ds
-from KFT.util import get_int_dates
 import torch
 
 np.random.seed(9001)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+def get_int_dates(x):
+    y = x.split('-')
+    return list(map(lambda z: int(z), y))
 
 def generate_time(days = 400):
     times = pd.to_datetime(get_time(delta=days)).astype('str')
@@ -34,12 +37,12 @@ def get_timeseries(number_of_articles):
     _t_len = len(T)
 
     for i in range(X.shape[1]):
-        N = np.random.random_integers(30,1400)
+        N = np.random.randint(30,1400)
         _data = X[:,i]
         _timeseries = np.random.choice(_data,N,replace=False)
         _values_vector = np.zeros(_t_len)
         _values_vector[:] = np.nan
-        start_index = np.random.random_integers(0,_t_len-N)
+        start_index = np.random.randint(0,_t_len-N)
         _values_vector[start_index:start_index+N] = _timeseries
         column_data.append([T.tolist(),_values_vector.tolist()])
     return column_data
@@ -56,11 +59,6 @@ def make_data(article_names,cities=['Oxford','Cambridge']):
             df = df.append(append_df)
     return df
 if __name__ == "__main__":
-
-    """
-    Generate "hard" data #Clear!, get the right optimizer! On toy data - kernel decomposition converges faster and has better performance
-    """
-
     number_of_articles = 50
     cities = [
         "Assen", "Almere", "Leeuwarden", "Nijmegen", "Groningen",
@@ -71,7 +69,7 @@ if __name__ == "__main__":
         "Stavanger", "Bergen", "Forde", "Alesund", "Trondheim",
         "Stjordal", "Bodo", "Tromso", "Alta", "Stockholm", "Malmö", "Göteborg"
     ]
-    article_names = list(set([str(np.random.random_integers(100000, 999999)) for i in range(number_of_articles)]))
+    article_names = list(set([str(np.random.randint(100000, 999999)) for i in range(number_of_articles)]))
     data = make_data(article_names,cities)
     # print(data)
     data.to_csv('generated_data.csv')
