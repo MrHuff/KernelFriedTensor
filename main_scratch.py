@@ -52,17 +52,16 @@ if __name__ == '__main__':
     # for n,p in model.named_parameters():
     #     print(n,)
     #     print(p)
-    ITS = 1
+    ITS = 1000
     opt = torch.optim.Adam(model.parameters(),lr=0.01)
     loss_func = torch.nn.MSELoss()
 
     for i in range(ITS):
-        X,Y = o.get_batch(0.001)
+        X,Y = o.get_batch(1.0)
         if cuda_device is not None:
             Y=Y.to(cuda_device)
         y_pred, reg = model(X)
-        print(reg)
-        loss = reg#loss_func(y_pred,Y) #+ reg
+        loss = loss_func(y_pred,Y) #+ reg
         opt.zero_grad()
         loss.backward()
         opt.step()

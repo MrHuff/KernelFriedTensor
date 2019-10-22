@@ -180,7 +180,6 @@ class KFT(torch.nn.Module):
                 reg = tt.TT_core
             pred_outputs.append(pred*prime_pred)
             # reg_term = (reg_prime *tt.TT_core *reg)
-            print(reg_prime.shape)
             reg_output += (torch.dot(reg_prime.view(-1), torch.ones_like(reg_prime).view(-1)))*self.lambdas[i]
             # reg_output += (torch.sum(reg_prime))*self.lambdas[i]
 
