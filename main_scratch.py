@@ -32,8 +32,8 @@ def keops_mode_product(T,K,mode):
 
 
 if __name__ == '__main__':
-
-
+    #TODO: do VI! Try FP16 implementation. Introduce numerical reguarlization.
+    test_k = gpytorch.kernels.RBFKernel()
     print(pykeops.bin_folder)
     PATH = './experiment_3/'
     #Doesn't like last index being 1 -> do squeeze type operation!
@@ -41,10 +41,18 @@ if __name__ == '__main__':
     print(o.data.shape[0])
     print(o.data.shape[1])
     print(o.data.shape[2])
+    # o.t_side = torch.ones_like(o.t_side)
+    # print(o.t_side)
+    # print(test_k(o.t_side).evaluate())
     init_dict = {
-                 0:{'ii':0,'lambda':0.01,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
-                 1:{'ii':1,'lambda':0.01,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
-                 2:{'ii':2,'lambda':0.01,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} }
+
+                # 0: {'ii': [0, 1], 'lambda': 1e-3, 'r_1': 1, 'n_list': [o.data.shape[0], o.data.shape[1]], 'r_2': 10,'has_side_info': True, 'side_info': {1:o.n_side,2:o.m_side},'kernel_para': {'ls_factor': 1.0, 'kernel_type': 'rbf', 'nu': 2.5}},
+
+                0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                # 1:{'ii':[2],'lambda':1e-3,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                1:{'ii':[1,2],'lambda':1e-6,'r_1':10,'n_list':[o.data.shape[1],o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.m_side,2:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                # 1:{'ii':1,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                # 2:{'ii':2,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} }
                  }
 
     cuda_device = 'cuda:0'
@@ -61,11 +69,15 @@ if __name__ == '__main__':
         if cuda_device is not None:
             Y=Y.to(cuda_device)
         y_pred, reg = model(X)
-        loss = loss_func(y_pred,Y) #+ reg
+        risk_loss = loss_func(y_pred,Y)
+        loss =  reg + risk_loss
         opt.zero_grad()
         loss.backward()
         opt.step()
-        print(loss.data)
+        print(risk_loss.data)
+        print('-')
+        print(reg.data)
+
 ###Cant be combined with gpytorch yet, must write custom kernels...
 # kernel = gpytorch.kernels.keops.MaternKernel()
 # kernel.raw_lengthscale = torch.nn.Parameter(torch.tensor([1.]),requires_grad=False)

@@ -3,11 +3,11 @@ import tensorly
 tensorly.set_backend('pytorch')
 import gpytorch
 from pykeops.torch import LazyTensor as keops
-# from tensorly.base import fold
+from tensorly.base import fold,unfold
 import math
-
+from tensorly.tenalg import mode_dot
 PI  = math.pi
-
+torch.set_printoptions(profile="full")
 class keops_periodic():
     def __init__(self,p=None,ls=None,fixed_Y = None): #assuming p and ls to be torch parameters...
         self.p = p
@@ -49,12 +49,11 @@ def keops_mode_product(T,K,mode):
     :param mode: Mode of tensor
     :return:
     """
-    t_new_shape = list(T.shape)
-    t_new_shape[mode] = K.shape[0]
-    mode_dim = t_new_shape.pop(mode)
-    t_new_shape.insert(0, mode_dim)
-    T = K @ torch.reshape(torch.transpose(T, mode, 0), (T.shape[mode], -1)).contiguous()
-    T = torch.transpose(torch.reshape(T, t_new_shape), 0, mode).contiguous()
+    new_shape = list(T.shape)
+    new_shape[mode] = K.shape[0]
+    T = unfold(T,mode)
+    T = K@T
+    T = fold(T,mode,new_shape)
     return T
 
 class TT_component(torch.nn.Module):
@@ -73,17 +72,13 @@ class TT_component(torch.nn.Module):
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         # self.reg_ones = {i + 1: lazy_ones(getattr(self,f'ones_{i}')) for i in range(len(n_list))}
         self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
-        self.TT_core = torch.nn.Parameter(torch.randn(*self.shape_list),requires_grad=True)
+        self.TT_core = torch.nn.Parameter(torch.randn(*self.shape_list).contiguous(),requires_grad=True)
 
     def lazy_ones(self,n, cuda):
         if cuda is not None:
             test = torch.zeros(*(n, 1), requires_grad=False).contiguous().to(cuda)
         else:
-            test = torch.ones(*(n, 1), requires_grad=False).contiguous()
-
-        # x = keops(test, axis=0)
-        # y = keops(test, axis=1)
-        # ones = (x + y).sum(dim=-1).exp()
+            test = torch.zeros(*(n, 1), requires_grad=False).contiguous()
         ones = self.dummy_kernel(test,test)
         return ones
 
@@ -102,7 +97,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda)
         self.keys = []
-        for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}
+        for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
             self.assign_kernel(key,value,kernel_para_dict)
 
         for key in self.keys:
@@ -138,7 +133,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 T = keops_mode_product(T,val,key)
         if len(indices.shape)>1:
             indices = indices.unbind(1)
-        return T.permute(self.permutation_list)[indices], T  #return both to calculate regularization when doing frequentist
+        return T.permute(self.permutation_list)[indices], T*self.TT_core  #return both to calculate regularization when doing frequentist
 
 class KFT(torch.nn.Module):
     def __init__(self,initializaiton_data,cuda=None): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
@@ -177,20 +172,17 @@ class KFT(torch.nn.Module):
                 pred, reg = tt(ix)
             else:
                 pred = tt(ix)
-                reg = tt.TT_core
+                reg = tt.TT_core**2
             pred_outputs.append(pred*prime_pred)
-            # reg_term = (reg_prime *tt.TT_core *reg)
-            reg_output += (torch.dot(reg_prime.view(-1), torch.ones_like(reg_prime).view(-1)))*self.lambdas[i]
-            # reg_output += (torch.sum(reg_prime))*self.lambdas[i]
-
+            reg_output += torch.sum(reg*reg_prime)*self.lambdas[i]
         return pred_outputs,reg_output
 
     def forward(self,indices):
         preds_list,regularization = self.collect_core_outputs(indices)
-        # regularization = regs.dot(self.lambdas)
         preds = preds_list[0]
         for i in range(1,len(preds_list)):
             preds = torch.bmm(preds,preds_list[i])
         return preds.squeeze(),regularization
+
 if __name__ == '__main__':
     test = TT_component(r_1=1,n_list = [100,100],r_2 = 10)
