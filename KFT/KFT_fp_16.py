@@ -200,10 +200,10 @@ class variational_TT_kernel(TT_kernel_component):
         for key in self.keys: #Sample from multivariate
             LU =  self.get_back_tril(key)
             noise = lazy_mode_product(noise,LU, key)
-        T = T+noise #Reparametrization
         for key, val in self.n_dict.items():
             if val is not None:
                 T = lazy_mode_product(T, val, key)
+        T = T+noise #Reparametrization
         if len(indices.shape) > 1:
             indices = indices.unbind(1)
         return T.permute(self.permutation_list)[indices],self.calculate_KL()
