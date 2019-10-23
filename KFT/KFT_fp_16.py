@@ -65,11 +65,11 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             self.n_dict[key] =  tmp_kernel_func(k_data,k_data) #lazily executed tensors, should have a bunch of lazy tensors...
 
     def get_median_ls(self,X):  # Super LS and init value sensitive wtf
-        self.kernel_base = gpytorch.kernels.Kernel()
+        base = gpytorch.kernels.Kernel()
         if X.shape[0] > 20000:
             idx = torch.randperm(20000)
             X = X[idx, :]
-        d = self.kernel_base.covar_dist(X, X)
+        d = base.covar_dist(X, X)
         return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0)
 
     def assign_kernel(self,key,value,kernel_para_dict):
@@ -148,10 +148,10 @@ class KFT(torch.nn.Module):
 class variational_TT_component(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None):
         super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda)
-        self.variance_parameters = torch.nn.Parameter(torch.randn(*self.shape_list),requires_grad=True)
+        self.variance_parameters = torch.nn.Parameter(torch.zeros(*self.shape_list),requires_grad=True)
 
     def calculate_KL(self,mean,sig):
-        return 0.5*(sig.exp()+mean**2-sig-1)
+        return torch.mean(0.5*(sig.exp()+mean**2-sig-1))
 
     def forward(self,indices):
         if len(indices.shape)>1:
@@ -163,7 +163,7 @@ class variational_TT_component(TT_component):
         return z, KL
 
 class variational_TT_kernel(TT_kernel_component):
-    def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,bayes_dict,cuda=None):
+    def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
         super(variational_TT_kernel, self).__init__(r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda)
         for key in self.keys:
             self.set_variational_parameters(key)
@@ -171,16 +171,85 @@ class variational_TT_kernel(TT_kernel_component):
     def set_variational_parameters(self,key):
         prior_cov_mat =  torch.cholesky(self.n_dict[key].evaluate())
         prior_inv = torch.cholesky_inverse(prior_cov_mat)
-        prior_log_det = torch.prod(torch.diag(prior_inv))**2
+        prior_log_det = torch.log(torch.prod(torch.diag(prior_cov_mat)).abs()+1e-5)#"*(2*prior_cov_mat.shape[0])
         setattr(self,f'priors_inv_{key}',prior_inv)
         setattr(self,f'prior_log_det_{key}',prior_log_det)
-        setattr(self,f'sigma_{key}',torch.nn.Parameter(torch.randn_like(prior_inv),requires_grad=True))
+        setattr(self,f'sigma_{key}',torch.nn.Parameter(prior_cov_mat,requires_grad=True)) #Lower triangular params
 
+    def get_back_tril(self,key):
+        return torch.tril(getattr(self,f'sigma_{key}'))
 
-# class variational_KFT(torch.nn.module):
-#     def __init__(self,initializaiton_data_frequentist,initialization_data_bayeisan,cuda=None):
-#         super(variational_KFT, self).__init__(initializaiton_data_frequentist,cuda)
+    def calculate_KL(self):
+        tr_term = 1.
+        T = self.TT_core
+        log_term_1 = 0
+        log_term_2 = 0
+        for key in self.keys:
+            tril_mat = self.get_back_tril(key)
+            tr_term = tr_term * torch.sum(getattr(self,f'priors_inv_{key}')*(tril_mat@tril_mat.t()))
+            T = lazy_mode_product(T,getattr(self,f'priors_inv_{key}'),key)
+            log_term_1 = log_term_1 + getattr(self, f'prior_log_det_{key}')
+            log_term_2 = log_term_2 + torch.log(torch.prod(torch.diag(tril_mat)).abs()+1e-5)#*(2*tril_mat.shape[0])
+        log_term = log_term_1 - log_term_2
+        middle_term = torch.sum(T*self.TT_core)
+        return tr_term + middle_term + log_term
 
+    def forward(self,indices):
+        T = self.TT_core
+        noise = torch.randn_like(self.TT_core)
+        for key in self.keys: #Sample from multivariate
+            LU =  self.get_back_tril(key)
+            noise = lazy_mode_product(noise,LU, key)
+        T = T+noise #Reparametrization
+        for key, val in self.n_dict.items():
+            if val is not None:
+                T = lazy_mode_product(T, val, key)
+        if len(indices.shape) > 1:
+            indices = indices.unbind(1)
+        return T.permute(self.permutation_list)[indices],self.calculate_KL()
+
+class variational_KFT(torch.nn.Module):
+    def __init__(self,initializaiton_data_frequentist,KL_weight,cuda=None):
+        super(variational_KFT, self).__init__()
+        tmp_dict = {}
+        tmp_dict_prime = {}
+        lambdas = []
+        self.ii = {}
+        self.KL_weight = torch.nn.Parameter(torch.tensor(KL_weight),requires_grad=False)
+        for i, v in initializaiton_data_frequentist.items():
+            self.ii[i] = v['ii']
+            tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda)
+            if v['has_side_info']:
+                tmp_dict[str(i)] = variational_TT_kernel(r_1=v['r_1'],
+                                                       n_list=v['n_list'],
+                                                       r_2=v['r_2'],
+                                                       side_information_dict=v['side_info'],
+                                                       kernel_para_dict=v['kernel_para'], cuda=cuda)
+            else:
+                tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda)
+            lambdas.append(v['lambda'])
+        self.TT_cores = torch.nn.ModuleDict(tmp_dict)
+        self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
+
+    def collect_core_outputs(self,indices):
+        pred_outputs = []
+        total_KL=0
+        for i,v in self.ii.items():
+            ix = indices[:,v]
+            tt = self.TT_cores[str(i)]
+            tt_prime = self.TT_cores_prime[str(i)]
+            prime_pred,KL_prime = tt_prime(ix)
+            pred, KL = tt(ix)
+            pred_outputs.append(pred*prime_pred)
+            total_KL += KL+KL_prime
+        return pred_outputs,total_KL*self.KL_weight
+
+    def forward(self,indices):
+        preds_list,regularization = self.collect_core_outputs(indices)
+        preds = preds_list[0]
+        for i in range(1,len(preds_list)):
+            preds = torch.bmm(preds,preds_list[i])
+        return preds.squeeze(),regularization
 
 if __name__ == '__main__':
     test = TT_component(r_1=1,n_list = [100,100],r_2 = 10)
