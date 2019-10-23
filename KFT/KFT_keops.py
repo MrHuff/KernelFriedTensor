@@ -27,20 +27,22 @@ class keops_periodic():
         K = ((-2 * (PI * D / p).sin() ** 2) / ls ** 2).exp()
         return K
 
-# def lazy_ones(ones):
-#     x = keops(ones.data,axis=0)
-#     y = keops(ones.data,axis=1)
-#     with torch.no_grad():
-#         ones = (x*y).sum(dim=-1)
-#     return ones
+class keops_RBF():
+    def __init__(self,ls=None,fixed_Y = None): #assuming p and ls to be torch parameters...
+        self.raw_lengthscale = ls
+        if fixed_Y is not None:
+            self.fixed_Y = keops(fixed_Y,axis=1)
 
-
-
-# def fold(unfolded_tensor, mode, shape):
-#     full_shape = list(shape)
-#     mode_dim = full_shape.pop(mode)
-#     full_shape.insert(0, mode_dim)
-#     return torch.transpose(torch.reshape(unfolded_tensor, full_shape).contiguous(), 0, mode).contiguous()
+    def __call__(self,X,Y=None):
+        x = keops(X,axis=0)
+        ls = keops(self.raw_lengthscale.data)
+        if Y is not None:
+            y = keops(Y, axis=1)
+            D = ((x - y)**2).sum(-1)
+        else:
+            D = ((x - self.fixed_Y)**2).sum(-1)
+        K = (-(D ** 2) / (2*ls ** 2)).exp()
+        return K
 
 def keops_mode_product(T,K,mode):
     """

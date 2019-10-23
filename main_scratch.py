@@ -7,33 +7,30 @@ tensorly.set_backend('pytorch')
 from pykeops.torch import LazyTensor as keops
 from tensorly.base import fold
 from KFT.util import kernel_adding_tensor
-from KFT.KFT import KFT
-def keops_mode_product(T,K,mode):
-    """
-    :param T: Pytorch tensor, just pass as usual
-    :param K: Keops Lazytensor object, remember should be on form MxN
-    :param mode: Mode of tensor
-    :return:
-    """
-    t_new_shape = list(T.shape)
-    t_new_shape[mode] = K.shape[0]
-    T = K @ torch.reshape(torch.transpose(T, mode, 0), (T.shape[mode], -1))
-    T = fold(unfolded_tensor=T,mode=mode,shape=t_new_shape)
-    return T
+from KFT.KFT_keops import keops_RBF
+from pykeops.torch import KernelSolve
+from KFT.KFT_fp_16 import KFT
 
-# def lazy_ones(n):
-#     x = keops(torch.ones(*(n,1)),axis=0)
-#     y = keops(torch.ones(*(n,1)),axis=1)
-#     ones = (x*y).sum(dim=2)
-#     return ones
-
-# def MSE_loss(pred,target):
-#     return torch.sum(((1*pred-1*target)*1)**2)
-
+def Kinv_keops(x, b, gamma, alpha):
+    N=10000
+    D=5
+    Dv=2
+    formula = 'Exp(- g * SqDist(x,y)) * a'
+    aliases = ['x = Vi(' + str(D) + ')',  # First arg:  i-variable of size D
+               'y = Vj(' + str(D) + ')',  # Second arg: j-variable of size D
+               'a = Vj(' + str(Dv) + ')',  # Third arg:  j-variable of size Dv
+               'g = Pm(1)']  # Fourth arg: scalar parameter
+    Kinv = KernelSolve(formula, aliases, "a", axis=1)
+    res = Kinv(x, x, b, gamma, alpha=alpha)
+    return res
 
 if __name__ == '__main__':
     #TODO: do VI! Try FP16 implementation. Introduce numerical reguarlization.
-    test_k = gpytorch.kernels.RBFKernel()
+    # test_k = gpytorch.kernels.keops.RBFKernel().cuda()
+    device  = 'cuda:0'
+    test_k = keops_RBF()
+    test_k.raw_lengthscale = torch.nn.Parameter(torch.tensor(1.).cuda(),requires_grad=False)
+
     print(pykeops.bin_folder)
     PATH = './experiment_3/'
     #Doesn't like last index being 1 -> do squeeze type operation!
@@ -41,9 +38,16 @@ if __name__ == '__main__':
     print(o.data.shape[0])
     print(o.data.shape[1])
     print(o.data.shape[2])
-    # o.t_side = torch.ones_like(o.t_side)
-    # print(o.t_side)
-    # print(test_k(o.t_side).evaluate())
+    # N=10000
+    # D=5
+    # Dv=2
+    # X = torch.randn(D,1).cuda()
+    # x = torch.rand(N, D, device=device)
+    # b = torch.randn(N, Dv, device=device)
+    # gamma = torch.ones(1, device=device) * .5 / .01 ** 2  # kernel bandwidth
+    # alpha = torch.ones(1, device=device) * 0.8  # regularization
+    # res = Kinv_keops(x, b, gamma, alpha)
+    # print(res)
     init_dict = {
 
                 # 0: {'ii': [0, 1], 'lambda': 1e-3, 'r_1': 1, 'n_list': [o.data.shape[0], o.data.shape[1]], 'r_2': 10,'has_side_info': True, 'side_info': {1:o.n_side,2:o.m_side},'kernel_para': {'ls_factor': 1.0, 'kernel_type': 'rbf', 'nu': 2.5}},
@@ -77,8 +81,8 @@ if __name__ == '__main__':
         print(risk_loss.data)
         print('-')
         print(reg.data)
-
-###Cant be combined with gpytorch yet, must write custom kernels...
+#
+# ###Cant be combined with gpytorch yet, must write custom kernels...
 # kernel = gpytorch.kernels.keops.MaternKernel()
 # kernel.raw_lengthscale = torch.nn.Parameter(torch.tensor([1.]),requires_grad=False)
 # n = 100
