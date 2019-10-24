@@ -162,22 +162,30 @@ class variational_TT_component(TT_component):
         KL = self.calculate_KL(mean,sig)
         return z, KL
 
-class variational_TT_kernel(TT_kernel_component):
-    def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
-        super(variational_TT_kernel, self).__init__(r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda)
+    def mean_forward(self,indices):
+        if len(indices.shape)>1:
+            indices = indices.unbind(1)
+        return self.TT_core.permute(self.permutation_list)[indices]
+
+class variational_kernel_TT(TT_kernel_component):
+    def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None):
+        super(variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
+                                                               kernel_para_dict, cuda)
+        self.device = cuda
+        self.R = 5
+        self.noise_shape = [r_1]
         for key in self.keys:
             self.set_variational_parameters(key)
-
+            self.noise_shape.append(self.R)
+        self.noise_shape.append(r_2)
     def set_variational_parameters(self,key):
-        prior_cov_mat =  torch.cholesky(self.n_dict[key].evaluate())
-        prior_inv = torch.cholesky_inverse(prior_cov_mat)
-        prior_log_det = torch.log(torch.prod(torch.diag(prior_cov_mat)).abs()+1e-5)#"*(2*prior_cov_mat.shape[0])
-        setattr(self,f'priors_inv_{key}',prior_inv)
+        mat  = self.n_dict[key].evaluate()
+        prior_cov_mat = mat #torch.cholesky(mat)
+        prior_log_det = torch.log(1./(torch.prod(torch.diag(prior_cov_mat)).abs()**2+1e-5))#"*(2*prior_cov_mat.shape[0])
+        setattr(self,f'priors_inv_{key}',mat)
         setattr(self,f'prior_log_det_{key}',prior_log_det)
-        setattr(self,f'sigma_{key}',torch.nn.Parameter(prior_cov_mat,requires_grad=True)) #Lower triangular params
-
-    def get_back_tril(self,key):
-        return torch.tril(getattr(self,f'sigma_{key}'))
+        setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(mat.shape[0],self.R),requires_grad=True))
+        setattr(self,f'D_{key}',torch.nn.Parameter(1e-4*torch.ones(mat.shape[0],1),requires_grad=True))
 
     def calculate_KL(self):
         tr_term = 1.
@@ -185,28 +193,71 @@ class variational_TT_kernel(TT_kernel_component):
         log_term_1 = 0
         log_term_2 = 0
         for key in self.keys:
-            tril_mat = self.get_back_tril(key)
-            tr_term = tr_term * torch.sum(getattr(self,f'priors_inv_{key}')*(tril_mat@tril_mat.t()))
+            cov = self.build_cov(key)
+            tr_term = tr_term * torch.sum(getattr(self,f'priors_inv_{key}')*cov)
             T = lazy_mode_product(T,getattr(self,f'priors_inv_{key}'),key)
             log_term_1 = log_term_1 + getattr(self, f'prior_log_det_{key}')
-            log_term_2 = log_term_2 + torch.log(torch.prod(torch.diag(tril_mat)).abs()+1e-5)#*(2*tril_mat.shape[0])
+            log_term_2 = log_term_2 + torch.log(cov.det().abs()+1e-5)#*(2*tril_mat.shape[0])
         log_term = log_term_1 - log_term_2
         middle_term = torch.sum(T*self.TT_core)
         return tr_term + middle_term + log_term
 
-    def forward(self,indices):
-        T = self.TT_core
+    def build_cov(self,key):
+        B = getattr(self,f'B_{key}')
+        D = getattr(self,f'D_{key}')
+        return B@B.t()+torch.diagflat(D**2)
+    def get_back_tril(self,key):
+
+        return torch.tril(getattr(self,f'sigma_{key}'))
+
+    def forward(self, indices):
         noise = torch.randn_like(self.TT_core)
+        noise_2 = torch.randn(*self.noise_shape).to(self.device)
         for key in self.keys: #Sample from multivariate
-            LU =  self.get_back_tril(key)
-            noise = lazy_mode_product(noise,LU, key)
+            noise = lazy_mode_product(noise,torch.diagflat(getattr(self,f'D_{key}')), key)
+            noise_2 = lazy_mode_product(noise_2,getattr(self,f'B_{key}'), key)
+        # print(self.TT_core.norm(),noise.norm(),noise_2.norm())
+        T = self.TT_core  + noise_2 + noise#Noisy gradients?! Double noise setup...
+        for key, val in self.n_dict.items(): #Adding covariance nosie to the means seems to completely hinder optimization, might need to resort to analytical derivations?!
+            if val is not None:
+                T = lazy_mode_product(T, val, key)
+                # noise_total = lazy_mode_product(noise_total,val,key)
+        # T = T + noise_total
+        if len(indices.shape) > 1:
+            indices = indices.unbind(1)
+
+        return T.permute(self.permutation_list)[indices],  self.calculate_KL()
+
+    def mean_forward(self,indices):
+        """Do tensor ops"""
+        T = self.TT_core
+        for key,val in self.n_dict.items():
+            if val is not None:
+                T = lazy_mode_product(T, val, key)
+        if len(indices.shape)>1:
+            indices = indices.unbind(1)
+        return T.permute(self.permutation_list)[indices]  #return both to calcul
+
+class univariate_variational_kernel_TT(TT_kernel_component):
+    def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
+        super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda)
+        self.variance_parameters = torch.nn.Parameter(torch.zeros(*self.shape_list),requires_grad=True)
+
+    def calculate_KL(self,mean,sig):
+        return torch.mean(0.5*(sig.exp()+mean**2-sig-1))
+
+    def forward(self,indices):
+        noise = torch.randn_like(self.TT_core)*self.variance_parameters
+        T = self.TT_core + noise  # Reparametrization, Prior fucked up change to isotropic/inverse ,i.e. (K^-1)
         for key, val in self.n_dict.items():
             if val is not None:
                 T = lazy_mode_product(T, val, key)
-        T = T+noise #Reparametrization
         if len(indices.shape) > 1:
             indices = indices.unbind(1)
-        return T.permute(self.permutation_list)[indices],self.calculate_KL()
+        mean = self.TT_core.permute(self.permutation_list)[indices]
+        sig = self.variance_parameters.permute(self.permutation_list)[indices]
+        KL = self.calculate_KL(mean,sig)
+        return T.permute(self.permutation_list)[indices],KL #self.calculate_KL()
 
 class variational_KFT(torch.nn.Module):
     def __init__(self,initializaiton_data_frequentist,KL_weight,cuda=None):
@@ -218,18 +269,30 @@ class variational_KFT(torch.nn.Module):
         self.KL_weight = torch.nn.Parameter(torch.tensor(KL_weight),requires_grad=False)
         for i, v in initializaiton_data_frequentist.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda)
+            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda)
             if v['has_side_info']:
-                tmp_dict[str(i)] = variational_TT_kernel(r_1=v['r_1'],
-                                                       n_list=v['n_list'],
-                                                       r_2=v['r_2'],
-                                                       side_information_dict=v['side_info'],
-                                                       kernel_para_dict=v['kernel_para'], cuda=cuda)
+                tmp_dict[str(i)] = variational_kernel_TT(r_1=v['r_1'],
+                                                                    n_list=v['n_list'],
+                                                                    r_2=v['r_2'],
+                                                                    side_information_dict=v['side_info'],
+                                                                    kernel_para_dict=v['kernel_para'], cuda=cuda)
             else:
-                tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda)
+                tmp_dict[str(i)] = TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda)
             lambdas.append(v['lambda'])
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
+
+    def collect_core_outputs_mean(self,indices):
+        pred_outputs = []
+        for i,v in self.ii.items():
+            ix = indices[:,v]
+            tt = self.TT_cores[str(i)]
+            tt_prime = self.TT_cores_prime[str(i)]
+            # prime_pred = tt_prime.mean_forward(ix)
+            prime_pred = tt_prime(ix)
+            pred = tt.mean_forward(ix)
+            pred_outputs.append(pred*prime_pred)
+        return pred_outputs
 
     def collect_core_outputs(self,indices):
         pred_outputs = []
@@ -238,10 +301,11 @@ class variational_KFT(torch.nn.Module):
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred,KL_prime = tt_prime(ix)
+            # prime_pred,KL_prime = tt_prime(ix)
+            prime_pred = tt_prime(ix)
             pred, KL = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            total_KL += KL+KL_prime
+            total_KL += KL#+KL_prime
         return pred_outputs,total_KL*self.KL_weight
 
     def forward(self,indices):
@@ -250,6 +314,13 @@ class variational_KFT(torch.nn.Module):
         for i in range(1,len(preds_list)):
             preds = torch.bmm(preds,preds_list[i])
         return preds.squeeze(),regularization
+
+    def mean_forward(self,indices):
+        preds_list = self.collect_core_outputs_mean(indices)
+        preds = preds_list[0]
+        for i in range(1,len(preds_list)):
+            preds = torch.bmm(preds,preds_list[i])
+        return preds.squeeze()
 
 if __name__ == '__main__':
     test = TT_component(r_1=1,n_list = [100,100],r_2 = 10)
