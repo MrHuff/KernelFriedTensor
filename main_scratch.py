@@ -52,24 +52,23 @@ if __name__ == '__main__':
     cuda_device = 'cuda:0'
 
     init_dict = {
-
                 # 0: {'ii': [0, 1], 'lambda': 1e-3, 'r_1': 1, 'n_list': [o.data.shape[0], o.data.shape[1]], 'r_2': 10,'has_side_info': True, 'side_info': {1:o.n_side,2:o.m_side},'kernel_para': {'ls_factor': 1.0, 'kernel_type': 'rbf', 'nu': 2.5}},
 
-                0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} },
                 # 1:{'ii':[2],'lambda':1e-3,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
                 # 1:{'ii':[1,2],'lambda':1e-6,'r_1':10,'n_list':[o.data.shape[1],o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.m_side,2:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
-                1:{'ii':1,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5 ,'RFF':False} },
-                2:{'ii':2,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} }
+                1:{'ii':1,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False } },
+                2:{'ii':2,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} }
                  }
     #
-    # model = KFT(init_dict,cuda=cuda_device).to(cuda_device)
-    model = variational_KFT(init_dict,KL_weight=1.,cuda=cuda_device).to(cuda_device)
+    model = KFT(init_dict,cuda=cuda_device).to(cuda_device)
+    # model = variational_KFT(init_dict,KL_weight=1.,cuda=cuda_device).to(cuda_device)
 
     # for n,p in model.named_parameters():
     #     print(n,)
     #     print(p.shape)
     #     print(p.device)
-    ITS = 5000
+    ITS = 1000
     opt = torch.optim.Adam(model.parameters(),lr=1e-2) #"some weird ass bug"
     loss_func = torch.nn.MSELoss()
 
@@ -83,11 +82,11 @@ if __name__ == '__main__':
         opt.zero_grad()
         loss.backward()
         opt.step()
-        with torch.no_grad():
-            mean_preds = model.mean_forward(X)
-            mean_risk_loss = loss_func(mean_preds,Y)
+        # with torch.no_grad():
+        #     mean_preds = model.mean_forward(X)
+        #     mean_risk_loss = loss_func(mean_preds,Y)
+        # print(mean_risk_loss.data)
         print(risk_loss.data)
-        print(mean_risk_loss.data)
         print('-')
         print(reg.data)
 #

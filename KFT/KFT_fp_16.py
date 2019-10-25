@@ -21,13 +21,27 @@ def lazy_mode_product(T, K, mode):
     T = fold(T,mode,new_shape)
     return T
 
+class RFF(torch.nn.Module):
+    def __init__(self, X, lengtscale,rand_seed=1):
+        super(RFF, self).__init__()
+        torch.random.manual_seed(rand_seed)
+        self.n_input_feat = X.shape[1] # dimension of the original input
+        self.n_feat = int(round(math.sqrt(X.shape[0])*math.log(X.shape[0])))#Michaels paper!
+        self.ls = lengtscale
+        self.w = torch.randn(*(self.n_feat,self.n_input_feat))/self.ls
+        self.b = torch.rand(*(self.n_feat, 1))*2.0*PI
+    def forward(self,X,dum_2=None):
+        return torch.transpose(math.sqrt(2./self.n_feat)*torch.cos(torch.mm(self.w, X.t()) + self.b),0,1)
+
 class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None):
         super(TT_component, self).__init__()
+        self.device = cuda
         self.dummy_kernel = gpytorch.kernels.RBFKernel()
         for p in self.dummy_kernel.parameters():
             p.requires_grad = False
         self.n_dict = {i + 1: None for i in range(len(n_list))}
+        self.RFF_dict = {i + 1: True for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
@@ -55,43 +69,47 @@ class TT_component(torch.nn.Module):
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda)
-        self.keys = []
         for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
             self.assign_kernel(key,value,kernel_para_dict)
 
-        for key in self.keys:
-            k_data = getattr(self,f'kernel_data_{key}')
-            tmp_kernel_func = getattr(self,f'kernel_{key}')
-            self.n_dict[key] =  tmp_kernel_func(k_data,k_data) #lazily executed tensors, should have a bunch of lazy tensors...
-
-    def get_median_ls(self,X):  # Super LS and init value sensitive wtf
+    def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
         base = gpytorch.kernels.Kernel()
-        if X.shape[0] > 20000:
-            idx = torch.randperm(20000)
+        if X.shape[0] > 10000:
+            self.RFF_dict[key] = True
+            idx = torch.randperm(10000)
             X = X[idx, :]
         d = base.covar_dist(X, X)
         return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0)
 
     def assign_kernel(self,key,value,kernel_para_dict):
-        self.keys.append(key)
-        gwidth0 = self.get_median_ls(value)
+        gwidth0 = self.get_median_ls(value,key)
         self.gamma_sq_init = gwidth0 * kernel_para_dict['ls_factor']
-        setattr(self, f'kernel_data_{key}', torch.nn.Parameter(value, requires_grad=False))
-        if kernel_para_dict['kernel_type']=='rbf':
-            setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel())
-        elif kernel_para_dict['kernel_type']=='matern':
-            setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(nu=kernel_para_dict['nu']))
-        elif kernel_para_dict['kernel_type']=='periodic':
-            setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel() )
-            getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(torch.tensor(kernel_para_dict['p']),requires_grad=False)
-        getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(self.gamma_sq_init, requires_grad=False)
+        if self.RFF_dict[key]:
+            setattr(self, f'kernel_{key}', RFF(value,lengtscale=self.gamma_sq_init))
+        else:
+            if kernel_para_dict['kernel_type']=='rbf':
+                setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel())
+            elif kernel_para_dict['kernel_type']=='matern':
+                setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(nu=kernel_para_dict['nu']))
+            elif kernel_para_dict['kernel_type']=='periodic':
+                setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel() )
+                getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(torch.tensor(kernel_para_dict['p']),requires_grad=False)
+            getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(self.gamma_sq_init, requires_grad=False)
+        tmp_kernel_func = getattr(self,f'kernel_{key}')
+        self.n_dict[key] =  tmp_kernel_func(value,value).to(self.device)
+        if kernel_para_dict['deep']:
+            setattr(self, f'kernel_data_{key}', torch.nn.Parameter(value, requires_grad=False))
 
     def forward(self,indices):
         """Do tensor ops"""
         T = self.TT_core
         for key,val in self.n_dict.items():
             if val is not None:
-                T = lazy_mode_product(T, val, key)
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
         if len(indices.shape)>1:
             indices = indices.unbind(1)
         return T.permute(self.permutation_list)[indices], T*self.TT_core  #return both to calculate regularization when doing frequentist
@@ -171,21 +189,23 @@ class variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None):
         super(variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                kernel_para_dict, cuda)
-        self.device = cuda
-        self.R = 5
         self.noise_shape = [r_1]
         for key in self.keys:
             self.set_variational_parameters(key)
-            self.noise_shape.append(self.R)
         self.noise_shape.append(r_2)
+
     def set_variational_parameters(self,key):
-        mat  = self.n_dict[key].evaluate()
-        prior_cov_mat = mat #torch.cholesky(mat)
-        prior_log_det = torch.log(1./(torch.prod(torch.diag(prior_cov_mat)).abs()**2+1e-5))#"*(2*prior_cov_mat.shape[0])
-        setattr(self,f'priors_inv_{key}',mat)
-        setattr(self,f'prior_log_det_{key}',prior_log_det)
+        self.R = int(round(math.log(self.n_dict[key].shape[0])))
+        self.noise_shape.append(self.R)
+        if not self.RFF_dict[key]:
+            mat  = self.n_dict[key].evaluate()
+            prior_log_det = torch.log(1./(torch.det(mat).abs()**2+1e-5))*(mat.shape[0])
+            setattr(self,f'priors_inv_{key}',mat)
+            setattr(self,f'prior_log_det_{key}',prior_log_det)
+        else: #backup plan, do univariate meanfield...
+            pass
         setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(mat.shape[0],self.R),requires_grad=True))
-        setattr(self,f'D_{key}',torch.nn.Parameter(1e-4*torch.ones(mat.shape[0],1),requires_grad=True))
+        setattr(self,f'D_{key}',torch.nn.Parameter(1e-6*torch.ones(mat.shape[0],1),requires_grad=True))
 
     def calculate_KL(self):
         tr_term = 1.
@@ -193,11 +213,14 @@ class variational_kernel_TT(TT_kernel_component):
         log_term_1 = 0
         log_term_2 = 0
         for key in self.keys:
-            cov = self.build_cov(key)
-            tr_term = tr_term * torch.sum(getattr(self,f'priors_inv_{key}')*cov)
-            T = lazy_mode_product(T,getattr(self,f'priors_inv_{key}'),key)
-            log_term_1 = log_term_1 + getattr(self, f'prior_log_det_{key}')
-            log_term_2 = log_term_2 + torch.log(cov.det().abs()+1e-5)#*(2*tril_mat.shape[0])
+            if not self.RFF_dict[key]:
+                cov = self.build_cov(key)
+                tr_term = tr_term * torch.sum(getattr(self,f'priors_inv_{key}')*cov)
+                T = lazy_mode_product(T,getattr(self,f'priors_inv_{key}'),key)
+                log_term_1 = log_term_1 + getattr(self, f'prior_log_det_{key}')
+                log_term_2 = log_term_2 + torch.log(cov.det().abs()+1e-5)*cov.shape[0]
+            else:
+                pass
         log_term = log_term_1 - log_term_2
         middle_term = torch.sum(T*self.TT_core)
         return tr_term + middle_term + log_term
@@ -206,23 +229,22 @@ class variational_kernel_TT(TT_kernel_component):
         B = getattr(self,f'B_{key}')
         D = getattr(self,f'D_{key}')
         return B@B.t()+torch.diagflat(D**2)
-    def get_back_tril(self,key):
-
-        return torch.tril(getattr(self,f'sigma_{key}'))
 
     def forward(self, indices):
         noise = torch.randn_like(self.TT_core)
         noise_2 = torch.randn(*self.noise_shape).to(self.device)
-        for key in self.keys: #Sample from multivariate
+        for key, val in self.n_dict.items(): #Sample from multivariate
             noise = lazy_mode_product(noise,torch.diagflat(getattr(self,f'D_{key}')), key)
             noise_2 = lazy_mode_product(noise_2,getattr(self,f'B_{key}'), key)
         # print(self.TT_core.norm(),noise.norm(),noise_2.norm())
         T = self.TT_core  + noise_2 + noise#Noisy gradients?! Double noise setup...
         for key, val in self.n_dict.items(): #Adding covariance nosie to the means seems to completely hinder optimization, might need to resort to analytical derivations?!
             if val is not None:
-                T = lazy_mode_product(T, val, key)
-                # noise_total = lazy_mode_product(noise_total,val,key)
-        # T = T + noise_total
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val, key)
+                    T = lazy_mode_product(T, val.t(), key)
         if len(indices.shape) > 1:
             indices = indices.unbind(1)
 
