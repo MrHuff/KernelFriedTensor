@@ -195,17 +195,54 @@ class variational_kernel_TT(TT_kernel_component):
         self.noise_shape.append(r_2)
 
     def set_variational_parameters(self,key):
-        self.R = int(round(math.log(self.n_dict[key].shape[0])))
-        self.noise_shape.append(self.R)
-        if not self.RFF_dict[key]:
+        if self.RFF_dict[key]:
+            mat  = self.n_dict[key]
+            R = mat.shape[1]
+            setattr(self,f'sig_p_2_{key}',torch.nn.Parameter(torch.tensor(1e-5),requires_grad=False))
+            sig_p_2 = torch.tensor(1e-5)
+            eye = torch.eye(R)
+            setattr(self, f'r_const_{key}',torch.nn.Parameter(torch.tensor(R).float(), requires_grad=False))
+            setattr(self, f'Phi_T_{key}',mat.t()@mat)
+            raw_cov = getattr(self,f'Phi_T_{key}')
+            setattr(self,f'Phi_T_trace_{key}', torch.nn.Parameter(raw_cov.diag().sum(),requires_grad=False))
+            RFF_dim_const = mat.shape[0]-R
+            setattr(self,f'RFF_dim_const_{key}',RFF_dim_const)
+            prior_log_det = -(torch.log(torch.det(raw_cov+eye*sig_p_2).abs())*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const))
+        else:
+            R = int(round(math.log(self.n_dict[key].shape[0])))
             mat  = self.n_dict[key].evaluate()
-            prior_log_det = torch.log(1./(torch.det(mat).abs()**2+1e-5))*(mat.shape[0])
-            setattr(self,f'priors_inv_{key}',mat)
-            setattr(self,f'prior_log_det_{key}',prior_log_det)
+            prior_log_det = -torch.log(torch.det(mat).abs()+1e-5)*(mat.shape[0])
+        self.noise_shape.append(R)
+        setattr(self,f'priors_inv_{key}',mat)
+        setattr(self,f'prior_log_det_{key}',prior_log_det)
+        setattr(self,f'n_const_{key}',torch.nn.Parameter(torch.tensor(self.shape_list[key]).float(),requires_grad=False))
+        setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(mat.shape[0],R),requires_grad=True))
+        if self.RFF_dict[key]:
+            setattr(self, f'D_{key}', torch.nn.Parameter(1e-4 * torch.tensor([1.]), requires_grad=True))
         else: #backup plan, do univariate meanfield...
-            pass
-        setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(mat.shape[0],self.R),requires_grad=True))
-        setattr(self,f'D_{key}',torch.nn.Parameter(1e-6*torch.ones(mat.shape[0],1),requires_grad=True))
+            setattr(self, f'D_{key}', torch.nn.Parameter(1e-4 * torch.ones(mat.shape[0], 1), requires_grad=True))
+
+    def get_trace_term_KL(self,key):
+        if self.RFF_dict[key]:
+            D = getattr(self,f'D_{key}')**2
+            B = getattr(self, f'B_{key}')
+            sig_p_2 = getattr(self,f'sig_p_2_{key}')
+            cov = B.t()@B
+            B_times_B_sum = torch.sum(B*B)
+            trace_term = cov*getattr(self,f'Phi_T_{key}')+ sig_p_2*B_times_B_sum+D*getattr(self,f'Phi_T_trace_{key}')+D*sig_p_2*getattr(self,f'n_const_{key}')
+        else:
+            cov,B_times_B_sum,D = self.build_cov(key)
+            trace_term  = cov*getattr(self,f'priors_inv_{key}')
+        return trace_term,B_times_B_sum,D
+
+    def get_log_term(self,key,B_times_B_sum,D):
+        n = getattr(self, f'n_const_{key}')
+        if self.RFF_dict[key]:
+            dim_const = getattr(self,f'RFF_dim_const_{key}')
+            inner_term = (n + n**2/(B_times_B_sum + D*n))*n + dim_const*torch.log(D)
+        else:
+            inner_term = (n + n**2 / (B_times_B_sum + D.sum()))*n
+        return -inner_term
 
     def calculate_KL(self):
         tr_term = 1.
@@ -213,22 +250,16 @@ class variational_kernel_TT(TT_kernel_component):
         log_term_1 = 0
         log_term_2 = 0
         for key in self.keys:
-            if not self.RFF_dict[key]:
-                cov = self.build_cov(key)
-                tr_term = tr_term * torch.sum(getattr(self,f'priors_inv_{key}')*cov)
-                T = lazy_mode_product(T,getattr(self,f'priors_inv_{key}'),key)
-                log_term_1 = log_term_1 + getattr(self, f'prior_log_det_{key}')
-                log_term_2 = log_term_2 + torch.log(cov.det().abs()+1e-5)*cov.shape[0]
-            else:
-                pass
+            pass
+
         log_term = log_term_1 - log_term_2
         middle_term = torch.sum(T*self.TT_core)
         return tr_term + middle_term + log_term
 
     def build_cov(self,key):
+        D = getattr(self,f'D_{key}')**2
         B = getattr(self,f'B_{key}')
-        D = getattr(self,f'D_{key}')
-        return B@B.t()+torch.diagflat(D**2)
+        return B@B.t()+torch.diagflat(D),B*B,D
 
     def forward(self, indices):
         noise = torch.randn_like(self.TT_core)
