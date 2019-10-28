@@ -26,29 +26,29 @@ def Kinv_keops(x, b, gamma, alpha):
 
 if __name__ == '__main__':
     # gpytorch.utils.StochasticLQ()
-    n = 5000
-    a = torch.randn(*(n,10)).cuda()
-    C = a@a.t() + torch.eye(n).cuda()
-    start = time.time()
-    print((a*a).sum()+n)
-    end = time.time()
-    print(end-start)
-
+    # n = 5000
+    # a = torch.randn(*(n,10)).cuda()
+    # C = a@a.t() + torch.eye(n).cuda()
     # start = time.time()
-    # L = C.cholesky()
-    # print(L.diag().prod()**2)
+    # print((a*a).sum()+n)
     # end = time.time()
-    # print(end - start)
-
-    start = time.time()
-    print(C.det())
-    end = time.time()
-    print(end-start)
-
-    start = time.time()
-    print(gpytorch.log_det(C))
-    end = time.time()
-    print(end-start)
+    # print(end-start)
+    #
+    # # start = time.time()
+    # # L = C.cholesky()
+    # # print(L.diag().prod()**2)
+    # # end = time.time()
+    # # print(end - start)
+    #
+    # start = time.time()
+    # print(C.det())
+    # end = time.time()
+    # print(end-start)
+    #
+    # start = time.time()
+    # print(gpytorch.log_det(C))
+    # end = time.time()
+    # print(end-start)
 
 
 
@@ -59,13 +59,7 @@ if __name__ == '__main__':
 #     # test_k.raw_lengthscale = torch.nn.Parameter(torch.tensor(1.).cuda(),requires_grad=False)
 #
 #     print(pykeops.bin_folder)
-#     PATH = './experiment_3/'
-#     #Doesn't like last index being 1 -> do squeeze type operation!
-#     o = kernel_adding_tensor(PATH)
-#     print(o.data.shape[0])
-#     print(o.data.shape[1])
-#     print(o.data.shape[2])
-#
+
 #     # N=10000
 #     # D=5
 #     # Dv=2
@@ -76,46 +70,46 @@ if __name__ == '__main__':
 #     # alpha = torch.ones(1, device=device) * 0.8  # regularization
 #     # res = Kinv_keops(x, b, gamma, alpha)
 #     # print(res)
-#     cuda_device = 'cuda:0'
-#
-#     init_dict = {
-#                 # 0: {'ii': [0, 1], 'lambda': 1e-3, 'r_1': 1, 'n_list': [o.data.shape[0], o.data.shape[1]], 'r_2': 10,'has_side_info': True, 'side_info': {1:o.n_side,2:o.m_side},'kernel_para': {'ls_factor': 1.0, 'kernel_type': 'rbf', 'nu': 2.5}},
-#
-#                 0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} },
-#                 # 1:{'ii':[2],'lambda':1e-3,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
-#                 # 1:{'ii':[1,2],'lambda':1e-6,'r_1':10,'n_list':[o.data.shape[1],o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.m_side,2:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
-#                 1:{'ii':1,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False } },
-#                 2:{'ii':2,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} }
-#                  }
-#     #
-#     model = KFT(init_dict,cuda=cuda_device).to(cuda_device)
-#     # model = variational_KFT(init_dict,KL_weight=1.,cuda=cuda_device).to(cuda_device)
-#
-#     # for n,p in model.named_parameters():
-#     #     print(n,)
-#     #     print(p.shape)
-#     #     print(p.device)
-#     ITS = 1000
-#     opt = torch.optim.Adam(model.parameters(),lr=1e-2) #"some weird ass bug"
-#     loss_func = torch.nn.MSELoss()
-#
-#     for i in range(ITS):
-#         X,Y = o.get_batch(1.0)
-#         if cuda_device is not None:
-#             Y=Y.to(cuda_device)
-#         y_pred, reg = model(X)
-#         risk_loss = loss_func(y_pred,Y)
-#         loss =  risk_loss+reg
-#         opt.zero_grad()
-#         loss.backward()
-#         opt.step()
-#         # with torch.no_grad():
-#         #     mean_preds = model.mean_forward(X)
-#         #     mean_risk_loss = loss_func(mean_preds,Y)
-#         # print(mean_risk_loss.data)
-#         print(risk_loss.data)
-#         print('-')
-#         print(reg.data)
+
+    PATH = './experiment_3/'
+    #     #Doesn't like last index being 1 -> do squeeze type operation!
+    o = kernel_adding_tensor(PATH)
+    print(o.data.shape[0])
+    print(o.data.shape[1])
+    print(o.data.shape[2])
+    cuda_device = 'cuda:0'
+    init_dict = {
+                # 0: {'ii': [0, 1], 'lambda': 1e-3, 'r_1': 1, 'n_list': [o.data.shape[0], o.data.shape[1]], 'r_2': 10,'has_side_info': True, 'side_info': {1:o.n_side,2:o.m_side},'kernel_para': {'ls_factor': 1.0, 'kernel_type': 'rbf', 'nu': 2.5}},
+                0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} },
+                # 1:{'ii':[2],'lambda':1e-3,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                # 1:{'ii':[1,2],'lambda':1e-6,'r_1':10,'n_list':[o.data.shape[1],o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.m_side,2:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
+                1:{'ii':1,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False } },
+                2:{'ii':2,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} }
+                 }
+    #
+    # model = KFT(init_dict,cuda=cuda_device).to(cuda_device)
+    model = variational_KFT(init_dict,KL_weight=1.,cuda=cuda_device).to(cuda_device)
+    ITS = 5000
+    opt = torch.optim.Adam(model.parameters(),lr=1e-2) #"some weird ass bug"
+    loss_func = torch.nn.MSELoss()
+
+    for i in range(ITS):
+        X,Y = o.get_batch(1.0)
+        if cuda_device is not None:
+            Y=Y.to(cuda_device)
+        y_pred, reg = model(X)
+        risk_loss = loss_func(y_pred,Y)
+        loss =  risk_loss+reg
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        # with torch.no_grad():
+        #     mean_preds = model.mean_forward(X)
+        #     mean_risk_loss = loss_func(mean_preds,Y)
+        # print(mean_risk_loss.data)
+        print(risk_loss.data)
+        print('-')
+        print(reg.data)
 # #
 # ###Cant be combined with gpytorch yet, must write custom kernels...
 # kernel = gpytorch.kernels.keops.MaternKernel()
