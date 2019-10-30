@@ -6,7 +6,7 @@ import tensorly
 tensorly.set_backend('pytorch')
 from pykeops.torch import LazyTensor as keops
 from tensorly.base import fold
-from KFT.util import kernel_adding_tensor
+from KFT.util import kernel_adding_tensor,print_model_parameters
 from KFT.KFT_keops import keops_RBF
 from pykeops.torch import KernelSolve
 from KFT.KFT_fp_16 import KFT,variational_KFT
@@ -80,44 +80,66 @@ if __name__ == '__main__':
     cuda_device = 'cuda:0'
     init_dict = {
                 # 0: {'ii': [0, 1], 'lambda': 1e-3, 'r_1': 1, 'n_list': [o.data.shape[0], o.data.shape[1]], 'r_2': 10,'has_side_info': True, 'side_info': {1:o.n_side,2:o.m_side},'kernel_para': {'ls_factor': 1.0, 'kernel_type': 'rbf', 'nu': 2.5}},
-                0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side.to(cuda_device)},'kernel_para':{1:{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False}} },
+                0:{'ii':0,'lambda':1e-6,'r_1':1,'n_list':[o.data.shape[0]],'r_2':10,'has_side_info':True,'side_info':{1:o.n_side.to(cuda_device)},'kernel_para':{1:{'ARD':True,'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False}} },
                 # 1:{'ii':[2],'lambda':1e-3,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5} },
-                1:{'ii':[1,2],'lambda':1e-6,'r_1':10,'n_list':[o.data.shape[1],o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.m_side.to(cuda_device),2:o.t_side.to(cuda_device)},'kernel_para':{1:{'ls_factor':1.0, 'kernel_type':'matern','nu':2.5,'deep':False}
-                    ,2:{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False}}},
+                1:{'ii':[1,2],'lambda':1e-6,'r_1':10,'n_list':[o.data.shape[1],o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.m_side.to(cuda_device),2:o.t_side.to(cuda_device)},'kernel_para':{1:{'ARD':False,'ls_factor':1.0, 'kernel_type':'matern','nu':2.5,'deep':False}
+                    ,2:{'ARD':False,'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False}}},
                 # 1:{'ii':1,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[1]],'r_2':10,'has_side_info':True,'side_info':{1:o.m_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False } },
                 # 2:{'ii':2,'lambda':0.0001,'r_1':10,'n_list':[o.data.shape[2]],'r_2':1,'has_side_info':True,'side_info':{1:o.t_side.to(cuda_device)},'kernel_para':{'ls_factor':1.0, 'kernel_type':'rbf','nu':2.5,'deep':False} }
                  }
-    model = KFT(init_dict,cuda=cuda_device).to(cuda_device)
-    test_k = gpytorch.kernels.RBFKernel()
-    print(test_k.__class__.__name__)
+    # model = KFT(init_dict,cuda=cuda_device).to(cuda_device)
+    model = variational_KFT(init_dict,KL_weight=1.,cuda=cuda_device).to(cuda_device)
 
-    #
-    # for n,p in model.named_parameters():
-    #     print(n)
-    #     print(p.device)
-    #     print(p.requires_grad)
-    # model = variational_KFT(init_dict,KL_weight=1.,cuda=cuda_device).to(cuda_device)
-    # ITS = 5000
-    # opt = torch.optim.Adam(model.parameters(),lr=1e-2) #"some weird ass bug"
-    # loss_func = torch.nn.MSELoss()
+    ITS = 200
+    opt = torch.optim.Adam(model.parameters(),lr=1e-2) #"some weird ass bug"
+    loss_func = torch.nn.MSELoss()
+    EPOCHS = 10
+    for j in range(EPOCHS):
+        model.turn_off_kernel_mode()
+        for param_group in opt.param_groups:
+            param_group['lr'] = 1e-2
+        # print_model_parameters(model)
+        for i in range(ITS):
+            X,Y = o.get_batch(1.0)
+            if cuda_device is not None:
+                Y=Y.to(cuda_device)
+            y_pred, reg = model(X)
+            risk_loss = loss_func(y_pred,Y)
+            loss =  risk_loss+reg
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            # with torch.no_grad():
+            #     mean_preds = model.mean_forward(X)
+            #     mean_risk_loss = loss_func(mean_preds,Y)
+            # print(mean_risk_loss.data)
+            print(risk_loss.data)
+            print('-')
+            print(reg.data)
+        model.turn_on_kernel_mode()
+        for param_group in opt.param_groups:
+            param_group['lr'] = 1e-4
+        # print_model_parameters(model)
 
-    # for i in range(ITS):
-    #     X,Y = o.get_batch(1.0)
-    #     if cuda_device is not None:
-    #         Y=Y.to(cuda_device)
-    #     y_pred, reg = model(X)
-    #     risk_loss = loss_func(y_pred,Y)
-    #     loss =  risk_loss+reg
-    #     opt.zero_grad()
-    #     loss.backward()
-    #     opt.step()
-    #     # with torch.no_grad():
-    #     #     mean_preds = model.mean_forward(X)
-    #     #     mean_risk_loss = loss_func(mean_preds,Y)
-    #     # print(mean_risk_loss.data)
-    #     print(risk_loss.data)
-    #     print('-')
-    #     print(reg.data)
+        for i in range(ITS):
+            X, Y = o.get_batch(1.0)
+            if cuda_device is not None:
+                Y = Y.to(cuda_device)
+            y_pred, reg = model(X)
+            risk_loss = loss_func(y_pred, Y)
+            loss = risk_loss + reg
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            # with torch.no_grad():
+            #     mean_preds = model.mean_forward(X)
+            #     mean_risk_loss = loss_func(mean_preds,Y)
+            # print(mean_risk_loss.data)
+            print(risk_loss.data)
+            print('-')
+            print(reg.data)
+
+
 # #
 # ###Cant be combined with gpytorch yet, must write custom kernels...
 # kernel = gpytorch.kernels.keops.MaternKernel()

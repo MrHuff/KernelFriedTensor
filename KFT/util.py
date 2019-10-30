@@ -8,16 +8,18 @@ import dask.dataframe as dd
 from dask.diagnostics import ProgressBar
 from sklearn.model_selection import train_test_split
 
-
+def print_model_parameters(model):
+    for n,p in model.named_parameters():
+        print(n)
+        print(p.shape)
+        print(p.requires_grad)
 
 def get_int_dates(x):
     y = x.split('-')
     return list(map(lambda z: int(z), y))
 
-
 def chunkify(lst, n):
     return [lst[i::n] for i in range(n)]
-
 
 class read_benchmark_data():
     def __init__(self, y_name, path='benchmark_data.h5', seed=1337, backend='dask'):
