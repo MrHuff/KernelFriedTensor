@@ -55,7 +55,7 @@ class TT_component(torch.nn.Module):
         for p in self.dummy_kernel.parameters():
             p.requires_grad = False
         self.n_dict = {i + 1: None for i in range(len(n_list))}
-        self.RFF_dict = {i + 1: True for i in range(len(n_list))}
+        self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
@@ -166,11 +166,10 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         return T.permute(self.permutation_list)[indices], T*self.TT_core  #return both to calculate regularization when doing frequentist
 
 class KFT(torch.nn.Module):
-    def __init__(self,initializaiton_data,cuda=None): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self,initializaiton_data,lambda_reg=1e-6,cuda=None): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT, self).__init__()
         tmp_dict = {}
         tmp_dict_prime = {}
-        lambdas = []
         self.ii = {}
         for i,v in initializaiton_data.items():
             self.ii[i] = v['ii']
@@ -183,8 +182,7 @@ class KFT(torch.nn.Module):
                                                        kernel_para_dict=v['kernel_para'],cuda=cuda)
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda)
-            lambdas.append(v['lambda'])
-        self.lambdas = torch.nn.Parameter(torch.tensor(lambdas),requires_grad=False)
+        self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
@@ -208,8 +206,8 @@ class KFT(torch.nn.Module):
             prime_pred,reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            reg_output += torch.sum(reg*reg_prime)*self.lambdas[i]
-        return pred_outputs,reg_output
+            reg_output += torch.sum(reg*reg_prime)
+        return pred_outputs,reg_output*self.lambda_reg
 
     def forward(self,indices):
         preds_list,regularization = self.collect_core_outputs(indices)
