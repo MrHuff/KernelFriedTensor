@@ -138,7 +138,8 @@ def load_side_info(side_info_path,indices):
     return container
 
 class tensor_dataset(Dataset):
-    def __init__(self, tensor_path,seed,mode):
+    def __init__(self, tensor_path,seed,mode,bs_ratio=1.):
+
         self.indices,self.Y = torch.load(tensor_path)
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.indices.numpy(),
                                                                                 self.Y.numpy(),
@@ -152,12 +153,22 @@ class tensor_dataset(Dataset):
         if mode=='train':
             self.X = torch.from_numpy(self.X_train)
             self.Y = torch.from_numpy(self.Y_train)
+            self.bs = int(round(self.X.shape[0]*bs_ratio))
         elif mode=='val':
             self.X = torch.from_numpy(self.X_val)
             self.Y = torch.from_numpy(self.Y_val)
+            self.bs = int(round(self.X.shape[0]*bs_ratio))
         elif mode=='test':
             self.X = torch.from_numpy(self.X_test)
             self.Y = torch.from_numpy(self.Y_test)
+            self.bs = int(round(self.X.shape[0]*bs_ratio))
+
+
+    def get_batch(self):
+        batch_msk = np.random.choice(self.X.shape[0],self.bs,
+                                     replace=False)
+        ind = self.X[batch_msk, :]
+        return ind, self.Y[ind]
 
     def __len__(self):
         return self.X.shape[0]
@@ -165,9 +176,7 @@ class tensor_dataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx,:],self.Y[idx]
 
-def get_dataloader_tensor(tensor_path,seed,mode,bs_ratio,cuda):
-    ds = tensor_dataset(tensor_path,seed,mode)
-    n = len(ds)
-    bs = int(round(n*bs_ratio))
-    return DataLoader(dataset=ds,batch_size=bs,pin_memory=cuda)
+def get_dataloader_tensor(tensor_path,seed,mode,bs_ratio):
+    ds = tensor_dataset(tensor_path,seed,mode,bs_ratio=bs_ratio)
+    return ds
 

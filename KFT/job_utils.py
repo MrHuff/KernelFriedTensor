@@ -71,24 +71,27 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
         print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
-def train_loop(model, dataloader, loss_func, opt, train_config):
-    for j, (X, y) in enumerate(dataloader):
+def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
+    for p in range(sub_epoch):
+        # for (X, y) in next(iter(dataloader)): #dataloader being slow rofl...
+        X,y = dataloader.get_batch()
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
-        y_pred, reg = model(X)
-        pred_loss = loss_func(y_pred, y)
-        total_loss = pred_loss + reg
-        opt.zero_grad()
-        if train_config['fp_16']:
-            with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
-                loss_scaled.backward()
-        else:
-            total_loss.backward()
-        opt.step()
-        if j%train_config['train_loss_interval_print']==0:
-            print(f'reg_term it {j}: {reg.data}')
-            print(f'train_loss it {j}: {pred_loss.data}')
+            print(0)
+            # y_pred, reg = model(X)
+            # pred_loss = loss_func(y_pred, y)
+            # total_loss = pred_loss + reg
+            # opt.zero_grad()
+            # if train_config['fp_16']:
+            #     with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
+            #         loss_scaled.backward()
+            # else:
+            #     total_loss.backward()
+            # opt.step()
+            # if j%train_config['train_loss_interval_print']==0:
+            #     print(f'reg_term it {j}: {reg.data}')
+            #     print(f'train_loss it {j}: {pred_loss.data}')
 
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
@@ -109,20 +112,18 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
         model.turn_off_kernel_mode()
         update_opt_lr(opt,train_config['V_lr'])
-        for p in range(train_config['sub_epoch_V']):
-            train_loop(model, dataloader_train, loss_func, opt, train_config)
+        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
 
         model.turn_on_kernel_mode()
         update_opt_lr(opt,train_config['ls_lr'])
-        for q in range(train_config['sub_epoch_ls']):
-            train_loop(model, dataloader_train, loss_func, opt, train_config)
+        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
 
         calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
 
     #one last epoch for good measure
     model.turn_off_kernel_mode()
     update_opt_lr(opt, train_config['V_lr'])
-    train_loop(model, dataloader_train, loss_func, opt, train_config)
+    train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
     val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func,train_config=train_config, loss_type='val', index=0)
 
     val_loss_final = val_loss
@@ -190,9 +191,9 @@ class job_object():
             else:
                 model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu')
         print_model_parameters(model)
-        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'],cuda=self.cuda)
-        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'],cuda=self.cuda)
-        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'],cuda=self.cuda)
+        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
+        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
+        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
         val_loss_final,test_loss_final,model = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
         ref_met = 'R2' if self.task=='reg' else 'auc'
         return {'loss': val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': test_loss_final}
