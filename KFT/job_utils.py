@@ -73,25 +73,23 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
 
 def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
     for p in range(sub_epoch):
-        # for (X, y) in next(iter(dataloader)): #dataloader being slow rofl...
         X,y = dataloader.get_batch()
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
-            print(0)
-            # y_pred, reg = model(X)
-            # pred_loss = loss_func(y_pred, y)
-            # total_loss = pred_loss + reg
-            # opt.zero_grad()
-            # if train_config['fp_16']:
-            #     with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
-            #         loss_scaled.backward()
-            # else:
-            #     total_loss.backward()
-            # opt.step()
-            # if j%train_config['train_loss_interval_print']==0:
-            #     print(f'reg_term it {j}: {reg.data}')
-            #     print(f'train_loss it {j}: {pred_loss.data}')
+        y_pred, reg = model(X)
+        pred_loss = loss_func(y_pred, y)
+        total_loss = pred_loss + reg
+        opt.zero_grad()
+        if train_config['fp_16']:
+            with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
+                loss_scaled.backward()
+        else:
+            total_loss.backward()
+        opt.step()
+        if p%train_config['train_loss_interval_print']==0:
+            print(f'reg_term it {p}: {reg.data}')
+            print(f'train_loss it {p}: {pred_loss.data}')
 
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):

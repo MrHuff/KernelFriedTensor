@@ -167,8 +167,7 @@ class tensor_dataset(Dataset):
     def get_batch(self):
         batch_msk = np.random.choice(self.X.shape[0],self.bs,
                                      replace=False)
-        ind = self.X[batch_msk, :]
-        return ind, self.Y[ind]
+        return self.X[batch_msk, :], self.Y[batch_msk]
 
     def __len__(self):
         return self.X.shape[0]
