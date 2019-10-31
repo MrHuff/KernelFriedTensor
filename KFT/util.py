@@ -157,12 +157,11 @@ class tensor_dataset(Dataset):
         elif mode=='val':
             self.X = torch.from_numpy(self.X_val)
             self.Y = torch.from_numpy(self.Y_val)
-            self.bs = int(round(self.X.shape[0]*bs_ratio))
+            self.bs = int(round(self.X.shape[0]))
         elif mode=='test':
             self.X = torch.from_numpy(self.X_test)
             self.Y = torch.from_numpy(self.Y_test)
-            self.bs = int(round(self.X.shape[0]*bs_ratio))
-
+            self.bs = int(round(self.X.shape[0]))
 
     def get_batch(self):
         batch_msk = np.random.choice(self.X.shape[0],self.bs,

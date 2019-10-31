@@ -50,25 +50,25 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
     y_s = []
     _y_preds = []
     with torch.no_grad():
-        for _, (X, y) in enumerate(dataloader):
-            if train_config['cuda']:
-                X = X.to(train_config['device'])
-                y = y.to(train_config['device'])
-            y_pred, _ = model(X)
-            loss = loss_func(y_pred, y)
-            loss_list.append(loss)
-            y_s.append(y)
-            _y_preds.append(y_pred)
-        total_loss = torch.tensor(loss_list).mean().data
-        Y = torch.cat(y_s)
-        y_preds = torch.cat(_y_preds)
+        X, y = dataloader.get_batch()
+        if train_config['cuda']:
+            X = X.to(train_config['device'])
+            y = y.to(train_config['device'])
+        y_pred, _ = model(X)
+        loss = loss_func(y_pred, y)
+        loss_list.append(loss)
+        y_s.append(y)
+        _y_preds.append(y_pred)
 
-        if task=='reg':
-            var_Y = Y.var()
-            ref_metric = 1.-total_loss/var_Y
-        else:
-            ref_metric = auc_check(y_preds,Y)
-        print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
+    total_loss = torch.tensor(loss_list).mean().data
+    Y = torch.cat(y_s)
+    y_preds = torch.cat(_y_preds)
+    if task=='reg':
+        var_Y = Y.var()
+        ref_metric = 1.-total_loss/var_Y
+    else:
+        ref_metric = auc_check(y_preds,Y)
+    print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
 def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
@@ -112,16 +112,17 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         update_opt_lr(opt,train_config['V_lr'])
         train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
 
+        calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
+
         model.turn_on_kernel_mode()
         update_opt_lr(opt,train_config['ls_lr'])
         train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
-
-        calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
 
     #one last epoch for good measure
     model.turn_off_kernel_mode()
     update_opt_lr(opt, train_config['V_lr'])
     train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
+
     val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func,train_config=train_config, loss_type='val', index=0)
 
     val_loss_final = val_loss
