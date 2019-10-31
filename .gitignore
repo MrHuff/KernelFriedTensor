@@ -5,3 +5,5 @@
 *.pt
 *.csv
 *.pyc
+*.pickle
+*.p
