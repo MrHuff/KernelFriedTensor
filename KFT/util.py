@@ -3,8 +3,8 @@ import pandas as pd
 import torch
 import re
 from torch.utils.data import DataLoader,Dataset
-import dask.dataframe as dd
-from dask.diagnostics import ProgressBar
+# import dask.dataframe as dd
+# from dask.diagnostics import ProgressBar
 from sklearn.model_selection import train_test_split
 import pickle
 
@@ -119,9 +119,16 @@ def process_old_setup(folder,tensor_name):
     shape = data.shape
     indices = (torch.isnan(data) == 0).nonzero() #All X:s
     Y = data[torch.unbind(indices, dim=1)] #All Y:s
-    torch.save((indices,Y),folder+'all_data.pt')
+    torch.save((indices,Y.float()),folder+'all_data.pt')
     with open(folder+'full_tensor_shape.pickle', 'wb') as handle:
         pickle.dump(shape, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+def concat_old_side_info(PATH,paths):
+    concated = []
+    for f in paths:
+        s = torch.load(PATH+f)
+        concated.append(s.float())
+    torch.save(concated,PATH+'side_info.pt')
 
 def load_side_info(side_info_path,indices):
     container = {}

@@ -7,3 +7,8 @@
 *.pyc
 *.pickle
 *.p
+*.h5
+*.zip
+*pycache*
+*public_data*
+*tensor_data*

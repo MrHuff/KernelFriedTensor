@@ -39,7 +39,7 @@ class RFF(torch.nn.Module):
         super(RFF, self).__init__()
         torch.random.manual_seed(rand_seed)
         self.n_input_feat = X.shape[1] # dimension of the original input
-        self.n_feat = int(round(math.sqrt(X.shape[0])*math.log(X.shape[0])))#Michaels paper!
+        self.n_feat = int(round(2*math.log(X.shape[0])))#Michaels paper!
         self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
         self.w = torch.randn(*(self.n_feat,self.n_input_feat),device=device)
         self.b = torch.rand(*(self.n_feat, 1),device=device)*2.0*PI
@@ -135,6 +135,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         ard_dims = None if not kernel_para_dict['ARD'] else value.shape[1]
         if self.RFF_dict[key]:
             setattr(self, f'kernel_{key}', RFF(value,lengtscale=self.gamma_sq_init,device=self.device))
+            value = value.to(self.device)
         else:
             if kernel_para_dict['kernel_type']=='rbf':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims))
