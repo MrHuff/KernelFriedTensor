@@ -7,7 +7,7 @@ import apex
 import pickle
 import os
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK
-from KFT.util import get_dataloader_tensor
+from KFT.util import get_dataloader_tensor,print_model_parameters
 from sklearn import metrics
 
 class Log1PlusExp(torch.autograd.Function):
@@ -45,31 +45,37 @@ def auc_check(y_pred,Y):
         auc =  metrics.auc(fpr, tpr)
         return auc
 
-def calculate_loss_no_grad(model,dataloader,loss_func,loss_type='type',index=0,task='reg'):
+def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='type',index=0,task='reg'):
     loss_list = []
     y_s = []
     _y_preds = []
     with torch.no_grad():
-        for _, X, y in enumerate(dataloader):
+        for _, (X, y) in enumerate(dataloader):
+            if train_config['cuda']:
+                X = X.to(train_config['device'])
+                y = y.to(train_config['device'])
             y_pred, _ = model(X)
             loss = loss_func(y_pred, y)
             loss_list.append(loss)
-            y_s.apend(y)
+            y_s.append(y)
             _y_preds.append(y_pred)
-        total_loss = torch.cat(loss_list).mean().data
+        total_loss = torch.tensor(loss_list).mean().data
         Y = torch.cat(y_s)
         y_preds = torch.cat(_y_preds)
 
         if task=='reg':
-            mean_Y = Y.mean().data
-            ref_metric = 1.-total_loss/mean_Y
+            var_Y = Y.var()
+            ref_metric = 1.-total_loss/var_Y
         else:
             ref_metric = auc_check(y_preds,Y)
         print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
-def train_loop(model,dataloader_train,loss_func,opt,train_config):
-    for j, X, y in enumerate(dataloader_train):
+def train_loop(model, dataloader, loss_func, opt, train_config):
+    for j, (X, y) in enumerate(dataloader):
+        if train_config['cuda']:
+            X = X.to(train_config['device'])
+            y = y.to(train_config['device'])
         y_pred, reg = model(X)
         pred_loss = loss_func(y_pred, y)
         total_loss = pred_loss + reg
@@ -80,14 +86,13 @@ def train_loop(model,dataloader_train,loss_func,opt,train_config):
         else:
             total_loss.backward()
         opt.step()
-
-        if j % train_config['train_loss_interval_print']:
-            print(f'reg_term epoch {j}: {reg.data}')
-            print(f'train_loss epoch {j}: {pred_loss.data}')
+        if j%train_config['train_loss_interval_print']==0:
+            print(f'reg_term it {j}: {reg.data}')
+            print(f'train_loss it {j}: {pred_loss.data}')
 
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
-    opt = torch.optim.Adam(model.parameters(), lr=train_config['lr'])
+    opt = torch.optim.Adam(model.parameters(), lr=train_config['V_lr'])
     if train_config['fp_16']:
         if train_config['fused']:
             del opt
@@ -101,26 +106,31 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
 
     for i in tqdm(range(train_config['epochs']+1)):
+
         model.turn_off_kernel_mode()
         update_opt_lr(opt,train_config['V_lr'])
-        train_loop(model, dataloader_train, loss_func, opt, train_config)
+        for p in range(train_config['sub_epoch_V']):
+            train_loop(model, dataloader_train, loss_func, opt, train_config)
+
         model.turn_on_kernel_mode()
         update_opt_lr(opt,train_config['ls_lr'])
-        train_loop(model, dataloader_train, loss_func, opt, train_config)
-        calculate_loss_no_grad(model,dataloader_val,loss_func,loss_type='val',index=i)
+        for q in range(train_config['sub_epoch_ls']):
+            train_loop(model, dataloader_train, loss_func, opt, train_config)
+
+        calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
 
     #one last epoch for good measure
     model.turn_off_kernel_mode()
     update_opt_lr(opt, train_config['V_lr'])
     train_loop(model, dataloader_train, loss_func, opt, train_config)
-    val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func, loss_type='val', index=0)
+    val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func,train_config=train_config, loss_type='val', index=0)
 
     val_loss_final = val_loss
-    test_loss_final = calculate_loss_no_grad(model,dataloader_test,loss_func,loss_type='test',index=0)
+    test_loss_final = calculate_loss_no_grad(model,dataloader_test,loss_func,train_config=train_config,loss_type='test',index=0)
 
     return val_loss_final,test_loss_final,model
 
-class job_object_frequentist():
+class job_object():
     def __init__(self,side_info_dict,tensor_architecture,other_configs,seed):
         """
         :param side_info_dict: Dict containing side info EX) {i:{'data':side_info,'temporal':True}}
@@ -142,38 +152,48 @@ class job_object_frequentist():
         self.epochs = other_configs['epochs']
         self.bayesian = other_configs['bayesian']
         self.data_path = other_configs['data_path']
+        self.cuda = other_configs['cuda']
+        self.device = other_configs['device']
+        self.train_loss_interval_print  = other_configs['train_loss_interval_print']
+        self.sub_epoch_V = other_configs['sub_epoch_V']
+        self.sub_epoch_ls = other_configs['sub_epoch_ls']
         self.seed = seed
         self.trials = Trials()
+        self.define_hyperparameter_space()
 
     def define_hyperparameter_space(self):
-
-        self.hyperparamter_space = {}
+        self.hyperparameter_space = {}
         #TODO: 1. kernel choice, each combo a choice i.e. Matern-2.5, 2. ARD for said kernel. Should depend on sideinfo 3. Lambda
         for dim,val in self.side_info.items():
             if val['temporal']:
-                self.hyperparamter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','matern_1','matern_2','matern_3','periodic'])
+                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3', 'periodic'])
             else:
-                self.hyperparamter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','matern_1','matern_2','matern_3'])
-            self.hyperparamter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
-        self.hyperparamter_space['reg_para'] = hp.uniform('reg_para',self.a,self.b)
-        self.hyperparamter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio',self.a_,self.b_)
-        self.hyperparamter_space['lr_1'] = hp.uniform('lr_1',1e-3,1e-2)
-        self.hyperparamter_space['lr_2'] = hp.uniform('lr_2',1e-4,1e-3)
+                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3'])
+            self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True, False])
+        self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
+        self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
+        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-2, 1e-1)
+        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-4, 1e-3)
 
     def __call__(self, parameters):
         #TODO do tr
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
         if self.bayesian:
-            model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'])
+            if self.cuda:
+                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device).to(self.device)
+            else:
+                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu')
         else:
-            model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'])
-
-        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
-        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
-        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
+            if self.cuda:
+                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device).to(self.device)
+            else:
+                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu')
+        print_model_parameters(model)
+        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'],cuda=self.cuda)
+        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'],cuda=self.cuda)
+        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'],cuda=self.cuda)
         val_loss_final,test_loss_final,model = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
-        
         ref_met = 'R2' if self.task=='reg' else 'auc'
         return {'loss': val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': test_loss_final}
 
@@ -192,14 +212,14 @@ class job_object_frequentist():
         for i in range(len(side_info_dims)):
             dim = side_info_dims[i]
             k,nu = self.get_kernel_vals(parameters[f'kernel_{dim}_choice'])
-            kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k}
+            kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k,'p':1.0}
         return kernel_param
 
     def construct_side_info_params(self,side_info_dims):
         side_params = {}
         for i in range(len(side_info_dims)):
             dim = side_info_dims[i]
-            side_params[i+1] = self.side_info[dim]
+            side_params[i+1] = self.side_info[dim]['data']
         return side_params
 
     def construct_init_dict(self,parameters):
@@ -221,18 +241,23 @@ class job_object_frequentist():
         training_params['epochs'] = self.epochs
         training_params['V_lr'] = parameters['lr_1']
         training_params['ls_lr'] = parameters['lr_2']
+        training_params['device'] = self.device
+        training_params['cuda'] = self.cuda
+        training_params['train_loss_interval_print']=self.train_loss_interval_print
+        training_params['sub_epoch_V']=self.sub_epoch_V
+        training_params['sub_epoch_ls']=self.sub_epoch_ls
         return training_params
 
-    def hyperparam_opt(self):
+    def run_hyperparam_opt(self):
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         best = fmin(fn=self,
-                    space=self.hyperparamter_space,
+                    space=self.hyperparameter_space,
                     algo=tpe.suggest,
                     max_evals=self.hyperits,
                     trials=self.trials,
                     verbose=1)
-        print(space_eval(self.hyperparamter_space, best))
+        print(space_eval(self.hyperparameter_space, best))
         pickle.dump(self.trials,
                     open(self.save_path + self.name + '.p',
                          "wb"))

@@ -434,27 +434,6 @@ class variational_kernel_TT(TT_kernel_component):
             self.TT_cores[str(i)].kernel_train_mode_off()
             self.TT_cores_prime[str(i)].turn_on()
 
-# class univariate_variational_kernel_TT(TT_kernel_component):
-#     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
-#         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda)
-#         self.variance_parameters = torch.nn.Parameter(torch.zeros(*self.shape_list),requires_grad=True)
-#
-#     def calculate_KL(self,mean,sig):
-#         return torch.mean(0.5*(sig.exp()+mean**2-sig-1))
-#
-#     def forward(self,indices):
-#         noise = torch.randn_like(self.TT_core)*self.variance_parameters
-#         T = self.TT_core + noise  # Reparametrization, Prior fucked up change to isotropic/inverse ,i.e. (K^-1)
-#         for key, val in self.n_dict.items():
-#             if val is not None:
-#                 T = lazy_mode_product(T, val, key)
-#         if len(indices.shape) > 1:
-#             indices = indices.unbind(1)
-#         mean = self.TT_core.permute(self.permutation_list)[indices]
-#         sig = self.variance_parameters.permute(self.permutation_list)[indices]
-#         KL = self.calculate_KL(mean,sig)
-#         return T.permute(self.permutation_list)[indices],KL #self.calculate_KL()
-
 class variational_KFT(torch.nn.Module):
     def __init__(self,initializaiton_data_frequentist,KL_weight,cuda=None):
         super(variational_KFT, self).__init__()
