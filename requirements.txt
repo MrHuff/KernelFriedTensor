@@ -1,0 +1,6 @@
+gpytorch==0.3.3
+pytorch=1.3.0
+tensorly
+hyperopt
+matplotlib
+pandas

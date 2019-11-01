@@ -6,7 +6,7 @@ from tensorly.base import fold,unfold
 import math
 PI  = math.pi
 torch.set_printoptions(profile="full")
-
+from gpytorch.lazy import LazyTensor,LazyEvaluatedKernelTensor
 def lazy_mode_product(T, K, mode):
     """
     :param T: Pytorch tensor, just pass as usual
@@ -17,7 +17,7 @@ def lazy_mode_product(T, K, mode):
     new_shape = list(T.shape)
     new_shape[mode] = K.shape[0]
     T = unfold(T,mode)
-    T = K@T
+    T = gpytorch.matmul(K,T)
     T = fold(T,mode,new_shape)
     return T
 
