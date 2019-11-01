@@ -234,10 +234,8 @@ class KFT(torch.nn.Module):
         preds = preds_list[0]
 
         for i in range(1,len(preds_list)):
-            print(preds.shape)
-            print(preds_list[i].shape)
             if self.full_grad:
-                preds = mode_dot(preds,preds_list[i],mode=1+i) #General mode product!
+                preds = edge_mode_product(preds,preds_list[i],len(preds.shape)-1,0) #General mode product!
             else:
                 preds = torch.bmm(preds,preds_list[i])
         if self.full_grad:

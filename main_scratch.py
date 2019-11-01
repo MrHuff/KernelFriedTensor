@@ -40,8 +40,8 @@ if __name__ == '__main__':
         other_configs={
             'reg_para_a':1e-6,
             'reg_para_b': 1e-2,
-            'batch_size_a': 0.01,
-            'batch_size_b': 0.05,
+            'batch_size_a': 1.0,
+            'batch_size_b': 1.0,
             'fp_16':False,
             'fused':False,
             'hyperits':2,
