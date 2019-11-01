@@ -17,7 +17,7 @@ def lazy_mode_product(T, K, mode):
     new_shape = list(T.shape)
     new_shape[mode] = K.shape[0]
     T = unfold(T,mode)
-    T = gpytorch.matmul(K,T)
+    T = K@T
     T = fold(T,mode,new_shape)
     return T
 
@@ -51,9 +51,7 @@ class TT_component(torch.nn.Module):
         super(TT_component, self).__init__()
         self.V_mode = True
         self.device = cuda
-        self.dummy_kernel = gpytorch.kernels.RBFKernel()
-        for p in self.dummy_kernel.parameters():
-            p.requires_grad = False
+
         self.n_dict = {i + 1: None for i in range(len(n_list))}
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
@@ -69,17 +67,15 @@ class TT_component(torch.nn.Module):
     def turn_on(self):
         for parameters in self.parameters():
             parameters.requires_grad = True
-        for p in self.dummy_kernel.parameters():
-            p.requires_grad = False
+
         self.V_mode=True
 
     def lazy_ones(self,n, cuda):
         if cuda is not None:
-            test = torch.zeros(*(n, 1), requires_grad=False).to(cuda)
+            o = torch.ones(*(n, 1), requires_grad=False).to(cuda)
         else:
-            test = torch.zeros(*(n, 1), requires_grad=False)
-        ones = self.dummy_kernel(test,test)
-        return ones
+            o = torch.ones(*(n, 1), requires_grad=False)
+        return o
 
     def forward(self,indices): #For tensors with no side info #just use gather
         if len(indices.shape)>1:
@@ -89,6 +85,7 @@ class TT_component(torch.nn.Module):
     def get_aux_reg_term(self):
         T = self.TT_core**2
         for mode,ones in self.reg_ones.items():
+            T = lazy_mode_product(T, ones.t(), mode)
             T = lazy_mode_product(T, ones, mode)
         return T
 

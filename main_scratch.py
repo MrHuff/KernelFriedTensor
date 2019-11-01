@@ -25,11 +25,11 @@ def Kinv_keops(x, b, gamma, alpha):
 if __name__ == '__main__':
     with warnings.catch_warnings(): #There are some autograd issues fyi, might wanna fix it sooner or later
         warnings.simplefilter("ignore")
-        PATH = './experiment_3/'
-        process_old_setup(PATH,'tensor_data.pt')
+        PATH = './tensor_data/'
+        # process_old_setup(PATH,'tensor_data.pt')
 
         # concat_old_side_info(PATH,['location_tensor_400000.pt','article_tensor_400000.pt','time_tensor_400000.pt'])
-        side_info = load_side_info(side_info_path=PATH,indices=[1,0,2])
+        side_info = load_side_info(side_info_path=PATH,indices=[0,1,2])
         print(side_info[0]['data'].shape)
         shape = pickle.load(open(PATH+'full_tensor_shape.pickle','rb'))
         side_info[2]['temporal'] = True
@@ -40,12 +40,12 @@ if __name__ == '__main__':
         other_configs={
             'reg_para_a':1e-6,
             'reg_para_b': 1e-2,
-            'batch_size_a':1.0,
-            'batch_size_b': 1.0,
-            'fp_16':True,
+            'batch_size_a': 0.01,
+            'batch_size_b': 0.05,
+            'fp_16':False,
             'fused':False,
             'hyperits':2,
-            'save_path': './public_data_test/',
+            'save_path': './private_data_test/',
             'job_name':'frequentist',
             'task':'reg',
             'epochs': 10,
