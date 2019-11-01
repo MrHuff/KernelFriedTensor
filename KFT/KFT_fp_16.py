@@ -2,11 +2,25 @@ import torch
 import tensorly
 tensorly.set_backend('pytorch')
 import gpytorch
-from tensorly.base import fold,unfold
+from tensorly.base import fold,unfold,partial_fold
+from tensorly.tenalg import multi_mode_dot,mode_dot
 import math
 PI  = math.pi
 torch.set_printoptions(profile="full")
 from gpytorch.lazy import LazyTensor,LazyEvaluatedKernelTensor
+
+def edge_mode_product(T,also_T,mode_T, mode_also_T):
+    """
+    :param T: Tensor - core [n_1,n_2.n_3]
+    :param also_T: Tensor - to be applied [n_3,m_2,m_3]
+    :param mode: to which mode of T
+    :return: mode = 2 -> [n_1,n_2,m_2,m_3]
+    """
+    final_shape = list(T.shape[0:(mode_T)]) + list(also_T.shape[mode_also_T+1:])
+    also_T = unfold(also_T,mode_also_T)
+    T = lazy_mode_product(T,also_T.t(),mode_T)
+    return T.view(final_shape)
+
 def lazy_mode_product(T, K, mode):
     """
     :param T: Pytorch tensor, just pass as usual
@@ -47,11 +61,11 @@ class RFF(torch.nn.Module):
         return torch.transpose(math.sqrt(2./self.n_feat)*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
 
 class TT_component(torch.nn.Module):
-    def __init__(self,r_1,n_list,r_2,cuda=None):
+    def __init__(self,r_1,n_list,r_2,cuda=None,config=None):
         super(TT_component, self).__init__()
         self.V_mode = True
         self.device = cuda
-
+        self.full_grad = config['full_grad']
         self.n_dict = {i + 1: None for i in range(len(n_list))}
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
@@ -77,10 +91,13 @@ class TT_component(torch.nn.Module):
             o = torch.ones(*(n, 1), requires_grad=False)
         return o
 
-    def forward(self,indices): #For tensors with no side info #just use gather
-        if len(indices.shape)>1:
-            indices = indices.unbind(1)
-        return self.TT_core.permute(self.permutation_list)[indices],self.get_aux_reg_term()
+    def forward(self,indices):
+        if self.full_grad:
+            return self.TT_core,self.get_aux_reg_term()
+        else:
+            if len(indices.shape)>1:
+                indices = indices.unbind(1)
+            return self.TT_core.permute(self.permutation_list)[indices],self.get_aux_reg_term()
 
     def get_aux_reg_term(self):
         T = self.TT_core**2
@@ -90,8 +107,8 @@ class TT_component(torch.nn.Module):
         return T
 
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
-    def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None):
-        super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda)
+    def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None):
+        super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config)
         for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
             self.assign_kernel(key,value,kernel_para_dict)
 
@@ -159,27 +176,31 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 else:
                     T = lazy_mode_product(T, val.t(), key)
                     T = lazy_mode_product(T, val, key)
-        if len(indices.shape)>1:
-            indices = indices.unbind(1)
-        return T.permute(self.permutation_list)[indices], T*self.TT_core  #return both to calculate regularization when doing frequentist
+        if self.full_grad:
+            return T,T*self.TT_core
+        else:
+            if len(indices.shape)>1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[indices], T*self.TT_core  #return both to calculate regularization when doing frequentist
 
 class KFT(torch.nn.Module):
-    def __init__(self,initializaiton_data,lambda_reg=1e-6,cuda=None): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self,initializaiton_data,lambda_reg=1e-6,cuda=None,config=None): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT, self).__init__()
         tmp_dict = {}
         tmp_dict_prime = {}
+        self.full_grad = config['full_grad']
         self.ii = {}
         for i,v in initializaiton_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda)
+            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config)
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
-                                                       kernel_para_dict=v['kernel_para'],cuda=cuda)
+                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config)
             else:
-                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda)
+                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config)
         self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
@@ -208,11 +229,21 @@ class KFT(torch.nn.Module):
         return pred_outputs,reg_output*self.lambda_reg
 
     def forward(self,indices):
+
         preds_list,regularization = self.collect_core_outputs(indices)
         preds = preds_list[0]
+
         for i in range(1,len(preds_list)):
-            preds = torch.bmm(preds,preds_list[i])
-        return preds.squeeze(),regularization
+            print(preds.shape)
+            print(preds_list[i].shape)
+            if self.full_grad:
+                preds = mode_dot(preds,preds_list[i],mode=1+i) #General mode product!
+            else:
+                preds = torch.bmm(preds,preds_list[i])
+        if self.full_grad:
+            return preds.squeeze()[torch.unbind(indices,dim=1)],regularization
+        else:
+            return preds.squeeze(),regularization
 
 class variational_TT_component(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None):

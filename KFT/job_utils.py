@@ -157,6 +157,7 @@ class job_object():
         self.train_loss_interval_print  = other_configs['train_loss_interval_print']
         self.sub_epoch_V = other_configs['sub_epoch_V']
         self.sub_epoch_ls = other_configs['sub_epoch_ls']
+        self.config = other_configs['config']
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -186,9 +187,9 @@ class job_object():
                 model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu')
         else:
             if self.cuda:
-                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device).to(self.device)
+                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
             else:
-                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu')
+                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config)
         print_model_parameters(model)
         dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
         dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
