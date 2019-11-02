@@ -7,7 +7,7 @@ import apex
 import pickle
 import os
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK
-from KFT.util import get_dataloader_tensor,print_model_parameters
+from KFT.util import get_dataloader_tensor,print_model_parameters,print_ls_gradients
 from sklearn import metrics
 
 class Log1PlusExp(torch.autograd.Function):
@@ -88,6 +88,7 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
             total_loss.backward()
         opt.step()
         if p%train_config['train_loss_interval_print']==0:
+            print_ls_gradients(model)
             print(f'reg_term it {p}: {reg.data}')
             print(f'train_loss it {p}: {pred_loss.data}')
 
@@ -107,13 +108,13 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
 
     for i in tqdm(range(train_config['epochs']+1)):
-
+        print('V')
         model.turn_off_kernel_mode()
         update_opt_lr(opt,train_config['V_lr'])
         train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
 
         calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
-
+        print('ls')
         model.turn_on_kernel_mode()
         update_opt_lr(opt,train_config['ls_lr'])
         train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
@@ -164,17 +165,17 @@ class job_object():
 
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
-        #TODO: 1. kernel choice, each combo a choice i.e. Matern-2.5, 2. ARD for said kernel. Should depend on sideinfo 3. Lambda
         for dim,val in self.side_info.items():
             if val['temporal']:
                 self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3', 'periodic'])
             else:
                 self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3'])
-            self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True, False])
+            self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-2, 1e-1)
-        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-4, 1e-3)
+        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-3*9, 1e-2)
+        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-3, 1e-2)
+        #Do some sort of gradient clipping... updates might break the lenghtscale! Lengthscale is completely blown up; either clip or scale
 
     def __call__(self, parameters):
         #TODO do tr

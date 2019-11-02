@@ -58,7 +58,7 @@ class RFF(torch.nn.Module):
         self.w = torch.randn(*(self.n_feat,self.n_input_feat),device=device)
         self.b = torch.rand(*(self.n_feat, 1),device=device)*2.0*PI
     def forward(self,X,dum_2=None):
-        return torch.transpose(math.sqrt(2./self.n_feat)*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
+        return torch.transpose(math.sqrt(2./self.n_feat)*torch.cos(torch.mm(self.w/self.raw_lengthscale**2, X.t()) + self.b),0,1)
 
 class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None):

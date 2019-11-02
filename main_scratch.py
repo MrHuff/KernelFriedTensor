@@ -40,8 +40,8 @@ if __name__ == '__main__':
         other_configs={
             'reg_para_a':1e-6,
             'reg_para_b': 1e-2,
-            'batch_size_a': 1.0,
-            'batch_size_b': 1.0,
+            'batch_size_a': 1e-3,
+            'batch_size_b': 1e-2,
             'fp_16':False,
             'fused':False,
             'hyperits':2,
@@ -56,7 +56,7 @@ if __name__ == '__main__':
             'train_loss_interval_print':10,
             'sub_epoch_V':100,
             'sub_epoch_ls':100,
-            'config':{'full_grad':True}
+            'config':{'full_grad':False}
         }
         j = job_object(
             side_info_dict=side_info,
