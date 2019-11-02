@@ -72,7 +72,7 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
     return ref_metric
 
 def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
-    for p in range(sub_epoch):
+    for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
         if train_config['cuda']:
             X = X.to(train_config['device'])
@@ -88,13 +88,14 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
             total_loss.backward()
         opt.step()
         if p%train_config['train_loss_interval_print']==0:
-            print_ls_gradients(model)
+            print_ls_gradients(model) #RFF ls not being updated?!
             print(f'reg_term it {p}: {reg.data}')
             print(f'train_loss it {p}: {pred_loss.data}')
 
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
-    opt = torch.optim.Adam(model.parameters(), lr=train_config['V_lr'])
+    # opt = torch.optim.SparseAdam(model.parameters(), lr=train_config['V_lr'])
+    opt = torch.optim.AdamW(model.parameters(), lr=train_config['V_lr'],amsgrad=True)
     if train_config['fp_16']:
         if train_config['fused']:
             del opt
@@ -173,8 +174,8 @@ class job_object():
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-3*9, 1e-2)
-        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-3, 1e-2)
+        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-5, 1e-5)
+        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-6, 1e-6)
         #Do some sort of gradient clipping... updates might break the lenghtscale! Lengthscale is completely blown up; either clip or scale
 
     def __call__(self, parameters):

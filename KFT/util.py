@@ -10,10 +10,11 @@ import pickle
 
 def print_ls_gradients(model):
     for n,p in model.named_parameters():
-        if 'lengthscale' in n:
-            print(n)
-            print(p)
-            print(p.grad)
+        if p.requires_grad:
+            if 'lengthscale' in n:
+                print(n)
+                print(p)
+                print(p.grad)
 
 def print_model_parameters(model):
     for n,p in model.named_parameters():
