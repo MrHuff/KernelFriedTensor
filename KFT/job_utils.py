@@ -33,11 +33,6 @@ class stableBCEwithlogits(_Loss):
     def forward(self, x, y):
         return torch.mean(self.f(x)-x*y)
 
-def update_opt_lr(opt,lr):
-    for param_group in opt.param_groups:
-        param_group['lr'] = lr
-
-
 def auc_check(y_pred,Y):
     with torch.no_grad():
         y_pred = (y_pred.float() > 0.5).cpu().float().numpy()
@@ -87,43 +82,50 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
         else:
             total_loss.backward()
         opt.step()
+
         if p%train_config['train_loss_interval_print']==0:
-            print_ls_gradients(model) #RFF ls not being updated?!
             print(f'reg_term it {p}: {reg.data}')
             print(f'train_loss it {p}: {pred_loss.data}')
 
-
-def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
-    # opt = torch.optim.SparseAdam(model.parameters(), lr=train_config['V_lr'])
-    opt = torch.optim.AdamW(model.parameters(), lr=train_config['V_lr'],amsgrad=True)
+def opt_reinit(train_config,model,lr_param):
+    opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
     if train_config['fp_16']:
         if train_config['fused']:
             del opt
-            opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config['V_lr'])
+            opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
+    return model,opt
+def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
+
+
     if train_config['task']=='reg':
         loss_func = torch.nn.MSELoss()
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
 
     for i in tqdm(range(train_config['epochs']+1)):
-        print('V')
-        model.turn_off_kernel_mode()
-        update_opt_lr(opt,train_config['V_lr'])
-        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
 
-        calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
         print('ls')
         model.turn_on_kernel_mode()
-        update_opt_lr(opt,train_config['ls_lr'])
+        model,opt = opt_reinit(train_config,model,'ls_lr')
         train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
 
+        print('V') #Regular ADAM does the job
+        model.turn_on_V()
+        model,opt = opt_reinit(train_config,model,'V_lr')
+        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
+        calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
+
+        print('prime')
+        model.turn_on_prime()
+        model,opt = opt_reinit(train_config,model,'V_lr')
+        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
+
+
+
     #one last epoch for good measure
-    model.turn_off_kernel_mode()
-    update_opt_lr(opt, train_config['V_lr'])
-    train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
 
     val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func,train_config=train_config, loss_type='val', index=0)
 
@@ -174,8 +176,8 @@ class job_object():
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-5, 1e-5)
-        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-6, 1e-6)
+        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e0, 1e0)
+        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-2, 1e-2) #Weirdest bug ever wtf #Adam scales gradients lol
         #Do some sort of gradient clipping... updates might break the lenghtscale! Lengthscale is completely blown up; either clip or scale
 
     def __call__(self, parameters):
@@ -184,9 +186,9 @@ class job_object():
         train_config = self.extract_training_params(parameters)
         if self.bayesian:
             if self.cuda:
-                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device).to(self.device)
+                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
             else:
-                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu')
+                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config)
         else:
             if self.cuda:
                 model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)

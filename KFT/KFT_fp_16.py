@@ -73,7 +73,7 @@ class TT_component(torch.nn.Module):
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
-        self.TT_core = torch.nn.Parameter(init_scale*(torch.rand(*self.shape_list)),requires_grad=True)
+        self.TT_core = torch.nn.Parameter(init_scale*(torch.ones(*self.shape_list)),requires_grad=True)
         #Initialization important! Divided init, prime have separate init type as non prime
 
     def turn_off(self):
@@ -84,7 +84,6 @@ class TT_component(torch.nn.Module):
     def turn_on(self):
         for parameters in self.parameters():
             parameters.requires_grad = True
-
         self.V_mode=True
 
     def lazy_ones(self,n, cuda):
@@ -112,6 +111,7 @@ class TT_component(torch.nn.Module):
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale)
+        self.TT_core = torch.nn.Parameter(init_scale*(torch.rand(*self.shape_list)),requires_grad=True)
         for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
             self.assign_kernel(key,value,kernel_para_dict)
 
@@ -156,12 +156,22 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         else:
             if kernel_para_dict['kernel_type']=='rbf':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims))
+                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
+                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims), device=self.device),
+                    requires_grad=False)
+
             elif kernel_para_dict['kernel_type']=='matern':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']))
+                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
+                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims), device=self.device),
+                    requires_grad=False)
             elif kernel_para_dict['kernel_type']=='periodic':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel())
+                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
+                    self.gamma_sq_init * torch.ones(*(1, 1), device=self.device),
+                    requires_grad=False)
+
                 getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(torch.tensor(kernel_para_dict['p']),requires_grad=False)
-            getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(self.gamma_sq_init*torch.ones(*(1,1 if ard_dims is None else ard_dims),device=self.device), requires_grad=False)
         tmp_kernel_func = getattr(self,f'kernel_{key}')
         self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
         self.register_buffer(f'kernel_data_{key}',value)
@@ -208,6 +218,23 @@ class KFT(torch.nn.Module):
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
+    def turn_on_V(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+                self.TT_cores[str(i)].kernel_train_mode_off()
+            else:
+                self.TT_cores[str(i)].turn_on()
+            self.TT_cores_prime[str(i)].turn_off()
+
+    def turn_on_prime(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_prime[str(i)].turn_on()
+
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__=='TT_kernel_component':
@@ -215,14 +242,6 @@ class KFT(torch.nn.Module):
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_off()
-
-    def turn_off_kernel_mode(self):
-        for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
-                self.TT_cores[str(i)].kernel_train_mode_off()
-            else:
-                self.TT_cores[str(i)].turn_on()
-            self.TT_cores_prime[str(i)].turn_on()
 
     def collect_core_outputs(self,indices):
         pred_outputs = []
@@ -323,7 +342,7 @@ class variational_kernel_TT(TT_kernel_component):
 
                 else:
                     mat = val.evaluate()
-                    mat = mat + torch.eye(mat.shape[0],device=self.device)*1e-5
+                    mat = mat + torch.eye(mat.shape[0],device=self.device)*1e-2
                     setattr(self, f'priors_inv_{key}', mat)
                     if len(self.shape_list) > 3:
                         prior_log_det = -gpytorch.logdet(mat) * mat.shape[0]
@@ -485,7 +504,6 @@ class variational_KFT(torch.nn.Module):
         super(variational_KFT, self).__init__()
         tmp_dict = {}
         tmp_dict_prime = {}
-        lambdas = []
         self.full_grad = config['full_grad']
         self.ii = {}
         self.KL_weight = torch.nn.Parameter(torch.tensor(KL_weight),requires_grad=False)
@@ -507,7 +525,6 @@ class variational_KFT(torch.nn.Module):
                                                                     init_scale=v['init_scale'])
             else:
                 tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda,config=config)
-            lambdas.append(v['lambda'])
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
@@ -531,7 +548,6 @@ class variational_KFT(torch.nn.Module):
             tt_prime = self.TT_cores_prime[str(i)]
             prime_pred,KL_prime = tt_prime(ix)
             pred, KL = tt(ix)
-
             pred_outputs.append(pred*prime_pred)
             total_KL += KL + KL_prime
         return pred_outputs,total_KL*self.KL_weight
@@ -556,15 +572,30 @@ class variational_KFT(torch.nn.Module):
             preds = torch.bmm(preds,preds_list[i])
         return preds.squeeze()
 
-    def turn_on_kernel_mode(self):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].kernel_train_mode_on()
+    def turn_on_V(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ == 'variational_kernel_TT':
+                self.TT_cores[str(i)].kernel_train_mode_off()
+            else:
+                self.TT_cores[str(i)].turn_on()
             self.TT_cores_prime[str(i)].turn_off()
 
-    def turn_off_kernel_mode(self):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].kernel_train_mode_off()
+    def turn_on_prime(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ == 'variational_kernel_TT':
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_on()
+
+    def turn_on_kernel_mode(self):
+        for i,v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__=='variational_kernel_TT':
+                self.TT_cores[str(i)].kernel_train_mode_on()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_prime[str(i)].turn_off()
 
 if __name__ == '__main__':
     test = TT_component(r_1=1,n_list = [100,100],r_2 = 10)
