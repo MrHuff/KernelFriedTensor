@@ -296,14 +296,73 @@ class variational_TT_component(TT_component):
             return z, self.calculate_KL(mean,sig)
 
     def mean_forward(self,indices):
-        if len(indices.shape)>1:
-            indices = indices.unbind(1)
-        return self.TT_core.permute(self.permutation_list)[indices]
+        if self.full_grad:
+            return self.TT_core
+        else:
+            if len(indices.shape)>1:
+                indices = indices.unbind(1)
+            return self.TT_core.permute(self.permutation_list)[indices]
 
-class variational_kernel_TT(TT_kernel_component):
+
+class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
-        super(variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
-                                                               kernel_para_dict, cuda,config,init_scale)
+        super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
+                                                                 kernel_para_dict, cuda, config, init_scale)
+        self.variance_parameters = torch.nn.Parameter(torch.zeros(*self.shape_list),requires_grad=True)
+
+    def calculate_KL(self,mean,sig):
+        KL = torch.mean(0.5*(sig.exp()+mean**2-sig-1))
+        return KL
+
+    def forward(self, indices):
+        """Do tensor ops"""
+        mean = self.TT_core
+        sig = self.variance_parameters
+        T = mean + self.variance_parameters*torch.randn_like(mean)
+        for key, val in self.n_dict.items():
+            if val is not None:
+                if not self.V_mode:
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+
+        if self.full_grad:
+            return T, self.calculate_KL(mean,sig)
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[
+                       indices],self.calculate_KL(mean,sig)  # return both to calculate regularization when doing freque
+
+    def mean_forward(self,indices):
+        """Do tensor ops"""
+        T = self.TT_core
+        for key, val in self.n_dict.items():
+            if val is not None:
+                if not self.V_mode:
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        if self.full_grad:
+            return T
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[indices]
+
+
+class multivariate_variational_kernel_TT(TT_kernel_component):
+    def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
+        super(multivariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
+                                                                 kernel_para_dict, cuda, config, init_scale)
         self.noise_shape = [r_1]
         for key,val in  self.n_dict.items():
             self.set_variational_parameters(key,val)
@@ -334,20 +393,19 @@ class variational_kernel_TT(TT_kernel_component):
                     eye = getattr(self,f'eye_{key}')
                     RFF_dim_const = getattr(self,f'RFF_dim_const_{key}')
                     if len(self.shape_list) > 3:
-                        prior_log_det = -(gpytorch.logdet(raw_cov + eye * sig_p_2) * mat.shape[0] + torch.log(
+                        prior_log_det = -(torch.logdet(raw_cov + eye * sig_p_2) * mat.shape[0] + torch.log(
                             sig_p_2) * (RFF_dim_const))
                     else:
-                        prior_log_det = -gpytorch.logdet(raw_cov + eye * sig_p_2) + torch.log(sig_p_2) * (
+                        prior_log_det = -torch.logdet(raw_cov + eye * sig_p_2) + torch.log(sig_p_2) * (
                             RFF_dim_const)
-
                 else:
                     mat = val.evaluate()
-                    mat = mat + torch.eye(mat.shape[0],device=self.device)*1e-2
+                    mat = mat + torch.eye(mat.shape[0],device=self.device)*1e-3
                     setattr(self, f'priors_inv_{key}', mat)
                     if len(self.shape_list) > 3:
-                        prior_log_det = -gpytorch.logdet(mat) * mat.shape[0]
+                        prior_log_det = -torch.logdet(mat) * mat.shape[0]
                     else:
-                        prior_log_det = -gpytorch.logdet(mat)
+                        prior_log_det = -torch.logdet(mat)
 
                 setattr(self, f'prior_log_det_{key}', prior_log_det)
 
@@ -384,12 +442,12 @@ class variational_kernel_TT(TT_kernel_component):
                     prior_log_det = -(torch.log(torch.det(raw_cov+eye*sig_p_2).abs()) + torch.log(sig_p_2)*(RFF_dim_const))
             setattr(self, f'D_{key}', torch.nn.Parameter(1e-4 * torch.tensor([1.]), requires_grad=True))
         else:
-            R = int(round(math.log(self.n_dict[key].shape[0])))
+            R = int(round(20.*math.log(self.n_dict[key].shape[0])))
             mat  = val.evaluate()
             if len(self.shape_list) > 3:
-                prior_log_det = -torch.log(torch.det(mat).abs()+1e-5)*(mat.shape[0])
+                prior_log_det = -torch.log(torch.det(mat).abs()+1e-3)*(mat.shape[0])
             else:
-                prior_log_det = -torch.log(torch.det(mat).abs()+1e-5)
+                prior_log_det = -torch.log(torch.det(mat).abs()+1e-3)
             setattr(self, f'D_{key}', torch.nn.Parameter(1e-4 * torch.ones(mat.shape[0], 1), requires_grad=True))
             setattr(self, f'priors_inv_{key}', mat)
         self.noise_shape.append(R)
@@ -416,14 +474,14 @@ class variational_kernel_TT(TT_kernel_component):
             dim_const = getattr(self, f'RFF_dim_const_{key}')
             input = cov+getattr(self,f'eye_{key}')*D
             if len(self.shape_list) > 3:
-                det = gpytorch.logdet(input)*n + dim_const * torch.log(D)
+                det = torch.logdet(input)*n + dim_const * torch.log(D)
             else:
-                det = gpytorch.logdet(input) + dim_const * torch.log(D)
+                det = torch.logdet(input) + dim_const * torch.log(D)
         else:
             if len(self.shape_list) > 3:
-                det = gpytorch.logdet(cov)*n
+                det = torch.logdet(cov)*n
             else:
-                det = gpytorch.logdet(cov)
+                det = torch.logdet(cov)
         return det.squeeze()
 
     def calculate_KL(self):
@@ -465,12 +523,13 @@ class variational_kernel_TT(TT_kernel_component):
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
                     val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
                     self.n_dict[key] = val
-                    self.recalculate_priors()
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val, key)
                 else:
                     T = lazy_mode_product(T, val.t(), key)
                     T = lazy_mode_product(T, val, key)
+        if not self.V_mode:
+            self.recalculate_priors()
         KL = self.calculate_KL()
         if self.full_grad:
             return T,KL
@@ -482,22 +541,25 @@ class variational_kernel_TT(TT_kernel_component):
     def mean_forward(self,indices):
         """Do tensor ops"""
         T = self.TT_core
-        for key,val in self.n_dict.items():
+        for key, val in self.n_dict.items():
             if val is not None:
-                T = lazy_mode_product(T, val, key)
-        if len(indices.shape)>1:
-            indices = indices.unbind(1)
-        return T.permute(self.permutation_list)[indices]  #return both to calcul
+                if not self.V_mode:
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
+                    self.n_dict[key] = val
+                    self.recalculate_priors()
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        if self.full_grad:
+            return T
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[indices]
 
-    def turn_on_kernel_mode(self):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].kernel_train_mode_on()
-            self.TT_cores_prime[str(i)].turn_off()
-
-    def turn_off_kernel_mode(self):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].kernel_train_mode_off()
-            self.TT_cores_prime[str(i)].turn_on()
 
 class variational_KFT(torch.nn.Module):
     def __init__(self,initializaiton_data_frequentist,KL_weight,cuda=None,config=None):
@@ -515,14 +577,24 @@ class variational_KFT(torch.nn.Module):
                                                               cuda=cuda,
                                                               config=config)
             if v['has_side_info']:
-                tmp_dict[str(i)] = variational_kernel_TT(r_1=v['r_1'],
-                                                                    n_list=v['n_list'],
-                                                                    r_2=v['r_2'],
-                                                                    side_information_dict=v['side_info'],
-                                                                    kernel_para_dict=v['kernel_para'],
-                                                                    cuda=cuda,
-                                                                    config=config,
-                                                                    init_scale=v['init_scale'])
+                if config['multivariate']:
+                    tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
+                                                                          n_list=v['n_list'],
+                                                                          r_2=v['r_2'],
+                                                                          side_information_dict=v['side_info'],
+                                                                          kernel_para_dict=v['kernel_para'],
+                                                                          cuda=cuda,
+                                                                          config=config,
+                                                                          init_scale=v['init_scale'])
+                else:
+                    tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
+                                                                          n_list=v['n_list'],
+                                                                          r_2=v['r_2'],
+                                                                          side_information_dict=v['side_info'],
+                                                                          kernel_para_dict=v['kernel_para'],
+                                                                          cuda=cuda,
+                                                                          config=config,
+                                                                          init_scale=v['init_scale'])
             else:
                 tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda,config=config)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
@@ -534,7 +606,7 @@ class variational_KFT(torch.nn.Module):
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred = tt_prime(ix)
+            prime_pred = tt_prime.mean_forward(ix)
             pred = tt.mean_forward(ix)
             pred_outputs.append(pred*prime_pred)
         return pred_outputs
@@ -568,13 +640,19 @@ class variational_KFT(torch.nn.Module):
     def mean_forward(self,indices):
         preds_list = self.collect_core_outputs_mean(indices)
         preds = preds_list[0]
-        for i in range(1,len(preds_list)):
-            preds = torch.bmm(preds,preds_list[i])
-        return preds.squeeze()
+        for i in range(1, len(preds_list)):
+            if self.full_grad:
+                preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
+            else:
+                preds = torch.bmm(preds, preds_list[i])
+        if self.full_grad:
+            return preds.squeeze()[torch.unbind(indices, dim=1)]
+        else:
+            return preds.squeeze()
 
     def turn_on_V(self):
         for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'variational_kernel_TT':
+            if not self.TT_cores[str(i)].__class__.__name__ == 'variational_TT_component':
                 self.TT_cores[str(i)].kernel_train_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
@@ -582,7 +660,7 @@ class variational_KFT(torch.nn.Module):
 
     def turn_on_prime(self):
         for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'variational_kernel_TT':
+            if not self.TT_cores[str(i)].__class__.__name__ == 'variational_TT_component':
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
             else:
@@ -591,7 +669,7 @@ class variational_KFT(torch.nn.Module):
 
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__=='variational_kernel_TT':
+            if not self.TT_cores[str(i)].__class__.__name__=='variational_TT_component':
                 self.TT_cores[str(i)].kernel_train_mode_on()
             else:
                 self.TT_cores[str(i)].turn_off()

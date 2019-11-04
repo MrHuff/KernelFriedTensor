@@ -9,7 +9,7 @@ import os
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK
 from KFT.util import get_dataloader_tensor,print_model_parameters,print_ls_gradients
 from sklearn import metrics
-
+from KFT.lookahead_opt import Lookahead
 class Log1PlusExp(torch.autograd.Function):
     """Implementation of x ↦ log(1 + exp(x))."""
     @staticmethod
@@ -49,7 +49,10 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
-        y_pred, _ = model(X)
+        if train_config['bayesian']:
+            y_pred = model.mean_forward(X)
+        else:
+            y_pred, _ = model(X)
         loss = loss_func(y_pred, y)
         loss_list.append(loss)
         y_s.append(y)
@@ -84,18 +87,31 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
         opt.step()
 
         if p%train_config['train_loss_interval_print']==0:
-            print(f'reg_term it {p}: {reg.data}')
-            print(f'train_loss it {p}: {pred_loss.data}')
+            if train_config['bayesian']:
+                with torch.no_grad():
+                    y_pred= model.mean_forward(X)
+                    mean_pred_loss = loss_func(y_pred, y)
+
+                print(f'reg_term it {p}: {reg.data}')
+                print(f'train_loss it {p}: {pred_loss.data}')
+                print(f'mean_loss it {p}: {mean_pred_loss.data}')
+
+
+            else:
+                print(f'reg_term it {p}: {reg.data}')
+                print(f'train_loss it {p}: {pred_loss.data}')
 
 def opt_reinit(train_config,model,lr_param):
-    opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
     if train_config['fp_16']:
+        opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
         if train_config['fused']:
-            del opt
-            opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
+        opt = Lookahead(opt)
+
     return model,opt
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
@@ -120,7 +136,7 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
         print('prime')
         model.turn_on_prime()
-        model,opt = opt_reinit(train_config,model,'V_lr')
+        model,opt = opt_reinit(train_config,model,'prime_lr')
         train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
 
 
@@ -176,8 +192,10 @@ class job_object():
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e0, 1e0)
-        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-2, 1e-2) #Weirdest bug ever wtf #Adam scales gradients lol
+        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-3, 1e-3) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-3, 1e-3) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.uniform('lr_3', 1e-2, 1e-2) #Very important for convergence
+        #Weirdest bug ever wtf #Adam scales gradients lol
         #Do some sort of gradient clipping... updates might break the lenghtscale! Lengthscale is completely blown up; either clip or scale
 
     def __call__(self, parameters):
@@ -244,13 +262,15 @@ class job_object():
         training_params['fused'] = self.fused
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
-        training_params['V_lr'] = parameters['lr_1']
-        training_params['ls_lr'] = parameters['lr_2']
+        training_params['prime_lr'] = parameters['lr_3']
+        training_params['V_lr'] = parameters['lr_2']
+        training_params['ls_lr'] = parameters['lr_1']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda
         training_params['train_loss_interval_print']=self.train_loss_interval_print
         training_params['sub_epoch_V']=self.sub_epoch_V
         training_params['sub_epoch_ls']=self.sub_epoch_ls
+        training_params['bayesian'] = self.bayesian
         return training_params
 
     def run_hyperparam_opt(self):

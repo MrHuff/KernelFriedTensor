@@ -33,33 +33,33 @@ if __name__ == '__main__':
         print(side_info[0]['data'].shape)
         shape = pickle.load(open(PATH+'full_tensor_shape.pickle','rb'))
         side_info[2]['temporal'] = True
-        tensor_architecture = {0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':10,'has_side_info':True,'init_scale':1},
-                               1: {'ii': [1], 'r_1': 10, 'n_list': [shape[1]], 'r_2': 10, 'has_side_info': True,'init_scale':1}, #Magnitude of kernel sum
-                               2: {'ii': [2], 'r_1': 10, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'init_scale':1 },
+        tensor_architecture = {0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':10,'has_side_info':True,'init_scale':1e-1},
+                               1: {'ii': [1], 'r_1': 10, 'n_list': [shape[1]], 'r_2': 10, 'has_side_info': True,'init_scale':1e-1}, #Magnitude of kernel sum
+                               2: {'ii': [2], 'r_1': 10, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'init_scale':1e-1 },
                                }
         #Uniform initialization!!! positive primes?
         #Observation, side information might be complete garbage.... Its robust, but not as robust as we would like...
         #3 step process? 1. ls 2. "sums" 3. Scaling
         other_configs={
-            'reg_para_a':1, #Regularization term! Need to choose wisely
-            'reg_para_b': 1,
+            'reg_para_a':1e-2, #Regularization term! Need to choose wisely
+            'reg_para_b': 1e-2,
             'batch_size_a': 1e0,
             'batch_size_b': 1e0,
-            'fp_16':False,
-            'fused':False,
+            'fp_16':True, #Wanna use fp_16? Initialize smartly!
+            'fused':True,
             'hyperits':2,
             'save_path': './private_data_test/',
             'job_name':'frequentist',
             'task':'reg',
             'epochs': 10,
-            'bayesian': True,
+            'bayesian': True, #Mean field does not converge to something meaningful?!
             'data_path':PATH+'all_data.pt',
             'cuda':True,
             'device':'cuda:0',
             'train_loss_interval_print':500,
             'sub_epoch_V':1000,
             'sub_epoch_ls':1000,
-            'config':{'full_grad':True}
+            'config':{'full_grad':False,'multivariate':True}
         }
         j = job_object(
             side_info_dict=side_info,
