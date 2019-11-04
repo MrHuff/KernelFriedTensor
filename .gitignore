@@ -13,3 +13,6 @@
 *public_data*
 *tensor_data*
 *scratch.py*
+*dist*
+*build*
+*egg-info*
