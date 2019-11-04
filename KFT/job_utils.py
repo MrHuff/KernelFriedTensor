@@ -192,9 +192,9 @@ class job_object():
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.uniform('lr_1', 1e-3, 1e-3) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.uniform('lr_2', 1e-3, 1e-3) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.uniform('lr_3', 1e-2, 1e-2) #Very important for convergence
+        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-2,1e-1]) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-4, 1e-3,1e-2,1e-1]) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1]) #Very important for convergence
         #Weirdest bug ever wtf #Adam scales gradients lol
         #Do some sort of gradient clipping... updates might break the lenghtscale! Lengthscale is completely blown up; either clip or scale
 
