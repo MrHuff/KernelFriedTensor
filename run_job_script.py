@@ -4,23 +4,7 @@ import pickle
 import warnings
 from KFT.util import job_parser,get_free_gpu
 import os
-def get_tensor_architectures(i,shape):
-    TENSOR_ARCHITECTURES = {
-        0:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':10,'has_side_info':True},
-           1: {'ii': [1], 'r_1': 10, 'n_list': [shape[1]], 'r_2': 10, 'has_side_info': True}, #Magnitude of kernel sum
-           2: {'ii': [2], 'r_1': 10, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
-           },
-        1:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':10,'has_side_info':True},
-           1: {'ii': [1,2], 'r_1': 10, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True}, #Magnitude of kernel sum
-           },
-        2: {
-            0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': 10, 'has_side_info': True},
-            1: {'ii': [2], 'r_1': 10, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
-        },
-    }
-    return TENSOR_ARCHITECTURES[i]
+from KFT.job_utils import get_tensor_architectures
 
 if __name__ == '__main__':
     with warnings.catch_warnings(): #There are some autograd issues fyi, might wanna fix it sooner or later

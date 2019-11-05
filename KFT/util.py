@@ -9,6 +9,7 @@ import argparse
 from io import BytesIO
 import subprocess
 
+
 def get_free_gpu(n=3):
     gpu_stats = subprocess.check_output(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
     gpu_df = pd.read_csv(BytesIO(gpu_stats),
@@ -20,7 +21,6 @@ def get_free_gpu(n=3):
     for i in idx:
         print('Returning GPU{} with {} free MiB'.format(i, gpu_df.iloc[i]['memory.free']))
     return idx
-
 
 def str2bool(v):
     if isinstance(v, bool):
