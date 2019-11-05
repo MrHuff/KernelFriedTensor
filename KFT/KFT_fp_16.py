@@ -74,6 +74,7 @@ class TT_component(torch.nn.Module):
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
         self.TT_core = torch.nn.Parameter(init_scale*(torch.ones(*self.shape_list)),requires_grad=True)
+        self.init_scale = init_scale
         #Initialization important! Divided init, prime have separate init type as non prime
 
     def turn_off(self):
@@ -422,11 +423,11 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'Phi_T_{key}',torch.ones_like(eye))
                 self.register_buffer(f'Phi_T_trace_{key}',eye.sum())
                 setattr(self,f'RFF_dim_const_{key}',0)
-                prior_log_det = torch.tensor(0)
+                prior_log_det = torch.tensor(0,device=self.device)
             else:
                 mat  = val
                 R = mat.shape[1]
-                self.register_buffer(f'sig_p_2_{key}',torch.tensor(1e-5,device=self.device))
+                self.register_buffer(f'sig_p_2_{key}',torch.tensor(1e-2,device=self.device))
                 eye = torch.eye(R).to(self.device)
                 self.register_buffer(f'eye_{key}',eye)
                 self.register_buffer(f'r_const_{key}',torch.tensor(R).float())
@@ -437,18 +438,18 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 RFF_dim_const = mat.shape[0]-R
                 setattr(self,f'RFF_dim_const_{key}',RFF_dim_const)
                 if len(self.shape_list)>3:
-                    prior_log_det = -(torch.log(torch.det(raw_cov+eye*sig_p_2).abs())*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const))
+                    prior_log_det = -(torch.logdet(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
                 else:
-                    prior_log_det = -(torch.log(torch.det(raw_cov+eye*sig_p_2).abs()) + torch.log(sig_p_2)*(RFF_dim_const))
-            setattr(self, f'D_{key}', torch.nn.Parameter(1e-4 * torch.tensor([1.]), requires_grad=True))
+                    prior_log_det = -(torch.logdet(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
+            setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
             mat  = val.evaluate()
             if len(self.shape_list) > 3:
-                prior_log_det = -torch.log(torch.det(mat).abs()+1e-3)*(mat.shape[0])
+                prior_log_det = -torch.logdet(mat)*(mat.shape[0])
             else:
-                prior_log_det = -torch.log(torch.det(mat).abs()+1e-3)
-            setattr(self, f'D_{key}', torch.nn.Parameter(1e-4 * torch.ones(mat.shape[0], 1), requires_grad=True))
+                prior_log_det = -torch.logdet(mat)
+            setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale*torch.ones(mat.shape[0], 1), requires_grad=True))
             setattr(self, f'priors_inv_{key}', mat)
         self.noise_shape.append(R)
         setattr(self,f'prior_log_det_{key}',prior_log_det)
@@ -492,7 +493,8 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key in self.n_dict.keys():
             trace,B_times_B_sum,D,cov,B = self.get_trace_term_KL(key)
             tr_term = tr_term*trace
-            log_term_1 = log_term_1 + getattr(self,f'prior_log_det_{key}')
+            fix_det = getattr(self,f'prior_log_det_{key}')
+            log_term_1 = log_term_1 + fix_det
             log_term_2 = log_term_2 + self.get_log_term(key,cov,D)
             if self.RFF_dict[key]:
                 T = lazy_mode_product(T,B.t(),key)
@@ -502,6 +504,10 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 T = lazy_mode_product(T,cov,key)
         log_term = log_term_1 - log_term_2
         middle_term = torch.sum(T*self.TT_core)
+        # print(log_term) #!!!!!
+        # print(middle_term)
+        # print(tr_term)
+
         return tr_term + middle_term + log_term
 
     def build_cov(self,key):

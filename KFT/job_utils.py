@@ -123,10 +123,10 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
     for i in tqdm(range(train_config['epochs']+1)):
 
-        print('ls')
-        model.turn_on_kernel_mode()
-        model,opt = opt_reinit(train_config,model,'ls_lr')
-        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
+        # print('ls')
+        # model.turn_on_kernel_mode()
+        # model,opt = opt_reinit(train_config,model,'ls_lr')
+        # train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
 
         print('V') #Regular ADAM does the job
         model.turn_on_V()
@@ -167,7 +167,7 @@ class job_object():
         self.fused = other_configs['fused']
         self.hyperits = other_configs['hyperits']
         self.save_path = other_configs['save_path']
-        self.name = other_configs['job_name']
+        self.name = 'bayesian' if other_configs['bayesian'] else 'frequentist'
         self.task = other_configs['task']
         self.epochs = other_configs['epochs']
         self.bayesian = other_configs['bayesian']
@@ -184,19 +184,19 @@ class job_object():
 
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
+        self.available_side_info_dims = []
         for dim,val in self.side_info.items():
             if val['temporal']:
                 self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3', 'periodic'])
             else:
                 self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3'])
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
+            self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-2,1e-1]) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-4, 1e-3,1e-2,1e-1]) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1]) #Very important for convergence
-        #Weirdest bug ever wtf #Adam scales gradients lol
-        #Do some sort of gradient clipping... updates might break the lenghtscale! Lengthscale is completely blown up; either clip or scale
+        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-2,1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-2, 1e-2,1e-2,1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-2,1e-2,1e-2]) #Very important for convergence
 
     def __call__(self, parameters):
         #TODO do tr
@@ -234,15 +234,17 @@ class job_object():
         kernel_param = {}
         for i in range(len(side_info_dims)):
             dim = side_info_dims[i]
-            k,nu = self.get_kernel_vals(parameters[f'kernel_{dim}_choice'])
-            kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k,'p':1.0}
+            if dim in self.available_side_info_dims:
+                k,nu = self.get_kernel_vals(parameters[f'kernel_{dim}_choice'])
+                kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k,'p':1.0}
         return kernel_param
 
     def construct_side_info_params(self,side_info_dims):
         side_params = {}
         for i in range(len(side_info_dims)):
             dim = side_info_dims[i]
-            side_params[i+1] = self.side_info[dim]['data']
+            if dim in self.available_side_info_dims:
+                side_params[i+1] = self.side_info[dim]['data']
         return side_params
 
     def construct_init_dict(self,parameters):
