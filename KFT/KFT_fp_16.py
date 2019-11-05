@@ -49,6 +49,7 @@ def lazy_mode_hadamard(T,vec,mode):
     return T
 
 class RFF(torch.nn.Module):
+
     def __init__(self, X, lengtscale,rand_seed=1,device=None):
         super(RFF, self).__init__()
         torch.random.manual_seed(rand_seed)
@@ -59,6 +60,7 @@ class RFF(torch.nn.Module):
         self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
         self.w = torch.randn(*(self.n_feat,self.n_input_feat),device=device)
         self.b = torch.rand(*(self.n_feat, 1),device=device)*2.0*PI
+
     def forward(self,X,dum_2=None):
         return torch.transpose(math.sqrt(2./float(self.n_feat))*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
 
@@ -583,7 +585,7 @@ class variational_KFT(torch.nn.Module):
                                                               cuda=cuda,
                                                               config=config)
             if v['has_side_info']:
-                if config['multivariate']:
+                if v['multivariate']:
                     tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
                                                                           n_list=v['n_list'],
                                                                           r_2=v['r_2'],

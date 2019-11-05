@@ -123,10 +123,10 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
     for i in tqdm(range(train_config['epochs']+1)):
 
-        # print('ls')
-        # model.turn_on_kernel_mode()
-        # model,opt = opt_reinit(train_config,model,'ls_lr')
-        # train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
+        print('ls')
+        model.turn_on_kernel_mode()
+        model,opt = opt_reinit(train_config,model,'ls_lr')
+        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
 
         print('V') #Regular ADAM does the job
         model.turn_on_V()
@@ -137,11 +137,7 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         print('prime')
         model.turn_on_prime()
         model,opt = opt_reinit(train_config,model,'prime_lr')
-        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
-
-
-
-    #one last epoch for good measure
+        train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_prime'])
 
     val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func,train_config=train_config, loss_type='val', index=0)
 
@@ -167,7 +163,7 @@ class job_object():
         self.fused = other_configs['fused']
         self.hyperits = other_configs['hyperits']
         self.save_path = other_configs['save_path']
-        self.name = 'bayesian' if other_configs['bayesian'] else 'frequentist'
+        self.name = f'bayesian_{seed}' if other_configs['bayesian'] else f'frequentist_{seed}'
         self.task = other_configs['task']
         self.epochs = other_configs['epochs']
         self.bayesian = other_configs['bayesian']
@@ -176,6 +172,7 @@ class job_object():
         self.device = other_configs['device']
         self.train_loss_interval_print  = other_configs['train_loss_interval_print']
         self.sub_epoch_V = other_configs['sub_epoch_V']
+        self.sub_epoch_prime = other_configs['sub_epoch_prime']
         self.sub_epoch_ls = other_configs['sub_epoch_ls']
         self.config = other_configs['config']
         self.seed = seed
@@ -194,14 +191,20 @@ class job_object():
             self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-2,1e-2]) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-2, 1e-2,1e-2,1e-2]) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-2,1e-2,1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-4, 1e-3,1e-2,1e-1]) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1]) #Very important for convergence
+        for i in self.tensor_architecture.keys():
+            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2,1e-1])
+            if self.bayesian:
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
+
 
     def __call__(self, parameters):
         #TODO do tr
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
+        print(parameters)
         if self.bayesian:
             if self.cuda:
                 model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
@@ -256,6 +259,9 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
+            component_init['init_scale'] = parameters[f'init_scale_{key}']
+            if self.bayesian:
+                component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict
 
     def extract_training_params(self,parameters):
@@ -271,6 +277,7 @@ class job_object():
         training_params['cuda'] = self.cuda
         training_params['train_loss_interval_print']=self.train_loss_interval_print
         training_params['sub_epoch_V']=self.sub_epoch_V
+        training_params['sub_epoch_prime']=self.sub_epoch_prime
         training_params['sub_epoch_ls']=self.sub_epoch_ls
         training_params['bayesian'] = self.bayesian
         return training_params

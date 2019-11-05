@@ -3,10 +3,61 @@ import pandas as pd
 import torch
 import re
 from torch.utils.data import DataLoader,Dataset
-# import dask.dataframe as dd
-# from dask.diagnostics import ProgressBar
 from sklearn.model_selection import train_test_split
 import pickle
+import argparse
+from io import BytesIO
+import subprocess
+
+def get_free_gpu(n=3):
+    gpu_stats = subprocess.check_output(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
+    gpu_df = pd.read_csv(BytesIO(gpu_stats),
+                         names=['memory.used', 'memory.free'],
+                         skiprows=1)
+    print('GPU usage:\n{}'.format(gpu_df))
+    gpu_df['memory.free'] = gpu_df['memory.free'].map(lambda x: int(x.rstrip(' [MiB]')))
+    idx = gpu_df.nlargest(n,['memory.free']).index.values
+    for i in idx:
+        print('Returning GPU{} with {} free MiB'.format(i, gpu_df.iloc[i]['memory.free']))
+    return idx
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def job_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--PATH', type=str, nargs='?')
+    parser.add_argument('--reg_para_a', type=float, nargs='?', default=1., help='reg_para_a')
+    parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
+    parser.add_argument('--batch_size_a', type=float, nargs='?', default=1., help='batch_size_a')
+    parser.add_argument('--batch_size_b', type=float, nargs='?', default=1., help='batch_size_b')
+    parser.add_argument('--fp_16', default=False, help='fp_16',type=str2bool, nargs='?')
+    parser.add_argument('--fused', default=False, help='fused',type=str2bool, nargs='?')
+    parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')
+    parser.add_argument('--save_path', type=str, nargs='?')
+    parser.add_argument('--task', type=str, nargs='?')
+    parser.add_argument('--epochs', type=int, nargs='?', default=10, help='epochs')
+    parser.add_argument('--bayesian', default=True, help='fp_16',type=str2bool, nargs='?')
+    parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
+    parser.add_argument('--full_grad', default=True, help='full_grad',type=str2bool, nargs='?')
+    parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=100, help='sub_epoch_V')
+    parser.add_argument('--sub_epoch_ls', type=int, nargs='?', default=100, help='sub_epoch_ls')
+    parser.add_argument('--sub_epoch_prime', type=int, nargs='?', default=100, help='sub_epoch_prime')
+    parser.add_argument('--seed', type=int, nargs='?', help='seed')
+    parser.add_argument('--side_info_order', nargs='+', type=int)
+    parser.add_argument('--temporal_tag', nargs='+', type=int)
+    parser.add_argument('--architecture', type=int, nargs='?', default=0, help='sub_epoch_V')
+    parser.add_argument('--tensor_name', type=str,default='', nargs='?')
+    parser.add_argument('--side_info_name', type=str,nargs='+')
+    return parser
 
 def print_ls_gradients(model):
     for n,p in model.named_parameters():
