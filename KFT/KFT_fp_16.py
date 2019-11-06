@@ -77,6 +77,7 @@ class TT_component(torch.nn.Module):
         self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
         self.TT_core = torch.nn.Parameter(init_scale*(torch.ones(*self.shape_list)),requires_grad=True)
         self.init_scale = init_scale
+        self.numel = self.TT_core.numel()
         #Initialization important! Divided init, prime have separate init type as non prime
 
     def turn_off(self):
@@ -105,7 +106,7 @@ class TT_component(torch.nn.Module):
             return self.TT_core.permute(self.permutation_list)[indices],self.get_aux_reg_term()
 
     def get_aux_reg_term(self):
-        T = self.TT_core**2
+        T = ((self.TT_core)**2 )/self.numel
         for mode,ones in self.reg_ones.items():
             T = lazy_mode_product(T, ones.t(), mode)
             T = lazy_mode_product(T, ones, mode)
@@ -256,7 +257,7 @@ class KFT(torch.nn.Module):
             prime_pred,reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            reg_output += torch.sum(reg*reg_prime)
+            reg_output += torch.mean(reg*reg_prime)
         return pred_outputs,reg_output*self.lambda_reg
 
     def forward(self,indices):
@@ -392,7 +393,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     self.register_buffer(f'Phi_T_{key}',mat.t()@mat)
                     sig_p_2 = getattr(self, f'sig_p_2_{key}')
                     raw_cov = getattr(self,f'Phi_T_{key}')
-                    self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().sum())
+                    self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
                     eye = getattr(self,f'eye_{key}')
                     RFF_dim_const = getattr(self,f'RFF_dim_const_{key}')
                     if len(self.shape_list) > 3:
@@ -423,7 +424,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'eye_{key}',eye)
                 self.register_buffer(f'r_const_{key}',torch.tensor(R).float())
                 self.register_buffer(f'Phi_T_{key}',torch.ones_like(eye))
-                self.register_buffer(f'Phi_T_trace_{key}',eye.sum())
+                self.register_buffer(f'Phi_T_trace_{key}',eye.mean())
                 setattr(self,f'RFF_dim_const_{key}',0)
                 prior_log_det = torch.tensor(0,device=self.device)
             else:
@@ -436,7 +437,8 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'Phi_T_{key}',mat.t()@mat)
                 sig_p_2 = getattr(self, f'sig_p_2_{key}')
                 raw_cov = getattr(self,f'Phi_T_{key}')
-                self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().sum())
+                self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
+                self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
                 RFF_dim_const = mat.shape[0]-R
                 setattr(self,f'RFF_dim_const_{key}',RFF_dim_const)
                 if len(self.shape_list)>3:
@@ -464,11 +466,11 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             B = getattr(self, f'B_{key}')
             sig_p_2 = getattr(self,f'sig_p_2_{key}')
             cov = B.t()@B
-            B_times_B_sum = torch.sum(B*B)
-            trace_term = torch.sum(cov*getattr(self,f'Phi_T_{key}')) + sig_p_2*B_times_B_sum + D*getattr(self,f'Phi_T_trace_{key}') + D*sig_p_2*getattr(self,f'n_const_{key}')
+            B_times_B_sum = torch.mean(B*B)
+            trace_term = torch.mean(cov*getattr(self,f'Phi_T_{key}')) + sig_p_2*B_times_B_sum + D*getattr(self,f'Phi_T_trace_{key}') + D*sig_p_2*getattr(self,f'n_const_{key}')
         else:
             cov,B_times_B_sum,D,B = self.build_cov(key)
-            trace_term  = torch.sum(cov*getattr(self,f'priors_inv_{key}'))
+            trace_term  = torch.mean(cov*getattr(self,f'priors_inv_{key}'))
         return trace_term.squeeze(),B_times_B_sum,D,cov,B
 
     def get_log_term(self,key,cov,D):
@@ -505,7 +507,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             else:
                 T = lazy_mode_product(T,cov,key)
         log_term = log_term_1 - log_term_2
-        middle_term = torch.sum(T*self.TT_core)
+        middle_term = torch.mean(T*self.TT_core)
         # print(log_term) #!!!!!
         # print(middle_term)
         # print(tr_term)
