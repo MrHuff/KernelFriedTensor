@@ -209,7 +209,7 @@ class KFT(torch.nn.Module):
         self.ii = {}
         for i,v in initializaiton_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config)
+            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
@@ -217,7 +217,7 @@ class KFT(torch.nn.Module):
                                                        side_information_dict=v['side_info'],
                                                        kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
             else:
-                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config)
+                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
         self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
