@@ -54,7 +54,7 @@ def job_parser():
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
     parser.add_argument('--side_info_order', nargs='+', type=int)
     parser.add_argument('--temporal_tag', nargs='+', type=int)
-    parser.add_argument('--architecture', type=int, nargs='?', default=0, help='sub_epoch_V')
+    parser.add_argument('--architecture', type=int, nargs='?', default=0, help='architecture')
     parser.add_argument('--tensor_name', type=str,default='', nargs='?')
     parser.add_argument('--side_info_name', type=str,nargs='+')
     return parser
