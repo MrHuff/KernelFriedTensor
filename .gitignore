@@ -10,9 +10,9 @@
 *.h5
 *.zip
 *pycache*
-*public_data*
-*tensor_data*
-*scratch.py*
-*dist*
+public_data
+tensor_data
+scratch.py
+dist
 *build*
 *egg-info*

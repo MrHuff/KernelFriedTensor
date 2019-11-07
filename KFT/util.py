@@ -9,6 +9,11 @@ import argparse
 from io import BytesIO
 import subprocess
 
+def core_data_extract(df,indices_list):
+    df = df.set_index(
+        indices_list
+    ).sort_index(level=[i for i in range(len(indices_list))])
+    index_list = [df.index.labels[i] for i in range(3)]
 
 def get_free_gpu(n=3):
     gpu_stats = subprocess.check_output(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
@@ -62,6 +67,10 @@ def job_parser():
 def print_ls_gradients(model):
     for n,p in model.named_parameters():
         if 'lengthscale' in n:
+            print(n)
+            print(p)
+            print(p.grad)
+        if 'period' in n:
             print(n)
             print(p)
             print(p.grad)

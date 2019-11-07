@@ -8,7 +8,7 @@ import pickle
 import os
 import warnings
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK
-from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,process_old_setup,concat_old_side_info,load_side_info
+from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,process_old_setup,concat_old_side_info,load_side_info,print_ls_gradients
 from sklearn import metrics
 from KFT.lookahead_opt import Lookahead
 
@@ -151,21 +151,20 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
         else:
             total_loss.backward()
         opt.step()
+        with torch.no_grad():
 
-        if p%train_config['train_loss_interval_print']==0:
-            if train_config['bayesian']:
-                with torch.no_grad():
+            if p%train_config['train_loss_interval_print']==0:
+                if train_config['bayesian']:
                     y_pred= model.mean_forward(X)
                     mean_pred_loss = loss_func(y_pred, y)
-
-                print(f'reg_term it {p}: {reg.data}')
-                print(f'train_loss it {p}: {pred_loss.data}')
-                print(f'mean_loss it {p}: {mean_pred_loss.data}')
-
-
-            else:
-                print(f'reg_term it {p}: {reg.data}')
-                print(f'train_loss it {p}: {pred_loss.data}')
+                    print((y_pred==0).all())
+                    print(f'reg_term it {p}: {reg.data}')
+                    print(f'train_loss it {p}: {pred_loss.data}')
+                    print(f'mean_loss it {p}: {mean_pred_loss.data}')
+                else:
+                    print((y_pred==0).all())
+                    print(f'reg_term it {p}: {reg.data}')
+                    print(f'train_loss it {p}: {pred_loss.data}')
 
 def opt_reinit(train_config,model,lr_param):
     if train_config['fp_16']:
@@ -261,7 +260,7 @@ class job_object():
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-4, 1e-3,1e-2,1e-1]) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1]) #Very important for convergence
         for i in self.tensor_architecture.keys():
-            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2,1e-1])
+            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2])
             if self.bayesian:
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 

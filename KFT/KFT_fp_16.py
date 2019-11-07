@@ -7,7 +7,6 @@ from tensorly.tenalg import multi_mode_dot,mode_dot
 import math
 PI  = math.pi
 torch.set_printoptions(profile="full")
-from gpytorch.lazy import LazyTensor,LazyEvaluatedKernelTensor
 
 def edge_mode_product(T,also_T,mode_T, mode_also_T):
     """
@@ -106,7 +105,7 @@ class TT_component(torch.nn.Module):
             return self.TT_core.permute(self.permutation_list)[indices],self.get_aux_reg_term()
 
     def get_aux_reg_term(self):
-        T = ((self.TT_core)**2 )/self.numel
+        T = self.TT_core**2
         for mode,ones in self.reg_ones.items():
             T = lazy_mode_product(T, ones.t(), mode)
             T = lazy_mode_product(T, ones, mode)
@@ -174,8 +173,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
                     self.gamma_sq_init * torch.ones(*(1, 1), device=self.device),
                     requires_grad=False)
-
-                getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(torch.tensor(kernel_para_dict['p']),requires_grad=False)
+                getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(kernel_para_dict['p']*torch.ones(*(1,1)),requires_grad=False)
         tmp_kernel_func = getattr(self,f'kernel_{key}')
         self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
         self.register_buffer(f'kernel_data_{key}',value)
@@ -217,7 +215,7 @@ class KFT(torch.nn.Module):
                                                        side_information_dict=v['side_info'],
                                                        kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
             else:
-                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=1e-3)
         self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
@@ -685,5 +683,3 @@ class variational_KFT(torch.nn.Module):
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_off()
 
-if __name__ == '__main__':
-    test = TT_component(r_1=1,n_list = [100,100],r_2 = 10)
