@@ -63,48 +63,6 @@ if __name__ == '__main__':
         df.to_hdf(PATH + 'liqour_sales_processed.h5', key='liqour_sales_processed')
 
     """
-    xlearn processing
-    """
-    if not os.path.isfile(PATH+'liqour_xlearn.csv'):
-        df = pd.read_hdf('./public_data/liqour_sales_processed.h5')
-        regex = re.compile(r"\[|\]|<", re.IGNORECASE)
-        df.columns = [regex.sub("_", col) if any(x in str(col) for x in set(('[', ']', '<'))) else col for col in df.columns.values]
-        cat_cols = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category', 'Item Number']
-        prefixes = [el.replace(' ', '_') for el in cat_cols]
-        y_name = 'Bottles Sold'
-        Y = df[y_name]
-        X = df.drop(y_name, axis=1)
-        X[cat_cols] = X[cat_cols].astype(str)
-        print('getting dummies')
-        dummies = []
-        for el in cat_cols:
-            vals = X[el].unique()
-            ohe = sparse_ohe(X,el,vals)
-            dummies.append(ohe)
-
-        X = X.drop(cat_cols, axis=1)
-        # print(X.categorical_columns_)
-        # print(X.head())
-        # dummies = pd.get_dummies(X[cat_cols], prefixes)
-        X_dum = pd.concat(dummies, axis=1)
-        X = pd.concat([X,X_dum],axis=1)
-        X.to_csv(PATH+'liqour_xlearn.csv',chunksize=1000)
-
-
-    if os.path.isfile(PATH + 'liqour_xlearn.csv'):
-        y_name = 'Bottles Sold'
-        Y = pd.read_hdf(f'{PATH}liqour_sales_processed.h5')[y_name]
-        print(Y.shape)
-        X = pd.read_csv(f'{PATH}liqour_xlearn.csv')
-        print(X.shape)
-        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=0)
-        X_train, X_val, Y_train, Y_val = train_test_split(X_train,
-                                                          Y_train,
-                                                          test_size=0.25,
-                                                          random_state=0
-                                                              )
-
-    """
     Tensor Processing
     """
     if not os.path.isfile(PATH+'public_data_tensor.pt'):
@@ -158,9 +116,9 @@ if __name__ == '__main__':
     """
     Scaling
     """
-    if not os.path.isfile(PATH+'public_location_tensor_scaling.pt'):
+    if not os.path.isfile(PATH+'public_time_tensor_scaled.pt'):
 
-        for name in ['article','location']:
+        for name in ['article','location','time']:
             location = torch.load(f'{PATH}/public_{name}_tensor.pt').numpy()
             scaler_location =StandardScaler()
             location_scaled = torch.tensor(scaler_location.fit_transform(location))

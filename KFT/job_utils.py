@@ -43,7 +43,7 @@ def run_job_func(args):
             'data_path': PATH + 'all_data.pt',
             'cuda': args['cuda'],
             'device': f'cuda:{gpu[0]}',
-            'train_loss_interval_print': args['sub_epoch_V'] // 10,
+            'train_loss_interval_print': args['sub_epoch_V'] // R,
             'sub_epoch_V': args['sub_epoch_V'],
             'sub_epoch_ls': args['sub_epoch_ls'],
             'sub_epoch_prime': args['sub_epoch_prime'],
@@ -58,20 +58,20 @@ def run_job_func(args):
         j.run_hyperparam_opt()
 
 
-def get_tensor_architectures(i,shape):
+def get_tensor_architectures(i,shape,R=2):
     TENSOR_ARCHITECTURES = {
         0:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':10,'has_side_info':True},
-           1: {'ii': [1], 'r_1': 10, 'n_list': [shape[1]], 'r_2': 10, 'has_side_info': True}, #Magnitude of kernel sum
-           2: {'ii': [2], 'r_1': 10, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
+           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True},
+           1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True}, #Magnitude of kernel sum
+           2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
            },
         1:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':10,'has_side_info':True},
-           1: {'ii': [1,2], 'r_1': 10, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True}, #Magnitude of kernel sum
+           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True},
+           1: {'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True}, #Magnitude of kernel sum
            },
         2: {
-            0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': 10, 'has_side_info': True},
-            1: {'ii': [2], 'r_1': 10, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
+            0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True},
+            1: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
         },
     }
     return TENSOR_ARCHITECTURES[i]
@@ -158,25 +158,28 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
                     y_pred= model.mean_forward(X)
                     mean_pred_loss = loss_func(y_pred, y)
                     print((y_pred==0).all())
+                    print((y_pred.sum()))
                     print(f'reg_term it {p}: {reg.data}')
                     print(f'train_loss it {p}: {pred_loss.data}')
                     print(f'mean_loss it {p}: {mean_pred_loss.data}')
                 else:
                     print((y_pred==0).all())
+                    print((y_pred.sum()))
                     print(f'reg_term it {p}: {reg.data}')
                     print(f'train_loss it {p}: {pred_loss.data}')
 
 def opt_reinit(train_config,model,lr_param):
+    model = model.float()
+    opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
+    opt = Lookahead(opt)
     if train_config['fp_16']:
-        opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
         if train_config['fused']:
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
+            del opt
+            opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
+            opt = Lookahead(opt)
+            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
-    else:
-        opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
-        opt = Lookahead(opt)
-
     return model,opt
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
@@ -185,6 +188,19 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         loss_func = torch.nn.MSELoss()
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
+
+    """
+    Warm up
+    """
+    print('V')  # Regular ADAM does the job
+    model.turn_on_V()
+    model, opt = opt_reinit(train_config, model, 'V_lr')
+    train_loop(model, dataloader_train, loss_func, opt, train_config, train_config['sub_epoch_V'])
+
+    print('prime')
+    model.turn_on_prime()
+    model, opt = opt_reinit(train_config, model, 'prime_lr')
+    train_loop(model, dataloader_train, loss_func, opt, train_config, train_config['sub_epoch_prime'])
 
     for i in tqdm(range(train_config['epochs']+1)):
 
@@ -248,19 +264,19 @@ class job_object():
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
         for dim,val in self.side_info.items():
-            if val['temporal']:
-                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3', 'periodic'])
+            if self.fp_16:
+                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','periodic'])
             else:
-                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf', 'matern_1', 'matern_2', 'matern_3'])
+                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
             self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-4, 1e-3,1e-2,1e-1]) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1]) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
         for i in self.tensor_architecture.keys():
-            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2])
+            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2,1e-1])
             if self.bayesian:
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 

@@ -22,7 +22,7 @@ if __name__ == '__main__':
         for i in args['temporal_tag']:
             side_info[i]['temporal'] = True
 
-        tensor_architecture = get_tensor_architectures(args['architecture'],shape)
+        tensor_architecture = get_tensor_architectures(args['architecture'],shape,args['R'])
         other_configs={
             'reg_para_a':args['reg_para_a'], #Regularization term! Need to choose wisely
             'reg_para_b': args['reg_para_b'],
