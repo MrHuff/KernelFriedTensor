@@ -73,7 +73,7 @@ class TT_component(torch.nn.Module):
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
-        self.reg_ones = {i + 1: self.lazy_ones(n,cuda) for i,n in enumerate(n_list)}
+        self.reg_ones = {i + 1: self.lazy_ones(n) for i,n in enumerate(n_list)}
         self.TT_core = torch.nn.Parameter(init_scale*(torch.rand(*self.shape_list)),requires_grad=True)
         self.init_scale = init_scale
         self.numel = self.TT_core.numel()
@@ -88,9 +88,9 @@ class TT_component(torch.nn.Module):
             parameters.requires_grad = True
         self.V_mode=True
 
-    def lazy_ones(self,n, cuda):
-        if cuda is not None:
-            o = torch.ones(*(n, 1), requires_grad=False).to(cuda)
+    def lazy_ones(self,n):
+        if self.device is not None:
+            o = torch.ones(*(n, 1), requires_grad=False).to(self.device)
         else:
             o = torch.ones(*(n, 1), requires_grad=False)
         return o
