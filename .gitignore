@@ -16,3 +16,4 @@ scratch.py
 dist
 *build*
 *egg-info*
+*.out
