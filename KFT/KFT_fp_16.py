@@ -254,7 +254,7 @@ class KFT(torch.nn.Module):
             prime_pred,reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            reg_output += torch.mean(reg*reg_prime)**2 #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            reg_output += torch.mean(reg*reg_prime).abs() #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
         return pred_outputs,reg_output*self.lambda_reg
 
     def forward(self,indices):
@@ -628,7 +628,7 @@ class variational_KFT(torch.nn.Module):
             prime_pred,KL_prime = tt_prime(ix)
             pred, KL = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            total_KL += KL + KL_prime
+            total_KL += KL.abs() + KL_prime.abs()
         return pred_outputs,total_KL*self.KL_weight
 
     def forward(self, indices):

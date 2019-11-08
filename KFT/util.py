@@ -40,7 +40,7 @@ def str2bool(v):
 def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--PATH', type=str, nargs='?')
-    parser.add_argument('--R', type=int, nargs='?', default=10, help='R')
+    parser.add_argument('--max_R', type=int, nargs='?', default=10, help='max_R')
     parser.add_argument('--reg_para_a', type=float, nargs='?', default=0., help='reg_para_a')
     parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
     parser.add_argument('--batch_size_a', type=float, nargs='?', default=0., help='batch_size_a')
