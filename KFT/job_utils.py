@@ -145,7 +145,6 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
-        print(X.device)
         y_pred, reg = model(X)
         pred_loss = loss_func(y_pred, y)
         total_loss = pred_loss + reg

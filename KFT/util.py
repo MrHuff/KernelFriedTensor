@@ -81,6 +81,7 @@ def print_model_parameters(model):
         print(n)
         print(p.shape)
         print(p.requires_grad)
+        print(p.device)
 
 def get_int_dates(x):
     y = x.split('-')
