@@ -411,6 +411,6 @@ class job_object():
                     verbose=1)
         print(space_eval(self.hyperparameter_space, best))
         pickle.dump(self.trials,
-                    open(self.save_path + self.name + '.p',
+                    open(self.save_path +'/'+ self.name + '.p',
                          "wb"))
 
