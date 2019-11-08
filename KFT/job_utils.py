@@ -329,6 +329,7 @@ class job_object():
             else:
                 model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config)
         print_model_parameters(model)
+        print(model)
         dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
         dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
         dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
