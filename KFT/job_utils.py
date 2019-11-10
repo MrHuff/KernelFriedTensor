@@ -18,6 +18,8 @@ def run_job_func(args):
     with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
         warnings.simplefilter("ignore")
         gpu = get_free_gpu(8)
+        gpu_choice = gpu[0]
+        torch.cuda.set_device(int(gpu_choice))
         PATH = args['PATH']
         if not os.path.exists(PATH + 'all_data.pt'):
             process_old_setup(PATH, tensor_name=args['tensor_name'])
@@ -27,7 +29,7 @@ def run_job_func(args):
         shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
         for i in args['temporal_tag']:
             side_info[i]['temporal'] = True
-        print(f'USING GPU:{gpu[0]}')
+        print(f'USING GPU:{gpu_choice}')
         other_configs = {
             'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
             'reg_para_b': args['reg_para_b'],
@@ -42,7 +44,7 @@ def run_job_func(args):
             'bayesian': args['bayesian'],  # Mean field does not converge to something meaningful?!
             'data_path': PATH + 'all_data.pt',
             'cuda': args['cuda'],
-            'device': f'cuda:{gpu[0]}',
+            'device': f'cuda:{gpu_choice}',
             'train_loss_interval_print': args['sub_epoch_V'] // 10,
             'sub_epoch_V': args['sub_epoch_V'],
             'sub_epoch_ls': args['sub_epoch_ls'],
@@ -194,7 +196,7 @@ def opt_reinit(train_config,model,lr_param):
         if train_config['fused']:
             del opt
             opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
-            opt = Lookahead(opt)
+            # opt = Lookahead(opt)
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
