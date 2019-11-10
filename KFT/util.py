@@ -9,11 +9,16 @@ import argparse
 from io import BytesIO
 import subprocess
 
-def core_data_extract(df,indices_list):
+def core_data_extract(df,indices_list,target_name):
+    tensor_shape = df.nunique()[indices_list].tolist()
     df = df.set_index(
         indices_list
     ).sort_index(level=[i for i in range(len(indices_list))])
-    index_list = [df.index.labels[i] for i in range(3)]
+    X = [df.index.codes[i] for i in range(len(indices_list))]
+    y = df[target_name].values
+    X = torch.tensor(X).int().t()
+    y = torch.tensor(y).float()
+    return X,y,tensor_shape
 
 def get_free_gpu(n=3):
     gpu_stats = subprocess.check_output(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
