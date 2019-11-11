@@ -187,7 +187,6 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val, key)
                 else:
-                    # print(torch.isnan(val).any())
                     T = lazy_mode_product(T, val.t(), key)
                     T = lazy_mode_product(T, val, key)
         if self.full_grad:
@@ -254,7 +253,7 @@ class KFT(torch.nn.Module):
             prime_pred,reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            reg_output += torch.mean(reg*reg_prime).abs() #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            reg_output += torch.sqrt(torch.mean(reg*reg_prime)**2) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
         return pred_outputs,reg_output*self.lambda_reg
 
     def forward(self,indices):

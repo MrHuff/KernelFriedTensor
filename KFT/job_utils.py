@@ -139,7 +139,7 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
     print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
-def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
+def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
     ERROR = False
     train_config['reset'] = 1e-2
     for p in range(sub_epoch+1):
@@ -157,8 +157,10 @@ def train_loop(model, dataloader, loss_func, opt, train_config,sub_epoch):
         else:
             total_loss.backward()
         opt.step()
+        lrs.step(total_loss)
         with torch.no_grad():
             if torch.isnan(y_pred).any() or torch.isinf(y_pred).any() or torch.isnan(reg) or torch.isinf(reg):
+                print('FOUND INF/NAN RIP, RESTARTING')
                 ERROR = True
             if p%train_config['train_loss_interval_print']==0:
                 if train_config['bayesian']:
@@ -191,7 +193,7 @@ def reinit_model(para,scale):
 def opt_reinit(train_config,model,lr_param):
     model = model.float()
     opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
-    opt = Lookahead(opt)
+    # opt = Lookahead(opt)
     if train_config['fp_16']:
         if train_config['fused']:
             del opt
@@ -200,7 +202,8 @@ def opt_reinit(train_config,model,lr_param):
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
-    return model,opt
+    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.1)
+    return model,opt,lrs
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
 
@@ -214,47 +217,46 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     """
     print('V')  # Regular ADAM does the job
     model.turn_on_V()
-    model, opt = opt_reinit(train_config, model, 'V_lr')
-    ERROR = train_loop(model, dataloader_train, loss_func, opt, train_config, train_config['sub_epoch_V'])
+    model, opt,lrs = opt_reinit(train_config, model, 'V_lr')
+    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'])
     if ERROR:
-        return np.inf,np.inf,np.inf
+        return -np.inf, -np.inf, -np.inf
     print('prime')
     model.turn_on_prime()
-    model, opt = opt_reinit(train_config, model, 'prime_lr')
-    ERROR = train_loop(model, dataloader_train, loss_func, opt, train_config, train_config['sub_epoch_prime'])
+    model, opt,lrs = opt_reinit(train_config, model, 'prime_lr')
+    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_prime'])
     if ERROR:
-        return np.inf, np.inf, np.inf
+        return -np.inf, -np.inf, -np.inf
 
     for i in tqdm(range(train_config['epochs']+1)):
 
         print('ls')
         model.turn_on_kernel_mode()
-        model,opt = opt_reinit(train_config,model,'ls_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_ls'])
+        model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
+        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'])
         if ERROR:
-            return np.inf, np.inf, np.inf
+            return -np.inf, -np.inf, -np.inf
 
         print('V') #Regular ADAM does the job
         model.turn_on_V()
-        model,opt = opt_reinit(train_config,model,'V_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_V'])
+        model,opt,lrs = opt_reinit(train_config,model,'V_lr')
+        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_V'])
         if ERROR:
-            return np.inf, np.inf, np.inf
-
-        calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
+            return -np.inf, -np.inf, -np.inf
 
         print('prime')
         model.turn_on_prime()
-        model,opt = opt_reinit(train_config,model,'prime_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt, train_config,train_config['sub_epoch_prime'])
+        model,opt,lrs = opt_reinit(train_config,model,'prime_lr')
+        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_prime'])
         if ERROR:
-            return np.inf, np.inf, np.inf
+            return -np.inf, -np.inf, -np.inf
+        l = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
+        print(l)
 
-    val_loss = calculate_loss_no_grad(model, dataloader_val, loss_func,train_config=train_config, loss_type='val', index=0)
-    val_loss_final = val_loss
+    val_loss_final = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=0)
     test_loss_final = calculate_loss_no_grad(model,dataloader_test,loss_func,train_config=train_config,loss_type='test',index=0)
 
-    return val_loss_final,test_loss_final,model
+    return val_loss_final,test_loss_final
 
 class job_object():
     def __init__(self, side_info_dict, configs, seed):
@@ -297,7 +299,10 @@ class job_object():
         t_act = get_tensor_architectures(self.architecture,self.shape,2)
         for dim,val in self.side_info.items():
             if self.fp_16:
-                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','periodic'])
+                if val['temporal']:
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','periodic'])
+                else:
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
             else:
                 self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
@@ -315,7 +320,6 @@ class job_object():
 
     def __call__(self, parameters):
         #TODO do tr
-        # try:
         self.tensor_architecture = get_tensor_architectures(self.architecture,self.shape,parameters['R'])
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
@@ -341,7 +345,7 @@ class job_object():
         #     val_loss_final = np.inf
         #     test_loss_final = np.inf
         ref_met = 'R2' if self.task == 'reg' else 'auc'
-        return {'loss': val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': test_loss_final}
+        return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
 
     def get_kernel_vals(self,desc):
         if 'matern_1'== desc:
