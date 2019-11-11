@@ -274,7 +274,8 @@ class job_object():
         self.fused = configs['fused']
         self.hyperits = configs['hyperits']
         self.save_path = configs['save_path']
-        self.name = f'bayesian_{seed}' if configs['bayesian'] else f'frequentist_{seed}'
+        self.architecture = configs['architecture']
+        self.name = f'bayesian_{seed}' if configs['bayesian'] else f'frequentist_{seed}_architecture_{self.architecture}'
         self.task = configs['task']
         self.epochs = configs['epochs']
         self.bayesian = configs['bayesian']
@@ -286,7 +287,6 @@ class job_object():
         self.sub_epoch_prime = configs['sub_epoch_prime']
         self.sub_epoch_ls = configs['sub_epoch_ls']
         self.config = configs['config']
-        self.architecture = configs['architecture']
         self.shape = configs['shape']
         self.max_R = configs['max_R']
         self.seed = seed

@@ -8,7 +8,13 @@ import pickle
 import argparse
 from io import BytesIO
 import subprocess
+from sklearn.preprocessing import StandardScaler
 
+def generate_timestamp_side_info(sorted_timestamp_data):
+    t = np.unique(sorted_timestamp_data)
+    scaler_location = StandardScaler()
+    t = scaler_location.fit_transform(t.reshape(-1, 1))
+    return torch.from_numpy(t).float()
 def core_data_extract(df,indices_list,target_name):
     tensor_shape = df.nunique()[indices_list].tolist()
     df = df.set_index(
