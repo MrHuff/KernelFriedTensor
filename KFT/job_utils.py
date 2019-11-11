@@ -188,7 +188,7 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
     return ERROR
 
 def reinit_model(para,scale):
-    torch.nn.init.uniform_(para,0,scale*2)
+    torch.nn.init.uniform_(para,0,scale)
 
 def opt_reinit(train_config,model,lr_param):
     model = model.float()
@@ -220,13 +220,13 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     model, opt,lrs = opt_reinit(train_config, model, 'V_lr')
     ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'])
     if ERROR:
-        return -np.inf, -np.inf, -np.inf
+        return -np.inf, -np.inf
     print('prime')
     model.turn_on_prime()
     model, opt,lrs = opt_reinit(train_config, model, 'prime_lr')
     ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_prime'])
     if ERROR:
-        return -np.inf, -np.inf, -np.inf
+        return -np.inf, -np.inf
 
     for i in tqdm(range(train_config['epochs']+1)):
 
@@ -235,21 +235,21 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
         ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'])
         if ERROR:
-            return -np.inf, -np.inf, -np.inf
+            return -np.inf, -np.inf
 
         print('V') #Regular ADAM does the job
         model.turn_on_V()
         model,opt,lrs = opt_reinit(train_config,model,'V_lr')
         ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_V'])
         if ERROR:
-            return -np.inf, -np.inf, -np.inf
+            return -np.inf, -np.inf
 
         print('prime')
         model.turn_on_prime()
         model,opt,lrs = opt_reinit(train_config,model,'prime_lr')
         ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_prime'])
         if ERROR:
-            return -np.inf, -np.inf, -np.inf
+            return -np.inf, -np.inf
         l = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
         print(l)
 
