@@ -74,7 +74,7 @@ class TT_component(torch.nn.Module):
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         self.reg_ones = {i + 1: self.lazy_ones(n) for i,n in enumerate(n_list)}
-        self.TT_core = torch.nn.Parameter(init_scale*(torch.rand(*self.shape_list)),requires_grad=True)
+        self.TT_core = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list),requires_grad=True)
         self.init_scale = init_scale
         self.numel = self.TT_core.numel()
 
@@ -113,6 +113,7 @@ class TT_component(torch.nn.Module):
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale)
+
         for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
             self.assign_kernel(key,value,kernel_para_dict)
 
@@ -504,9 +505,6 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 T = lazy_mode_product(T,cov,key)
         log_term = log_term_1 - log_term_2
         middle_term = torch.mean(T*self.TT_core)
-        # print(log_term) #!!!!!
-        # print(middle_term)
-        # print(tr_term)
 
         return tr_term + middle_term + log_term
 

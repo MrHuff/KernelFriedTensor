@@ -218,7 +218,7 @@ def load_side_info(side_info_path,indices):
 
 class tensor_dataset(Dataset):
     def __init__(self, tensor_path,seed,mode,bs_ratio=1.):
-
+        self.ratio = bs_ratio
         self.indices,self.Y = torch.load(tensor_path)
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.indices.numpy(),
                                                                                 self.Y.numpy(),
@@ -234,18 +234,23 @@ class tensor_dataset(Dataset):
             self.Y = torch.from_numpy(self.Y_train)
             self.bs = int(round(self.X.shape[0]*bs_ratio))
         elif mode=='val':
+            self.ratio=1.
             self.X = torch.from_numpy(self.X_val)
             self.Y = torch.from_numpy(self.Y_val)
             self.bs = int(round(self.X.shape[0]))
         elif mode=='test':
+            self.ratio=1.
             self.X = torch.from_numpy(self.X_test)
             self.Y = torch.from_numpy(self.Y_test)
             self.bs = int(round(self.X.shape[0]))
 
     def get_batch(self):
-        batch_msk = np.random.choice(self.X.shape[0],self.bs,
-                                     replace=False)
-        return self.X[batch_msk, :], self.Y[batch_msk]
+        if self.ratio==1.:
+            return self.X,self.Y
+        else:
+            batch_msk = np.random.choice(self.X.shape[0],self.bs,
+                                         replace=False)
+            return self.X[batch_msk, :], self.Y[batch_msk]
 
     def __len__(self):
         return self.X.shape[0]

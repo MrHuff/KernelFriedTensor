@@ -141,7 +141,6 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
 
 def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
     ERROR = False
-    train_config['reset'] = 1e-2
     for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
         if train_config['cuda']:
@@ -180,7 +179,7 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
                         print('dead model_reinit')
                         for p in model.parameters():
                             reinit_model(p, train_config['reset'])
-                        train_config['reset'] = train_config['reset']*2
+                        train_config['reset'] = train_config['reset']*2.
                     print(f'reg_term it {p}: {reg.data}')
                     print(f'train_loss it {p}: {pred_loss.data}')
         if ERROR:
@@ -188,17 +187,17 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
     return ERROR
 
 def reinit_model(para,scale):
-    torch.nn.init.uniform_(para,0,scale)
+    torch.nn.init.uniform_(para,a=0.,b=scale)
 
 def opt_reinit(train_config,model,lr_param):
     model = model.float()
     opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
-    # opt = Lookahead(opt)
+    opt = Lookahead(opt)
     if train_config['fp_16']:
         if train_config['fused']:
             del opt
             opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
-            # opt = Lookahead(opt)
+            opt = Lookahead(opt)
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
@@ -211,7 +210,7 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         loss_func = torch.nn.MSELoss()
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
-
+    train_config['reset'] = 1e-2
     """
     Warm up
     """
@@ -314,7 +313,7 @@ class job_object():
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
         for i in t_act.keys():
-            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2,1e-1])
+            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2,1e-1,0.5,1.0])
             if self.bayesian:
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
@@ -343,8 +342,8 @@ class job_object():
             val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
         except Exception as e:
             print(e)
-            val_loss_final = np.inf
-            test_loss_final = np.inf
+            val_loss_final = -np.inf
+            test_loss_final = -np.inf
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
 
