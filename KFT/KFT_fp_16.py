@@ -74,9 +74,9 @@ class TT_component(torch.nn.Module):
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         self.reg_ones = {i + 1: self.lazy_ones(n) for i,n in enumerate(n_list)}
-        self.TT_core = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list),requires_grad=True)
+        self.core_param = torch.nn.Parameter(init_scale * torch.randn(*self.shape_list), requires_grad=True)
         self.init_scale = init_scale
-        self.numel = self.TT_core.numel()
+        self.numel = self.core_param.numel()
 
     def turn_off(self):
         for parameters in self.parameters():
@@ -97,14 +97,14 @@ class TT_component(torch.nn.Module):
 
     def forward(self,indices):
         if self.full_grad:
-            return self.TT_core,self.get_aux_reg_term()
+            return self.core_param, self.get_aux_reg_term()
         else:
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
-            return self.TT_core.permute(self.permutation_list)[indices],self.get_aux_reg_term()
+            return self.core_param.permute(self.permutation_list)[indices], self.get_aux_reg_term()
 
     def get_aux_reg_term(self):
-        T = self.TT_core**2
+        T = self.core_param ** 2
         for mode,ones in self.reg_ones.items():
             T = lazy_mode_product(T, ones.t(), mode)
             T = lazy_mode_product(T, ones, mode)
@@ -179,7 +179,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
 
     def forward(self,indices):
         """Do tensor ops"""
-        T = self.TT_core
+        T = self.core_param
         for key,val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:
@@ -191,11 +191,11 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     T = lazy_mode_product(T, val.t(), key)
                     T = lazy_mode_product(T, val, key)
         if self.full_grad:
-            return T,T*self.TT_core
+            return T,T*self.core_param
         else:
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices], T*self.TT_core  #return both to calculate regularization when doing frequentist
+            return T.permute(self.permutation_list)[indices], T*self.core_param  #return both to calculate regularization when doing frequentist
 
 class KFT(torch.nn.Module):
     def __init__(self,initializaiton_data,lambda_reg=1e-6,cuda=None,config=None): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
@@ -284,25 +284,25 @@ class variational_TT_component(TT_component):
     def forward(self,indices):
 
         if self.full_grad:
-            mean = self.TT_core
+            mean = self.core_param
             sig = self.variance_parameters
             T = mean + sig.exp()*torch.randn_like(mean)
             return T,  self.calculate_KL(mean,sig)
         else:
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
-            mean = self.TT_core.permute(self.permutation_list)[indices]
+            mean = self.core_param.permute(self.permutation_list)[indices]
             sig = self.variance_parameters.permute(self.permutation_list)[indices]
             z = mean + torch.randn_like(mean)*sig.exp()
             return z, self.calculate_KL(mean,sig)
 
     def mean_forward(self,indices):
         if self.full_grad:
-            return self.TT_core
+            return self.core_param
         else:
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
-            return self.TT_core.permute(self.permutation_list)[indices]
+            return self.core_param.permute(self.permutation_list)[indices]
 
 
 class univariate_variational_kernel_TT(TT_kernel_component):
@@ -317,7 +317,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
 
     def forward(self, indices):
         """Do tensor ops"""
-        mean = self.TT_core
+        mean = self.core_param
         sig = self.variance_parameters
         T = mean + self.variance_parameters.exp()*torch.randn_like(mean)
         for key, val in self.n_dict.items():
@@ -341,7 +341,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
 
     def mean_forward(self,indices):
         """Do tensor ops"""
-        T = self.TT_core
+        T = self.core_param
         for key, val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:
@@ -488,7 +488,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
 
     def calculate_KL(self):
         tr_term = 1.
-        T = self.TT_core
+        T = self.core_param
         log_term_1 = 0
         log_term_2 = 0
         for key in self.n_dict.keys():
@@ -500,11 +500,11 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             if self.RFF_dict[key]:
                 T = lazy_mode_product(T,B.t(),key)
                 T = lazy_mode_product(T,B,key)
-                T = T + D*self.TT_core
+                T = T + D*self.core_param
             else:
                 T = lazy_mode_product(T,cov,key)
         log_term = log_term_1 - log_term_2
-        middle_term = torch.mean(T*self.TT_core)
+        middle_term = torch.mean(T * self.core_param)
 
         return tr_term + middle_term + log_term
 
@@ -514,12 +514,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         return B@B.t()+torch.diagflat(D),D,B
 
     def forward(self, indices):
-        noise = torch.randn_like(self.TT_core)
+        noise = torch.randn_like(self.core_param)
         noise_2 = torch.randn(*self.noise_shape).to(self.device)
         for key, val in self.n_dict.items(): #Sample from multivariate
             noise = lazy_mode_hadamard(noise,getattr(self,f'D_{key}'), key)
             noise_2 = lazy_mode_product(noise_2, getattr(self,f'B_{key}'), key)
-        T = self.TT_core  + noise_2 + noise
+        T = self.core_param + noise_2 + noise
 
         for key, val in self.n_dict.items():
             if val is not None:
@@ -544,7 +544,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
 
     def mean_forward(self,indices):
         """Do tensor ops"""
-        T = self.TT_core
+        T = self.core_param
         for key, val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:

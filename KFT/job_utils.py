@@ -167,9 +167,11 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
                     y_pred= model.mean_forward(X)
                     mean_pred_loss = loss_func(y_pred, y)
                     if (y_pred==0).all() or y_pred.sum()==0:
-                        print('dead model_reinit')
-                        for p in model.parameters():
-                            reinit_model(p,train_config['reset'])
+                        fac=train_config['reset']
+                        print(f'dead model_reinit factor: {fac}')
+                        for n,param in model.named_parameters():
+                            if 'core_param' in n:
+                                param.uniform_(1e-3, train_config['reset'])
                         train_config['reset'] = train_config['reset']*2
 
                     print(f'reg_term it {p}: {reg.data}')
@@ -177,9 +179,11 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
                     print(f'mean_loss it {p}: {mean_pred_loss.data}')
                 else:
                     if (y_pred == 0).all() or y_pred.sum() == 0:
-                        print('dead model_reinit')
-                        for p in model.parameters():
-                            reinit_model(p, train_config['reset'])
+                        fac = train_config['reset']
+                        print(f'dead model_reinit factor: {fac}')
+                        for n,param in model.named_parameters():
+                            if 'core_param' in n:
+                                param.uniform_(1e-3, train_config['reset'])
                         train_config['reset'] = train_config['reset']*2.
                     print(f'reg_term it {p}: {reg.data}')
                     print(f'train_loss it {p}: {pred_loss.data}')
@@ -187,8 +191,8 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
             return ERROR
     return ERROR
 
-def reinit_model(para,scale):
-    torch.nn.init.uniform_(para,a=0.,b=scale)
+# def reinit_model(para,scale):
+#     torch.nn.init.uniform(para,a=0.,b=scale)
 
 def opt_reinit(train_config,model,lr_param):
     model = model.float()
