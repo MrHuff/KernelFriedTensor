@@ -320,30 +320,31 @@ class job_object():
 
     def __call__(self, parameters):
         #TODO do tr
-        self.tensor_architecture = get_tensor_architectures(self.architecture,self.shape,parameters['R'])
-        init_dict = self.construct_init_dict(parameters)
-        train_config = self.extract_training_params(parameters)
-        print(parameters)
-        if self.bayesian:
-            if self.cuda:
-                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
+        try:
+            self.tensor_architecture = get_tensor_architectures(self.architecture,self.shape,parameters['R'])
+            init_dict = self.construct_init_dict(parameters)
+            train_config = self.extract_training_params(parameters)
+            print(parameters)
+            if self.bayesian:
+                if self.cuda:
+                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
+                else:
+                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config)
             else:
-                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config)
-        else:
-            if self.cuda:
-                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
-            else:
-                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config)
-        print_model_parameters(model)
-        print(model)
-        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
-        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
-        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
-        val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
-        # except Exception as e:
-        #     print(e)
-        #     val_loss_final = np.inf
-        #     test_loss_final = np.inf
+                if self.cuda:
+                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
+                else:
+                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config)
+            print_model_parameters(model)
+            print(model)
+            dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
+            dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
+            dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
+            val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
+        except Exception as e:
+            print(e)
+            val_loss_final = np.inf
+            test_loss_final = np.inf
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
 
