@@ -52,7 +52,8 @@ def run_job_func(args):
             'config': {'full_grad': args['full_grad']},
             'shape':shape,
             'architecture': args['architecture'],
-            'max_R': args['max_R']
+            'max_R': args['max_R'],
+            'max_scale':args['max_scale']
         }
         j = job_object(
             side_info_dict=side_info,
@@ -288,6 +289,8 @@ class job_object():
         self.config = configs['config']
         self.shape = configs['shape']
         self.max_R = configs['max_R']
+        self.max_scale = configs['max_scale']
+        self.scale_list = [self.max_scale/10**i  for i in range(5)]
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -313,7 +316,7 @@ class job_object():
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
         for i in t_act.keys():
-            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',[1e-3,1e-2,1e-1,0.5,1.0])
+            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',self.scale_list)
             if self.bayesian:
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
