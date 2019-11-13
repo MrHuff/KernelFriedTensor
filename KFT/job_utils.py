@@ -315,7 +315,7 @@ class job_object():
             self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange(2,self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//5,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
