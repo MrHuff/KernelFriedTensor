@@ -56,7 +56,7 @@ def job_parser():
     parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
     parser.add_argument('--batch_size_a', type=float, nargs='?', default=0., help='batch_size_a')
     parser.add_argument('--batch_size_b', type=float, nargs='?', default=1., help='batch_size_b')
-    parser.add_argument('--max_scale', type=float, nargs='?', default=1., help='max_scale')
+    parser.add_argument('--max_lr', type=float, nargs='?', default=1., help='max_lr')
     parser.add_argument('--fp_16', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--fused', default=False, help='fused',type=str2bool, nargs='?')
     parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')

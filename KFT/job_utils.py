@@ -56,6 +56,7 @@ def run_job_func(args):
             'shape':shape,
             'architecture': args['architecture'],
             'max_R': args['max_R'],
+            'max_lr':args['max_lr']
         }
         j = job_object(
             side_info_dict=side_info,
@@ -285,6 +286,8 @@ class job_object():
         self.config = configs['config']
         self.shape = configs['shape']
         self.max_R = configs['max_R']
+        self.max_lr = configs['max_lr']
+        self.lrs = [self.max_lr/10**i for i in range(3)]
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -310,9 +313,9 @@ class job_object():
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
-        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-2,5e-2] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-2,5e-2] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', self.lrs ) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
