@@ -311,8 +311,8 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-2,5e-2] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-2,5e-2] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
