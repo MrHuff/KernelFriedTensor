@@ -2,8 +2,11 @@ import torch
 from KFT.KFT_fp_16 import KFT, variational_KFT
 from tqdm import tqdm
 from torch.nn.modules.loss import _Loss
-from apex import amp
-import apex
+try:
+    from apex import amp
+    import apex
+except Exception as e:
+    print('No apex installation found')
 import pickle
 import os
 import warnings
@@ -12,7 +15,7 @@ from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,p
 from sklearn import metrics
 from KFT.lookahead_opt import Lookahead
 import numpy as np
-
+import timeit
 def run_job_func(args):
     print(args)
     with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
@@ -45,7 +48,7 @@ def run_job_func(args):
             'data_path': PATH + 'all_data.pt',
             'cuda': args['cuda'],
             'device': f'cuda:{gpu_choice}',
-            'train_loss_interval_print': args['sub_epoch_V'] // 10,
+            'train_loss_interval_print': args['sub_epoch_V'] // 2,
             'sub_epoch_V': args['sub_epoch_V'],
             'sub_epoch_ls': args['sub_epoch_ls'],
             'sub_epoch_prime': args['sub_epoch_prime'],
@@ -127,19 +130,18 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
         loss_list.append(loss)
         y_s.append(y)
         _y_preds.append(y_pred)
-
-    total_loss = torch.tensor(loss_list).mean().data
-    Y = torch.cat(y_s)
-    y_preds = torch.cat(_y_preds)
-    if task=='reg':
-        var_Y = Y.var()
-        ref_metric = 1.-total_loss/var_Y
-    else:
-        ref_metric = auc_check(y_preds,Y)
-    print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
+        total_loss = torch.tensor(loss_list).mean().data
+        Y = torch.cat(y_s)
+        y_preds = torch.cat(_y_preds)
+        if task=='reg':
+            var_Y = Y.var()
+            ref_metric = 1.-total_loss/var_Y
+        else:
+            ref_metric = auc_check(y_preds,Y)
+        # print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
-def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
+def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,dataloader_val):
     ERROR = False
     for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
@@ -156,38 +158,39 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
         else:
             total_loss.backward()
         opt.step()
-        lrs.step(total_loss)
+        l = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=p)
+        lrs.step(-l)
         with torch.no_grad():
             if torch.isnan(total_loss) or torch.isinf(total_loss):
                 print('FOUND INF/NAN RIP, RESTARTING')
                 print(reg)
                 print(pred_loss)
                 ERROR = True
-            if p%train_config['train_loss_interval_print']==0:
-                if train_config['bayesian']:
-                    y_pred= model.mean_forward(X)
-                    mean_pred_loss = loss_func(y_pred, y)
-                    if (y_pred==0).all() or y_pred.sum()==0:
-                        fac=train_config['reset']
-                        print(f'dead model_reinit factor: {fac}')
-                        for n,param in model.named_parameters():
-                            if 'core_param' in n:
-                                param.normal_(0, train_config['reset'])
-                        train_config['reset'] = train_config['reset']*1.1
+            if train_config['bayesian']:
+                y_pred= model.mean_forward(X)
+                mean_pred_loss = loss_func(y_pred, y)
+                if (y_pred==0).all():
+                    fac=train_config['reset']
+                    print(f'dead model_reinit factor: {fac}')
+                    for n,param in model.named_parameters():
+                        if 'core_param' in n:
+                            param.normal_(0, train_config['reset'])
+                    train_config['reset'] = train_config['reset']*1.1
+            else:
+                if (y_pred == 0).all():
+                    fac = train_config['reset']
+                    print(f'dead model_reinit factor: {fac}')
+                    for n,param in model.named_parameters():
+                        if 'core_param' in n:
+                            param.normal_(0, train_config['reset'])
+                    train_config['reset'] = train_config['reset']*1.1
 
-                    print(f'reg_term it {p}: {reg.data}')
-                    print(f'train_loss it {p}: {pred_loss.data}')
+            if p%train_config['train_loss_interval_print']==0:
+                print(f'reg_term it {p}: {reg.data}')
+                print(f'train_loss it {p}: {pred_loss.data}')
+                print(f'val error it {p}: {l}')
+                if train_config['bayesian']:
                     print(f'mean_loss it {p}: {mean_pred_loss.data}')
-                else:
-                    if (y_pred == 0).all() or y_pred.sum() == 0:
-                        fac = train_config['reset']
-                        print(f'dead model_reinit factor: {fac}')
-                        for n,param in model.named_parameters():
-                            if 'core_param' in n:
-                                param.normal_(0, train_config['reset'])
-                        train_config['reset'] = train_config['reset']*1.1
-                    print(f'reg_term it {p}: {reg.data}')
-                    print(f'train_loss it {p}: {pred_loss.data}')
         if ERROR:
             return ERROR
     return ERROR
@@ -203,7 +206,7 @@ def opt_reinit(train_config,model,lr_param,warmup=False):
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,enabled=not warmup)
         else:
             [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,enabled=not warmup)
-    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.1)
+    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.5)
     return model,opt,lrs
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
@@ -219,7 +222,7 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     print('V')  # Regular ADAM does the job
     model.turn_on_V()
     model, opt,lrs = opt_reinit(train_config, model, 'V_lr',warmup=True)
-    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'])
+    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'],dataloader_val)
     if ERROR:
         return -np.inf, -np.inf
 
@@ -228,29 +231,27 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         print('ls')
         model.turn_on_kernel_mode()
         model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'])
+        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'],dataloader_val)
         if ERROR:
             return -np.inf, -np.inf
 
         print('V') #Regular ADAM does the job
         model.turn_on_V()
         model,opt,lrs = opt_reinit(train_config,model,'V_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_V'])
+        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_V'],dataloader_val)
         if ERROR:
             return -np.inf, -np.inf
 
         print('prime')
         model.turn_on_prime()
         model,opt,lrs = opt_reinit(train_config,model,'prime_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_prime'])
+        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_prime'],dataloader_val)
         if ERROR:
             return -np.inf, -np.inf
-        l = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=i)
-        print(l)
 
     val_loss_final = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=0)
     test_loss_final = calculate_loss_no_grad(model,dataloader_test,loss_func,train_config=train_config,loss_type='test',index=0)
-
+    print(val_loss_final,test_loss_final)
     return val_loss_final,test_loss_final
 
 class job_object():
@@ -308,10 +309,10 @@ class job_object():
             self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//5,self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
-        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
+        self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
