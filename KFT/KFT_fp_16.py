@@ -66,6 +66,7 @@ class RFF(torch.nn.Module):
 class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0):
         super(TT_component, self).__init__()
+        self.n_list = n_list
         self.V_mode = True
         self.device = cuda
         self.full_grad = config['full_grad']
@@ -73,10 +74,11 @@ class TT_component(torch.nn.Module):
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
-        self.reg_ones = {i + 1: self.lazy_ones(n) for i,n in enumerate(n_list)}
         self.core_param = torch.nn.Parameter(init_scale * torch.randn(*self.shape_list), requires_grad=True)
         self.init_scale = init_scale
         self.numel = self.core_param.numel()
+        for i, n in enumerate(n_list):
+            self.register_buffer(f'reg_ones_{i}',torch.ones((n,1)))
 
     def turn_off(self):
         for parameters in self.parameters():
@@ -88,13 +90,6 @@ class TT_component(torch.nn.Module):
             parameters.requires_grad = True
         self.V_mode=True
 
-    def lazy_ones(self,n):
-        if self.device is not None:
-            o = torch.ones(*(n, 1), requires_grad=False).to(self.device)
-        else:
-            o = torch.ones(*(n, 1), requires_grad=False)
-        return o
-
     def forward(self,indices):
         if self.full_grad:
             return self.core_param, self.get_aux_reg_term()
@@ -104,10 +99,11 @@ class TT_component(torch.nn.Module):
             return self.core_param.permute(self.permutation_list)[indices], self.get_aux_reg_term()
 
     def get_aux_reg_term(self):
-        T = self.core_param ** 2
-        for mode,ones in self.reg_ones.items():
-            T = lazy_mode_product(T, ones.t(), mode)
-            T = lazy_mode_product(T, ones, mode)
+        T = (self.core_param ** 2)/self.numel
+        for mode,ones in enumerate(self.n_list):
+            ones = getattr(self,f'reg_ones_{mode}')
+            T = lazy_mode_product(T, ones.t(), mode+1)
+            T = lazy_mode_product(T, ones, mode+1)
         return T
 
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
@@ -254,7 +250,8 @@ class KFT(torch.nn.Module):
             prime_pred,reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            reg_output += torch.sqrt(torch.mean(reg*reg_prime)**2) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            reg_output += torch.sqrt(torch.sum(reg*reg_prime)**2) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+
         return pred_outputs,reg_output*self.lambda_reg
 
     def forward(self,indices):

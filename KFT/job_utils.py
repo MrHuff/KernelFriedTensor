@@ -158,7 +158,7 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
         opt.step()
         lrs.step(total_loss)
         with torch.no_grad():
-            if torch.isnan(y_pred).any() or torch.isinf(y_pred).any() or torch.isnan(reg) or torch.isinf(reg):
+            if torch.isnan(total_loss) or torch.isinf(total_loss):
                 print('FOUND INF/NAN RIP, RESTARTING')
                 print(reg)
                 print(pred_loss)
