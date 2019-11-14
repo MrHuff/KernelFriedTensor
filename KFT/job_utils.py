@@ -299,7 +299,11 @@ class job_object():
                 else:
                     self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
             else:
-                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
+                if val['temporal']:
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
+                else:
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
+
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
             self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
