@@ -53,7 +53,6 @@ def run_job_func(args):
             'shape':shape,
             'architecture': args['architecture'],
             'max_R': args['max_R'],
-            'max_scale':args['max_scale']
         }
         j = job_object(
             side_info_dict=side_info,
@@ -140,7 +139,7 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
     print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
-def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,warmup=False):
+def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
     ERROR = False
     for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
@@ -173,8 +172,8 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,war
                         print(f'dead model_reinit factor: {fac}')
                         for n,param in model.named_parameters():
                             if 'core_param' in n:
-                                param.uniform_(1e-3, train_config['reset'])
-                        train_config['reset'] = train_config['reset']*2
+                                param.normal_(0, train_config['reset'])
+                        train_config['reset'] = train_config['reset']*1.1
 
                     print(f'reg_term it {p}: {reg.data}')
                     print(f'train_loss it {p}: {pred_loss.data}')
@@ -185,8 +184,8 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,war
                         print(f'dead model_reinit factor: {fac}')
                         for n,param in model.named_parameters():
                             if 'core_param' in n:
-                                param.uniform_(1e-3, train_config['reset'])
-                        train_config['reset'] = train_config['reset']*2.
+                                param.normal_(0, train_config['reset'])
+                        train_config['reset'] = train_config['reset']*1.1
                     print(f'reg_term it {p}: {reg.data}')
                     print(f'train_loss it {p}: {pred_loss.data}')
         if ERROR:
@@ -213,20 +212,14 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         loss_func = torch.nn.MSELoss()
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
-    train_config['reset'] = 1e-2
+    train_config['reset'] = 1.0
     """
     Warm up
     """
     print('V')  # Regular ADAM does the job
     model.turn_on_V()
     model, opt,lrs = opt_reinit(train_config, model, 'V_lr',warmup=True)
-    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'],warmup=True)
-    if ERROR:
-        return -np.inf, -np.inf
-    print('prime')
-    model.turn_on_prime()
-    model, opt,lrs = opt_reinit(train_config, model, 'prime_lr',warmup=True)
-    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_prime'],warmup=True)
+    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'])
     if ERROR:
         return -np.inf, -np.inf
 
@@ -291,8 +284,6 @@ class job_object():
         self.config = configs['config']
         self.shape = configs['shape']
         self.max_R = configs['max_R']
-        self.max_scale = configs['max_scale']
-        self.scale_list = [self.max_scale/10**i  for i in range(1)]
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -317,9 +308,8 @@ class job_object():
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', [1e-3,1e-2]) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-4,1e-3]) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', [1e-3,1e-2,1e-1] if not self.bayesian else [1e-3, 1e-2]) #Very important for convergence
-        for i in t_act.keys():
-            self.hyperparameter_space[f'init_scale_{i}'] = hp.choice(f'init_scale_{i}',self.scale_list)
-            if self.bayesian:
+        if self.bayesian:
+            for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def __call__(self, parameters):
@@ -389,7 +379,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = parameters[f'init_scale_{key}']
+            component_init['init_scale'] = 1.0
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict
