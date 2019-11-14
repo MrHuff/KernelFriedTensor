@@ -1,7 +1,10 @@
 from pykeops.torch import KernelSolve
 from KFT.job_utils import run_job_func
 import warnings
+from KFT.KFT_fp_16 import edge_mode_product
 import torch
+from tensorly.tenalg import multi_mode_dot,mode_dot
+
 def fxn():
     warnings.warn("deprecated", DeprecationWarning)
 
@@ -19,6 +22,18 @@ def Kinv_keops(x, b, gamma, alpha):
     return res
 
 if __name__ == '__main__':
-    a = torch.tensor(66000).half().cuda()
-    b = torch.tensor(66000).half().cuda()
-    print(a+b)
+    X = torch.randn(*(5,5,5))
+    b = torch.randn(*(10,5))
+    d = b.t().unsqueeze(-1)
+    print(d.shape)
+    res = mode_dot(X,b,mode=2)
+    print(res)
+    print(res.shape)
+    res_2 = edge_mode_product(X,d,2,0).squeeze()
+    print(res_2)
+    print(res_2.shape)
+    print(res_2==res)
+
+    # a = torch.tensor(66000).half().cuda()
+    # b = torch.tensor(66000).half().cuda()
+    # print(a+b)

@@ -140,7 +140,7 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
     print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
-def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
+def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,warmup=False):
     ERROR = False
     for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
@@ -161,6 +161,8 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
         with torch.no_grad():
             if torch.isnan(y_pred).any() or torch.isinf(y_pred).any() or torch.isnan(reg) or torch.isinf(reg):
                 print('FOUND INF/NAN RIP, RESTARTING')
+                print(reg)
+                print(pred_loss)
                 ERROR = True
             if p%train_config['train_loss_interval_print']==0:
                 if train_config['bayesian']:
@@ -191,11 +193,7 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch):
             return ERROR
     return ERROR
 
-# def reinit_model(para,scale):
-#     torch.nn.init.uniform(para,a=0.,b=scale)
-
-def opt_reinit(train_config,model,lr_param):
-    model = model.float()
+def opt_reinit(train_config,model,lr_param,warmup=False):
     opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
     opt = Lookahead(opt)
     if train_config['fp_16']:
@@ -203,9 +201,9 @@ def opt_reinit(train_config,model,lr_param):
             del opt
             opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
             opt = Lookahead(opt)
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,)
+            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,enabled=not warmup)
         else:
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
+            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,enabled=not warmup)
     lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.1)
     return model,opt,lrs
 
@@ -221,14 +219,14 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     """
     print('V')  # Regular ADAM does the job
     model.turn_on_V()
-    model, opt,lrs = opt_reinit(train_config, model, 'V_lr')
-    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'])
+    model, opt,lrs = opt_reinit(train_config, model, 'V_lr',warmup=True)
+    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_V'],warmup=True)
     if ERROR:
         return -np.inf, -np.inf
     print('prime')
     model.turn_on_prime()
-    model, opt,lrs = opt_reinit(train_config, model, 'prime_lr')
-    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_prime'])
+    model, opt,lrs = opt_reinit(train_config, model, 'prime_lr',warmup=True)
+    ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config, train_config['sub_epoch_prime'],warmup=True)
     if ERROR:
         return -np.inf, -np.inf
 
@@ -294,7 +292,7 @@ class job_object():
         self.shape = configs['shape']
         self.max_R = configs['max_R']
         self.max_scale = configs['max_scale']
-        self.scale_list = [self.max_scale/10**i  for i in range(5)]
+        self.scale_list = [self.max_scale/10**i  for i in range(1)]
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -347,6 +345,7 @@ class job_object():
             dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
             dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
             val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
+            del model
         except Exception as e:
             print(e)
             val_loss_final = -np.inf
