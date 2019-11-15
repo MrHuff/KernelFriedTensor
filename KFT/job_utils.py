@@ -30,8 +30,16 @@ def run_job_func(args):
 
         side_info = load_side_info(side_info_path=PATH, indices=args['side_info_order'])
         shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
-        for i in args['temporal_tag']:
-            side_info[i]['temporal'] = True
+
+        if args['temporal_tag'] is not None:
+            for i in args['temporal_tag']:
+                side_info[i]['temporal'] = True
+
+        if args['delete_side_info'] is not None:
+            for i in args['delete_side_info']:
+                del side_info[i]
+        for key in side_info.keys():
+            print(key)
         print(f'USING GPU:{gpu_choice}')
         other_configs = {
             'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
@@ -56,7 +64,8 @@ def run_job_func(args):
             'shape':shape,
             'architecture': args['architecture'],
             'max_R': args['max_R'],
-            'max_lr':args['max_lr']
+            'max_lr':args['max_lr'],
+            'old_setup':args['old_setup']
         }
         j = job_object(
             side_info_dict=side_info,
@@ -65,8 +74,9 @@ def run_job_func(args):
         )
         j.run_hyperparam_opt()
 
+#Hypothesis 2: Change to 1.1 cuda 10.0
 
-def get_tensor_architectures(i,shape,R=2):
+def get_tensor_architectures(i,shape,R=2): #Two component tends to overfit?! Really weird!
     TENSOR_ARCHITECTURES = {
         0:{
            0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True},
@@ -81,6 +91,25 @@ def get_tensor_architectures(i,shape,R=2):
             0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True},
             1: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
         },
+        3: {
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
+            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2': 1, 'has_side_info': False},
+        },
+        4: {
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
+            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2':  1, 'has_side_info': True},
+        },
+        5: {
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
+            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False},  # Magnitude of kernel sum
+            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': False},
+        },
+        6: {
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
+            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False},  # Magnitude of kernel sum
+            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
+        },
+
     }
     return TENSOR_ARCHITECTURES[i]
 
@@ -227,29 +256,34 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     if ERROR:
         return -np.inf, -np.inf
 
-    for i in tqdm(range(train_config['epochs']+1)):
-
-        print('ls')
-        model.turn_on_kernel_mode()
-        model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'],dataloader_val)
-        if ERROR:
-            return -np.inf, -np.inf
-
-        print('V') #Regular ADAM does the job
+    for i in range(train_config['epochs']+1):
+        print('V')  # Blows up generalization for some reason?! Blows up validation, everytime it gets the ball, consistently...
         model.turn_on_V()
-        model,opt,lrs = opt_reinit(train_config,model,'V_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_V'],dataloader_val)
+        model, opt, lrs = opt_reinit(train_config, model, 'V_lr')
+        ERROR = train_loop(model, dataloader_train, loss_func, opt, lrs, train_config, train_config['sub_epoch_V'],
+                           dataloader_val)
         if ERROR:
             return -np.inf, -np.inf
 
-        print('prime')
-        model.turn_on_prime()
-        model,opt,lrs = opt_reinit(train_config,model,'prime_lr')
-        ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_prime'],dataloader_val)
-        if ERROR:
-            return -np.inf, -np.inf
+        if model.has_kernel_component():
+            print('ls')
+            model.turn_on_kernel_mode()
+            model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
+            ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'],dataloader_val)
+            if ERROR:
+                return -np.inf, -np.inf
 
+    # for i in range(train_config['epochs']+1):
+        if not train_config['old_setup']: #Prone to overfit...
+            print('prime')  # Blows up validation, everytime it gets the ball at some point...
+            model.turn_on_prime()
+            model, opt, lrs = opt_reinit(train_config, model, 'prime_lr')
+            ERROR = train_loop(model, dataloader_train, loss_func, opt, lrs, train_config, train_config['sub_epoch_prime'],
+                               dataloader_val)
+            if ERROR:
+                return -np.inf, -np.inf
+
+    torch.cuda.empty_cache()
     val_loss_final = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=0)
     test_loss_final = calculate_loss_no_grad(model,dataloader_test,loss_func,train_config=train_config,loss_type='test',index=0)
     print(val_loss_final,test_loss_final)
@@ -287,7 +321,8 @@ class job_object():
         self.shape = configs['shape']
         self.max_R = configs['max_R']
         self.max_lr = configs['max_lr']
-        self.lrs = [self.max_lr/10**i for i in range(3)]
+        self.old_setup = configs['old_setup']
+        self.lrs = [self.max_lr/10**i for i in range(1)]
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -320,23 +355,25 @@ class job_object():
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
+    #Architecture one super weird, overfits completely
     def __call__(self, parameters):
         #TODO do tr
+        # try:
+        self.tensor_architecture = get_tensor_architectures(self.architecture,self.shape,parameters['R'])
+        init_dict = self.construct_init_dict(parameters)
+        train_config = self.extract_training_params(parameters)
+        print(parameters)
         try:
-            self.tensor_architecture = get_tensor_architectures(self.architecture,self.shape,parameters['R'])
-            init_dict = self.construct_init_dict(parameters)
-            train_config = self.extract_training_params(parameters)
-            print(parameters)
             if self.bayesian:
                 if self.cuda:
-                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
+                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
                 else:
-                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config)
+                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
             else:
                 if self.cuda:
-                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config).to(self.device)
+                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
                 else:
-                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config)
+                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
             print_model_parameters(model)
             print(model)
             dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
@@ -408,6 +445,9 @@ class job_object():
         training_params['sub_epoch_prime']=self.sub_epoch_prime
         training_params['sub_epoch_ls']=self.sub_epoch_ls
         training_params['bayesian'] = self.bayesian
+        training_params['old_setup'] = self.old_setup
+        training_params['architecture'] = self.architecture
+
         return training_params
 
     def run_hyperparam_opt(self):
