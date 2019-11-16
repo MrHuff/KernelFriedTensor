@@ -83,12 +83,12 @@ class TT_component(torch.nn.Module):
             self.register_buffer(f'reg_ones_{i}',torch.ones((n,1)))
 
     def turn_off(self):
-        for parameters in self.parameters():
+        for n,parameters in self.named_parameters():
             parameters.requires_grad = False
         self.V_mode=False
 
     def turn_on(self):
-        for parameters in self.parameters():
+        for n,parameters in self.named_parameters():
             parameters.requires_grad = True
         self.V_mode=True
 
@@ -121,7 +121,6 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             self.assign_kernel(key,value,kernel_para_dict,config['deep_kernel'])
 
     def kernel_train_mode_on(self):
-        self.deep_kernel = False
         self.turn_off()
         for key,val in self.n_dict.items():
             if val is not None:
@@ -131,7 +130,6 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     k.raw_period_length.requires_grad = True
 
     def kernel_train_mode_off(self):
-        self.deep_kernel = False
         self.turn_on()
         for key,val in self.n_dict.items():
             if val is not None:
@@ -144,15 +142,16 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     self.n_dict[key] = k(value)
 
     def deep_kernel_mode_on(self):
-        self.deep_kernel = True
+        self.deep_mode = True
 
     def deep_kernel_mode_off(self):
-        self.deep_kernel = False
+        self.deep_mode = False
         with torch.no_grad():
             for key,val in self.n_dict.items():
                 k = getattr(self,f'kernel_{key}')
                 f = getattr(self, f'transformation_{key}')
-                self.n_dict[key] = k(f(val))
+                X,_ = f(val)
+                self.n_dict[key] = k(X)
 
     def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
         base = gpytorch.kernels.Kernel()
@@ -194,6 +193,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         self.register_buffer(f'kernel_data_{key}',value)
         if deep_kernel:
             setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=3,tanh_flag_h=True))
+
     def forward(self,indices):
         """Do tensor ops"""
         T = self.core_param
@@ -203,7 +203,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     X = getattr(self, f'kernel_data_{key}')
                     if self.deep_mode:
                         f = getattr(self,f'transformation_{key}')
-                        X = f(X)
+                        X,_ = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
                     val = tmp_kernel_func(X)
                 if not self.RFF_dict[key]:
@@ -259,6 +259,8 @@ class KFT(torch.nn.Module):
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_on()
 
+
+    #TODO: fix deep kernel by properly activating and turning of parameters
     def turn_on_deep_kernel(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
@@ -274,12 +276,16 @@ class KFT(torch.nn.Module):
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
                 for v in self.TT_cores[str(i)].n_dict.values():
                     if v is not None:
-                        return True
-        return False
+                        if self.TT_cores[str(i)].deep_kernel:
+                            return True,True
+                        else:
+                            return True,False
+        return False,False
 
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__=='TT_kernel_component':
+                self.TT_cores[str(i)].deep_kernel_mode_off()
                 self.TT_cores[str(i)].kernel_train_mode_on()
             else:
                 self.TT_cores[str(i)].turn_off()

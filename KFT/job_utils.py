@@ -247,9 +247,30 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     train_config['reset'] = 1.0
+
+    kernel,deep_kernel = model.has_kernel_component()
     """
     Warm up
     """
+
+
+    if kernel:
+        if deep_kernel:
+            print('deep kernel')
+            model.turn_on_deep_kernel()
+            model, opt, lrs = opt_reinit(train_config, model, 'ls_lr',warmup=True)
+            ERROR = train_loop(model, dataloader_train, loss_func, opt, lrs, train_config, train_config['sub_epoch_ls'],
+                               dataloader_val)
+            if ERROR:
+                return -np.inf, -np.inf
+        print('ls')
+        model.turn_on_kernel_mode()
+        model, opt, lrs = opt_reinit(train_config, model, 'ls_lr',warmup=True)
+        ERROR = train_loop(model, dataloader_train, loss_func, opt, lrs, train_config, train_config['sub_epoch_ls'],
+                           dataloader_val)
+        if ERROR:
+            return -np.inf, -np.inf
+
     print('V')  # Regular ADAM does the job
     model.turn_on_V()
     model, opt,lrs = opt_reinit(train_config, model, 'V_lr',warmup=True)
@@ -266,7 +287,14 @@ def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
         if ERROR:
             return -np.inf, -np.inf
 
-        if model.has_kernel_component():
+        if kernel:
+            if deep_kernel:
+                print('deep kernel')
+                model.turn_on_deep_kernel()
+                model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
+                ERROR = train_loop(model, dataloader_train, loss_func, opt,lrs, train_config,train_config['sub_epoch_ls'],dataloader_val)
+                if ERROR:
+                    return -np.inf, -np.inf
             print('ls')
             model.turn_on_kernel_mode()
             model,opt,lrs = opt_reinit(train_config,model,'ls_lr')
@@ -364,28 +392,28 @@ class job_object():
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
         print(parameters)
-        try:
-            if self.bayesian:
-                if self.cuda:
-                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
-                else:
-                    model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
+        # try:
+        if self.bayesian:
+            if self.cuda:
+                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
             else:
-                if self.cuda:
-                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
-                else:
-                    model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
-            print_model_parameters(model)
-            print(model)
-            dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
-            dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
-            dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
-            val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
-            del model
-        except Exception as e:
-            print(e)
-            val_loss_final = -np.inf
-            test_loss_final = -np.inf
+                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
+        else:
+            if self.cuda:
+                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
+            else:
+                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
+        print_model_parameters(model)
+        print(model)
+        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
+        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
+        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
+        val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
+        del model
+        # except Exception as e:
+        #     print(e)
+        #     val_loss_final = -np.inf
+        #     test_loss_final = -np.inf
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
 
