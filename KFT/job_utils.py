@@ -60,12 +60,13 @@ def run_job_func(args):
             'sub_epoch_V': args['sub_epoch_V'],
             'sub_epoch_ls': args['sub_epoch_ls'],
             'sub_epoch_prime': args['sub_epoch_prime'],
-            'config': {'full_grad': args['full_grad']},
+            'config': {'full_grad': args['full_grad'],'deep_kernel':args['deep_kernel']},
             'shape':shape,
             'architecture': args['architecture'],
             'max_R': args['max_R'],
             'max_lr':args['max_lr'],
-            'old_setup':args['old_setup']
+            'old_setup':args['old_setup'],
+
         }
         j = job_object(
             side_info_dict=side_info,

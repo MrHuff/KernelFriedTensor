@@ -4,6 +4,7 @@ tensorly.set_backend('pytorch')
 import gpytorch
 from tensorly.base import fold,unfold,partial_fold
 from tensorly.tenalg import multi_mode_dot,mode_dot
+from KFT.FLOWS.flows import IAF_no_h
 import math
 PI  = math.pi
 torch.set_printoptions(profile="full")
@@ -114,10 +115,13 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale)
         self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True)
+        self.deep_kernel = config['deep_kernel']
+        self.deep_mode = False
         for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
-            self.assign_kernel(key,value,kernel_para_dict)
+            self.assign_kernel(key,value,kernel_para_dict,config['deep_kernel'])
 
     def kernel_train_mode_on(self):
+        self.deep_kernel = False
         self.turn_off()
         for key,val in self.n_dict.items():
             if val is not None:
@@ -127,6 +131,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     k.raw_period_length.requires_grad = True
 
     def kernel_train_mode_off(self):
+        self.deep_kernel = False
         self.turn_on()
         for key,val in self.n_dict.items():
             if val is not None:
@@ -138,6 +143,17 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     value = getattr(self,f'kernel_data_{key}')
                     self.n_dict[key] = k(value)
 
+    def deep_kernel_mode_on(self):
+        self.deep_kernel = True
+
+    def deep_kernel_mode_off(self):
+        self.deep_kernel = False
+        with torch.no_grad():
+            for key,val in self.n_dict.items():
+                k = getattr(self,f'kernel_{key}')
+                f = getattr(self, f'transformation_{key}')
+                self.n_dict[key] = k(f(val))
+
     def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
         base = gpytorch.kernels.Kernel()
         if X.shape[0] > 5000:
@@ -147,7 +163,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         d = base.covar_dist(X, X)
         return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0).to(self.device)
 
-    def assign_kernel(self,key,value,kernel_dict_input):
+    def assign_kernel(self,key,value,kernel_dict_input,deep_kernel=False):
         kernel_para_dict = kernel_dict_input[key]
         gwidth0 = self.get_median_ls(value,key)
         self.gamma_sq_init = gwidth0 * kernel_para_dict['ls_factor']
@@ -176,15 +192,20 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         tmp_kernel_func = getattr(self,f'kernel_{key}')
         self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
         self.register_buffer(f'kernel_data_{key}',value)
-
+        if deep_kernel:
+            setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=3,tanh_flag_h=True))
     def forward(self,indices):
         """Do tensor ops"""
         T = self.core_param
         for key,val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self,f'transformation_{key}')
+                        X = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
+                    val = tmp_kernel_func(X)
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val, key)
                 else:
@@ -222,6 +243,7 @@ class KFT(torch.nn.Module):
     def turn_on_V(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+                self.TT_cores[str(i)].deep_kernel_mode_off()
                 self.TT_cores[str(i)].kernel_train_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
@@ -230,11 +252,22 @@ class KFT(torch.nn.Module):
     def turn_on_prime(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+                self.TT_cores[str(i)].deep_kernel_mode_off()
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_on()
+
+    def turn_on_deep_kernel(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+                self.TT_cores[str(i)].deep_kernel_mode_on()
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_prime[str(i)].turn_off()
 
     def has_kernel_component(self):
         for i, v in self.ii.items():
@@ -293,7 +326,6 @@ class variational_TT_component(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
         super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup)
         self.variance_parameters = torch.nn.Parameter(-init_scale*torch.ones(*self.shape_list),requires_grad=True)
-
     def calculate_KL(self,mean,sig):
         KL = torch.mean(0.5*(sig.exp()+mean**2-sig-1))
         return KL
