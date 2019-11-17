@@ -83,13 +83,13 @@ class TT_component(torch.nn.Module):
             self.register_buffer(f'reg_ones_{i}',torch.ones((n,1)))
 
     def turn_off(self):
-        for n,parameters in self.named_parameters():
-            parameters.requires_grad = False
+        for p in self.parameters():
+            p.requires_grad = False
         self.V_mode=False
 
     def turn_on(self):
-        for n,parameters in self.named_parameters():
-            parameters.requires_grad = True
+        for p in self.parameters():
+            p.requires_grad = True
         self.V_mode=True
 
     def forward(self,indices):
@@ -128,6 +128,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 k.raw_lengthscale.requires_grad = True
                 if k.__class__.__name__=='PeriodicKernel':
                     k.raw_period_length.requires_grad = True
+        return 0
 
     def kernel_train_mode_off(self):
         self.turn_on()
@@ -139,19 +140,31 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     k.raw_period_length.requires_grad = False
                 with torch.no_grad():
                     value = getattr(self,f'kernel_data_{key}')
-                    self.n_dict[key] = k(value)
+                    self.n_dict[key] = k(value).evaluate()
+        return 0
 
     def deep_kernel_mode_on(self):
         self.deep_mode = True
+        for key in self.n_dict.keys():
+            f = getattr(self, f'transformation_{key}')
+            for p in f.parameters():
+                p.requires_grad = True
+        return 0
 
     def deep_kernel_mode_off(self):
         self.deep_mode = False
-        with torch.no_grad():
-            for key,val in self.n_dict.items():
+        for key in self.n_dict.keys():
+            f = getattr(self, f'transformation_{key}')
+            for p in f.parameters():
+                p.requires_grad = False
+            for key,val in self.n_dict.items(): #Issue is probably here!
                 k = getattr(self,f'kernel_{key}')
                 f = getattr(self, f'transformation_{key}')
-                X,_ = f(val)
-                self.n_dict[key] = k(X)
+                input = getattr(self,f'kernel_data_{key}')
+                with torch.no_grad():
+                    X = f(input)
+                    self.n_dict[key] = k(X).evaluate()
+        return 0
 
     def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
         base = gpytorch.kernels.Kernel()
@@ -160,7 +173,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             idx = torch.randperm(5000)
             X = X[idx, :]
         d = base.covar_dist(X, X)
-        return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0).to(self.device)
+        return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0)
 
     def assign_kernel(self,key,value,kernel_dict_input,deep_kernel=False):
         kernel_para_dict = kernel_dict_input[key]
@@ -168,31 +181,31 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         self.gamma_sq_init = gwidth0 * kernel_para_dict['ls_factor']
         ard_dims = None if not kernel_para_dict['ARD'] else value.shape[1]
         if self.RFF_dict[key]:
-            setattr(self, f'kernel_{key}', RFF(value,lengtscale=self.gamma_sq_init,device=self.device))
-            value = value.to(self.device)
+            setattr(self, f'kernel_{key}', RFF(value,lengtscale=self.gamma_sq_init))
+            # value = value.to(self.device)
         else:
             if kernel_para_dict['kernel_type']=='rbf':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims))
                 getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims), device=self.device),
+                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims)),
                     requires_grad=False)
 
             elif kernel_para_dict['kernel_type']=='matern':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']))
                 getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims), device=self.device),
+                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims)),
                     requires_grad=False)
             elif kernel_para_dict['kernel_type']=='periodic':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel())
                 getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1), device=self.device),
+                    self.gamma_sq_init * torch.ones(*(1, 1)),
                     requires_grad=False)
                 getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(kernel_para_dict['p']*torch.ones(*(1,1)),requires_grad=False)
         tmp_kernel_func = getattr(self,f'kernel_{key}')
-        self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
+        self.n_dict[key] =  tmp_kernel_func(value).evaluate() #.to(self.device)
         self.register_buffer(f'kernel_data_{key}',value)
         if deep_kernel:
-            setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=3,tanh_flag_h=True))
+            setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=2,tanh_flag_h=True,C=10))
 
     def forward(self,indices):
         """Do tensor ops"""
@@ -203,9 +216,9 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     X = getattr(self, f'kernel_data_{key}')
                     if self.deep_mode:
                         f = getattr(self,f'transformation_{key}')
-                        X,_ = f(X)
+                        X = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(X)
+                    val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val, key)
                 else:
@@ -243,33 +256,37 @@ class KFT(torch.nn.Module):
     def turn_on_V(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
-                self.TT_cores[str(i)].deep_kernel_mode_off()
                 self.TT_cores[str(i)].kernel_train_mode_off()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
             self.TT_cores_prime[str(i)].turn_off()
+        return 0
 
     def turn_on_prime(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
-                self.TT_cores[str(i)].deep_kernel_mode_off()
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_on()
-
-
+        return 0
     #TODO: fix deep kernel by properly activating and turning of parameters
     def turn_on_deep_kernel(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
-                self.TT_cores[str(i)].deep_kernel_mode_on()
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_on()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_off()
+        return 0
 
     def has_kernel_component(self):
         for i, v in self.ii.items():
@@ -285,11 +302,13 @@ class KFT(torch.nn.Module):
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__=='TT_kernel_component':
-                self.TT_cores[str(i)].deep_kernel_mode_off()
                 self.TT_cores[str(i)].kernel_train_mode_on()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_off()
+        return 0
 
     def turn_off_kernel_mode(self):
         for i,v in self.ii.items():
@@ -298,6 +317,7 @@ class KFT(torch.nn.Module):
             else:
                 self.TT_cores[str(i)].turn_on()
             self.TT_cores_prime[str(i)].turn_on()
+        return 0
 
     def collect_core_outputs(self,indices):
         pred_outputs = []

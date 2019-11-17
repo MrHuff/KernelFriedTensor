@@ -13,7 +13,7 @@ class IAF_no_h(nn.Module):
         self.tanh_op = nn.Tanh()
         self.flag = tanh_flag_h
         self.s_list = nn.ModuleList(
-            [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU(),nn.Sigmoid()) for i
+            [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU()) for i
              in range(depth)])
         self.m_list = nn.ModuleList(
             [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU()) for i
@@ -25,15 +25,13 @@ class IAF_no_h(nn.Module):
         :param h: An float tensor with shape of [batch_size, h_size]
         :return: An float tensor with shape of [batch_size, z_size] and log det value of the IAF mapping Jacobian
         """
-        log_det = 0
         for i in range(self.depth):
             m = self.m_list[i](z)
             s = self.s_list[i](z)
             z = s * z + (1 - s) * m
-            log_det = log_det - s.log().sum(1)
         if self.flag:
             z = self.tanh_op(z/self.C)*self.C
-        return z, -log_det
+        return z
 
 class IAF(nn.Module):
     def __init__(self, latent_size, h_size,depth,tanh_flag=False,C=100):
@@ -46,7 +44,7 @@ class IAF(nn.Module):
         self.h = Highway(self.h_size, 3, nn.ELU())
         self.C = C
         self.z_size = latent_size
-        self.s_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU(),nn.Sigmoid()) for i in range(depth)])
+        self.s_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU()) for i in range(depth)])
         self.m_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU()) for i in range(depth)])
 
     def forward(self, z, h):
