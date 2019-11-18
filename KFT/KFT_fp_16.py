@@ -82,6 +82,9 @@ class TT_component(torch.nn.Module):
         for i, n in enumerate(n_list):
             self.register_buffer(f'reg_ones_{i}',torch.ones((n,1)))
 
+    def index_select(self,indices,T):
+        return T.permute(self.permutation_list)[indices]
+
     def turn_off(self):
         for p in self.parameters():
             p.requires_grad = False
@@ -232,13 +235,18 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             return T.permute(self.permutation_list)[indices], T*self.core_param  #return both to calculate regularization when doing frequentist
 
 class KFT(torch.nn.Module):
-    def __init__(self,initializaiton_data,lambda_reg=1e-6,cuda=None,config=None,old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT, self).__init__()
+        self.kernel_class_name = ['TT_kernel_component']
+        self.cuda = cuda
+        self.config = config
+        self.old_setup = old_setup
+        self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
         tmp_dict = {}
         tmp_dict_prime = {}
         self.full_grad = config['full_grad']
         self.ii = {}
-        for i,v in initializaiton_data.items():
+        for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
@@ -249,13 +257,12 @@ class KFT(torch.nn.Module):
                                                        kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
-        self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
     def turn_on_V(self):
         for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 if self.TT_cores[str(i)].deep_kernel:
                     self.TT_cores[str(i)].deep_kernel_mode_off()
@@ -266,7 +273,7 @@ class KFT(torch.nn.Module):
 
     def turn_on_prime(self):
         for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
                 if self.TT_cores[str(i)].deep_kernel:
@@ -278,7 +285,7 @@ class KFT(torch.nn.Module):
     #TODO: fix deep kernel by properly activating and turning of parameters
     def turn_on_deep_kernel(self):
         for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
                 if self.TT_cores[str(i)].deep_kernel:
@@ -290,7 +297,7 @@ class KFT(torch.nn.Module):
 
     def has_kernel_component(self):
         for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ == 'TT_kernel_component':
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 for v in self.TT_cores[str(i)].n_dict.values():
                     if v is not None:
                         if self.TT_cores[str(i)].deep_kernel:
@@ -301,7 +308,7 @@ class KFT(torch.nn.Module):
 
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__=='TT_kernel_component':
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
                 if self.TT_cores[str(i)].deep_kernel:
                     self.TT_cores[str(i)].deep_kernel_mode_off()
@@ -312,7 +319,7 @@ class KFT(torch.nn.Module):
 
     def turn_off_kernel_mode(self):
         for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__=='TT_kernel_component':
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
@@ -352,12 +359,12 @@ class variational_TT_component(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
         super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup)
         self.variance_parameters = torch.nn.Parameter(-init_scale*torch.ones(*self.shape_list),requires_grad=True)
+
     def calculate_KL(self,mean,sig):
         KL = torch.mean(0.5*(sig.exp()+mean**2-sig-1))
         return KL
 
-    def forward(self,indices):
-
+    def forward_reparametrization(self,indices):
         if self.full_grad:
             mean = self.core_param
             sig = self.variance_parameters
@@ -379,6 +386,14 @@ class variational_TT_component(TT_component):
                 indices = indices.unbind(1)
             return self.core_param.permute(self.permutation_list)[indices]
 
+    def forward(self,indices):
+        if self.full_grad:
+            KL = self.calculate_KL(self.core_param,self.variance_parameters)
+        else:
+            mean = self.core_param.permute(self.permutation_list)[indices]
+            sig = self.variance_parameters.permute(self.permutation_list)[indices]
+            KL = self.calculate_KL(mean,sig)
+        return self.core_param,self.variance_parameters.exp()**2,KL
 
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
@@ -390,7 +405,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         KL = torch.mean(0.5*(sig.exp()+mean**2-sig-1))
         return KL
 
-    def forward(self, indices):
+    def forward_reparametrization(self, indices):
         """Do tensor ops"""
         mean = self.core_param
         sig = self.variance_parameters
@@ -413,6 +428,31 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[
                        indices],self.calculate_KL(mean,sig)  # return both to calculate regularization when doing freque
+
+    def forward(self,indices):
+        if self.full_grad:
+            KL = self.calculate_KL(self.core_param, self.variance_parameters)
+        else:
+            mean = self.core_param.permute(self.permutation_list)[indices]
+            sig = self.variance_parameters.permute(self.permutation_list)[indices]
+            KL = self.calculate_KL(mean, sig)
+
+        T = self.core_param
+        for key, val in self.n_dict.items():
+            if val is not None:
+                if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self, f'transformation_{key}')
+                        X = f(X)
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(X).evaluate()
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        return T,self.core_param,self.variance_parameters.exp()**2,KL
 
     def mean_forward(self,indices):
         """Do tensor ops"""
@@ -439,6 +479,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
         super(multivariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                  kernel_para_dict, cuda, config, init_scale)
+        self.register_buffer('ones',torch.ones_like(self.core_param))
         self.noise_shape = [r_1]
         for key,val in  self.n_dict.items():
             self.set_variational_parameters(key,val)
@@ -588,7 +629,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         B = getattr(self,f'B_{key}')
         return B@B.t()+torch.diagflat(D),D,B
 
-    def forward(self, indices):
+    def forward_reparametrization(self, indices):
         noise = torch.randn_like(self.core_param)
         noise_2 = torch.randn(*self.noise_shape).to(self.device)
         for key, val in self.n_dict.items(): #Sample from multivariate
@@ -599,9 +640,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key, val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self, f'transformation_{key}')
+                        X = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
-                    self.n_dict[key] = val
+                    val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val, key)
                 else:
@@ -616,6 +660,53 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             if len(indices.shape) > 1:
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices], KL
+
+    def apply_kernels(self,T):
+        for key, val in self.n_dict.items():
+            if val is not None:
+                if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self, f'transformation_{key}')
+                        X = f(X)
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(X).evaluate()
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        return T
+
+    def forward(self,indices):
+        diag = self.ones
+        covariance = self.ones
+        for key, val in self.n_dict.items(): #Sample from multivariate
+            B = getattr(self,f'B_{key}')
+            diag = lazy_mode_hadamard(diag,getattr(self,f'D_{key}'), key)
+            covariance = lazy_mode_product(covariance,B, key)
+            covariance = lazy_mode_product(covariance,B.t(),key)
+
+        sigma_tensor = diag + covariance
+        T = self.core_param
+        for key, val in self.n_dict.items():
+            if val is not None:
+                if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self, f'transformation_{key}')
+                        X = f(X)
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(X).evaluate()
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        if not self.V_mode:
+            self.recalculate_priors()
+        KL = self.calculate_KL()
+        return T, self.core_param, sigma_tensor, KL
 
     def mean_forward(self,indices):
         """Do tensor ops"""
@@ -640,15 +731,16 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             return T.permute(self.permutation_list)[indices]
 
 
-class variational_KFT(torch.nn.Module):
-    def __init__(self,initializaiton_data_frequentist,KL_weight,cuda=None,config=None,old_setup=False):
-        super(variational_KFT, self).__init__()
+class variational_KFT(KFT):
+    def __init__(self,initialization_data,KL_weight,cuda=None,config=None,old_setup=False):
+        super(variational_KFT, self).__init__(initialization_data, lambda_reg=KL_weight, cuda=cuda, config=config, old_setup=old_setup)
         tmp_dict = {}
         tmp_dict_prime = {}
+        self.kernel_class_name = ['multivariate_variational_kernel_TT','univariate_variational_kernel_TT']
         self.full_grad = config['full_grad']
         self.ii = {}
         self.KL_weight = torch.nn.Parameter(torch.tensor(KL_weight),requires_grad=False)
-        for i, v in initializaiton_data_frequentist.items():
+        for i, v in initialization_data.items():
             self.ii[i] = v['ii']
             tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'],
                                                               n_list=v['n_list'],
@@ -691,6 +783,31 @@ class variational_KFT(torch.nn.Module):
         return pred_outputs
 
     def collect_core_outputs(self,indices):
+        middle_term = []
+        last_term = []
+        total_KL = 0
+        for i, v in self.ii.items():
+            ix = indices[:, v]
+            tt = self.TT_cores[str(i)]
+            tt_prime = self.TT_cores_prime[str(i)]
+            V_prime, var_prime, KL_prime = tt_prime(ix)
+            T, V, sigma_tensor, KL = tt(ix)
+            pred_all = T*V_prime
+            X = tt.apply_kernels(torch.sum(pred_all)*(V+sigma_tensor))
+            L = V_prime+var_prime
+            if self.full_grad:
+                middle_term.append(pred_all)
+                last_term.append(X*L)
+            else:
+                pred = tt.index_select(ix,pred_all)
+                x = tt.index_select(ix,X)
+                l = tt.index_select(ix,L)
+                middle_term.append(pred)
+                last_term.append(x*l)
+            total_KL +=  KL.abs() + KL_prime.abs()
+        return middle_term,last_term, total_KL * self.KL_weight
+
+    def collect_core_outputs_reparametrization(self, indices):
         pred_outputs = []
         total_KL=0
         for i,v in self.ii.items():
@@ -703,8 +820,8 @@ class variational_KFT(torch.nn.Module):
             total_KL += KL.abs() + KL_prime.abs()
         return pred_outputs,total_KL*self.KL_weight
 
-    def forward(self, indices):
-        preds_list, regularization = self.collect_core_outputs(indices)
+    def forward_reparametrization(self, indices):
+        preds_list, regularization = self.collect_core_outputs_reparametrization(indices)
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
             if self.full_grad:
@@ -715,6 +832,25 @@ class variational_KFT(torch.nn.Module):
             return preds.squeeze()[torch.unbind(indices, dim=1)], regularization
         else:
             return preds.squeeze(), regularization
+
+    def forward(self, indices):
+        middle_term_list,last_term_list, regularization = self.collect_core_outputs(indices)
+        middle_term = middle_term_list[0]
+        last_term = last_term_list[0]
+
+        for i in range(1, len(last_term_list)):
+            if self.full_grad:
+                middle_term = edge_mode_product(middle_term, middle_term_list[i], len(middle_term.shape) - 1, 0)  # General mode product!
+                last_term = edge_mode_product(last_term, last_term_list[i], len(last_term.shape) - 1, 0)  # General mode product!
+
+            else:
+                middle_term = torch.bmm(middle_term, middle_term_list[i])
+                last_term = torch.bmm(last_term, last_term_list[i])
+
+        if self.full_grad:
+            return middle_term.squeeze()[torch.unbind(indices, dim=1)],last_term.squeeze()[torch.unbind(indices, dim=1)], regularization
+        else:
+            return middle_term.squeeze(), last_term.squeeze(),regularization
 
     def mean_forward(self,indices):
         preds_list = self.collect_core_outputs_mean(indices)
@@ -728,29 +864,3 @@ class variational_KFT(torch.nn.Module):
             return preds.squeeze()[torch.unbind(indices, dim=1)]
         else:
             return preds.squeeze()
-
-    def turn_on_V(self):
-        for i, v in self.ii.items():
-            if not self.TT_cores[str(i)].__class__.__name__ == 'variational_TT_component':
-                self.TT_cores[str(i)].kernel_train_mode_off()
-            else:
-                self.TT_cores[str(i)].turn_on()
-            self.TT_cores_prime[str(i)].turn_off()
-
-    def turn_on_prime(self):
-        for i, v in self.ii.items():
-            if not self.TT_cores[str(i)].__class__.__name__ == 'variational_TT_component':
-                self.TT_cores[str(i)].kernel_train_mode_off()
-                self.TT_cores[str(i)].turn_off()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            self.TT_cores_prime[str(i)].turn_on()
-
-    def turn_on_kernel_mode(self):
-        for i,v in self.ii.items():
-            if not self.TT_cores[str(i)].__class__.__name__=='variational_TT_component':
-                self.TT_cores[str(i)].kernel_train_mode_on()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            self.TT_cores_prime[str(i)].turn_off()
-

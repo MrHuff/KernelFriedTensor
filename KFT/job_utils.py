@@ -77,6 +77,15 @@ def run_job_func(args):
 
 #Hypothesis 2: Change to 1.1 cuda 10.0
 
+def get_loss_func(train_config):
+    if train_config['task']=='reg':
+        if train_config['bayesian']:
+            loss_func = analytical_reconstruction_error_VI
+        else:
+            loss_func = torch.nn.MSELoss()
+    else:
+        loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
+    return loss_func
 def get_tensor_architectures(i,shape,R=2): #Two component tends to overfit?! Really weird!
     TENSOR_ARCHITECTURES = {
         0:{
@@ -137,6 +146,9 @@ class stableBCEwithlogits(_Loss):
     def forward(self, x, y):
         return torch.mean(self.f(x)-x*y)
 
+def analytical_reconstruction_error_VI(y,middle_term,last_term):
+    return torch.mean(y**2 -2*y*middle_term+last_term)
+
 def auc_check(y_pred,Y):
     with torch.no_grad():
         y_pred = (y_pred.float() > 0.5).cpu().float().numpy()
@@ -144,7 +156,8 @@ def auc_check(y_pred,Y):
         auc =  metrics.auc(fpr, tpr)
         return auc
 
-def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='type',index=0,task='reg'):
+def calculate_loss_no_grad(model,dataloader,train_config,task='reg'):
+    loss_func = get_loss_func(train_config)
     loss_list = []
     y_s = []
     _y_preds = []
@@ -169,7 +182,6 @@ def calculate_loss_no_grad(model,dataloader,loss_func,train_config,loss_type='ty
             ref_metric = 1.-total_loss/var_Y
         else:
             ref_metric = auc_check(y_preds,Y)
-        # print(f'{loss_type} ref metric epoch {index}: {ref_metric}')
     return ref_metric
 
 def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,dataloader_val):
@@ -189,7 +201,7 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,dat
         else:
             total_loss.backward()
         opt.step()
-        l = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=p)
+        l = calculate_loss_no_grad(model,dataloader_val,train_config=train_config)
         lrs.step(-l)
         with torch.no_grad():
             if torch.isnan(total_loss) or torch.isinf(total_loss):
@@ -236,6 +248,7 @@ def print_garbage():
         except:
             pass
     print(len(obj_list))
+
 def opt_reinit(train_config,model,lr_param,warmup=False):
 
     if train_config['fp_16']:
@@ -252,7 +265,9 @@ def opt_reinit(train_config,model,lr_param,warmup=False):
 
 
 
-def outer_train_loop(model,train_config,dataloader_train, dataloader_val,loss_func,warmup=False):
+def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=False):
+
+    loss_func = get_loss_func(train_config)
     ERROR=False
     kernel,deep_kernel = model.has_kernel_component()
     train_dict = {0: {'para':'V_lr','call':model.turn_on_V}}
@@ -291,22 +306,17 @@ def outer_train_loop(model,train_config,dataloader_train, dataloader_val,loss_fu
     return ERROR
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
-    #Memory allocation growing between iterations -> superweird wtf
-    if train_config['task']=='reg':
-        loss_func = torch.nn.MSELoss()
-    else:
-        loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     train_config['reset'] = 1.0
 
-    ERROR = outer_train_loop(model,train_config,dataloader_train, dataloader_val,loss_func,warmup=True)
+    ERROR = outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=True)
     if ERROR:
         return -np.inf,-np.inf
     for i in range(train_config['epochs']+1):
-        ERROR = outer_train_loop(model, train_config, dataloader_train, dataloader_val,loss_func, warmup=False)
+        ERROR = outer_train_loop(model, train_config, dataloader_train, dataloader_val, warmup=False)
         if ERROR:
             return -np.inf, -np.inf
-    val_loss_final = calculate_loss_no_grad(model,dataloader_val,loss_func,train_config=train_config,loss_type='val',index=0)
-    test_loss_final = calculate_loss_no_grad(model,dataloader_test,loss_func,train_config=train_config,loss_type='test',index=0)
+    val_loss_final = calculate_loss_no_grad(model,dataloader_val,train_config=train_config)
+    test_loss_final = calculate_loss_no_grad(model,dataloader_test,train_config=train_config)
     print(val_loss_final,test_loss_final)
     return val_loss_final,test_loss_final
 
@@ -388,22 +398,20 @@ class job_object():
         # try:
         if self.bayesian:
             if self.cuda:
-                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
+                model = variational_KFT(initialization_data=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
             else:
-                model = variational_KFT(initializaiton_data_frequentist=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
+                model = variational_KFT(initialization_data=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
         else:
             if self.cuda:
-                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
+                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device, config=self.config, old_setup=self.old_setup).to(self.device)
             else:
-                model = KFT(initializaiton_data=init_dict,lambda_reg=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
+                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu', config=self.config, old_setup=self.old_setup)
       # print_model_parameters(model)
         print(model)
         dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
         dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
         dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
         val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
-        del model
-        torch.cuda.empty_cache()
         # except Exception as e:
         #     print(e)
         #     val_loss_final = -np.inf
