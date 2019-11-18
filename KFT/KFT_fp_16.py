@@ -241,7 +241,7 @@ class KFT(torch.nn.Module):
         self.cuda = cuda
         self.config = config
         self.old_setup = old_setup
-        self.register_buffer('lambda_reg',torch.tensor(lambda_reg).float())
+        self.register_buffer('lambda_reg',torch.tensor(lambda_reg))
         tmp_dict = {}
         tmp_dict_prime = {}
         self.full_grad = config['full_grad']
@@ -336,7 +336,7 @@ class KFT(torch.nn.Module):
             prime_pred,reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred*prime_pred)
-            reg_output += torch.sqrt(torch.sum(reg*reg_prime)**2) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            reg_output += torch.sum(reg.float()*reg_prime.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
 
         return pred_outputs,reg_output*self.lambda_reg
 

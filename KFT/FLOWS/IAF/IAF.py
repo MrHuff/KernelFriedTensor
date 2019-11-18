@@ -13,10 +13,10 @@ class IAF_no_h(nn.Module):
         self.tanh_op = nn.Tanh()
         self.flag = tanh_flag_h
         self.s_list = nn.ModuleList(
-            [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU()) for i
+            [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU(),nn.Sigmoid() ) for i
              in range(depth)])
         self.m_list = nn.ModuleList(
-            [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU()) for i
+            [nn.Sequential(AutoregressiveLinear(self.z_size , self.z_size), nn.ELU(),nn.Sigmoid()) for i
              in range(depth)])
 
     def forward(self, z):
@@ -44,8 +44,8 @@ class IAF(nn.Module):
         self.h = Highway(self.h_size, 3, nn.ELU())
         self.C = C
         self.z_size = latent_size
-        self.s_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU()) for i in range(depth)])
-        self.m_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU()) for i in range(depth)])
+        self.s_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU(),nn.Sigmoid()) for i in range(depth)])
+        self.m_list = nn.ModuleList([nn.Sequential(AutoregressiveLinear(self.z_size+self.h_size, self.z_size),nn.ELU(),nn.Sigmoid()) for i in range(depth)])
 
     def forward(self, z, h):
         """

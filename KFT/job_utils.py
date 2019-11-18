@@ -2,11 +2,6 @@ import torch
 from KFT.KFT_fp_16 import KFT, variational_KFT
 from torch.nn.modules.loss import _Loss
 import gc
-try:
-    from apex import amp
-    import apex
-except Exception as e:
-    print('No apex installation found')
 import pickle
 import os
 import warnings
@@ -184,7 +179,9 @@ def calculate_loss_no_grad(model,dataloader,train_config,task='reg'):
             ref_metric = auc_check(y_preds,Y)
     return ref_metric
 
-def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,dataloader_val):
+def train_loop(model, dataloader, loss_func,lr, train_config,sub_epoch,dataloader_val,warmup=False):
+    model, opt, lrs,amp = opt_reinit(train_config, model, lr, warmup=warmup)
+    print_garbage()
     ERROR = False
     for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
@@ -192,10 +189,15 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,dat
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
         y_pred, reg = model(X)
-        pred_loss = loss_func(y_pred, y)
+        if warmup:
+            pred_loss = loss_func(y_pred.float(), y)
+            print(torch.isnan(y_pred).any(), reg, torch.isnan(y).any(), pred_loss)
+            print(y_pred.type(), reg.type(), y.type(), pred_loss.type())
+        else:
+            pred_loss = loss_func(y_pred, y)
         total_loss = pred_loss + reg
         opt.zero_grad()
-        if train_config['fp_16']:
+        if train_config['fp_16'] and not warmup:
             with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
                 loss_scaled.backward()
         else:
@@ -203,6 +205,8 @@ def train_loop(model, dataloader, loss_func, opt,lrs, train_config,sub_epoch,dat
         opt.step()
         l = calculate_loss_no_grad(model,dataloader_val,train_config=train_config)
         lrs.step(-l)
+
+
         with torch.no_grad():
             if torch.isnan(total_loss) or torch.isinf(total_loss):
                 print('FOUND INF/NAN RIP, RESTARTING')
@@ -251,19 +255,20 @@ def print_garbage():
 
 def opt_reinit(train_config,model,lr_param,warmup=False):
 
-    if train_config['fp_16']:
+    if train_config['fp_16'] and not warmup:
+        from apex import amp
+        import apex
         if train_config['fused']:
             opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,enabled=not warmup)
+            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
         else:
             opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1,enabled=not warmup)
+            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
     else:
+        amp=None
         opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
     lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.5)
-    return model,opt,lrs
-
-
+    return model,opt,lrs,amp
 
 def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=False):
 
@@ -292,10 +297,9 @@ def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=
         f = settings['call']
         lr = settings['para']
         f()
-        model, opt, lrs = opt_reinit(train_config, model, lr, warmup=warmup)
-        print_garbage()
-        ERROR = train_loop(model, dataloader_train, loss_func, opt, lrs, train_config, train_config['sub_epoch_V'],
-                           dataloader_val)
+        print(lr)
+        ERROR = train_loop(model, dataloader_train, loss_func, lr, train_config, train_config['sub_epoch_V'],
+                           dataloader_val,warmup=warmup)
         print_garbage()
         if ERROR:
             return ERROR
@@ -307,8 +311,7 @@ def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     train_config['reset'] = 1.0
-
-    ERROR = outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=True)
+    ERROR = outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=not train_config['deep_kernel'])
     if ERROR:
         return -np.inf,-np.inf
     for i in range(train_config['epochs']+1):
@@ -387,36 +390,48 @@ class job_object():
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
-    #Architecture one super weird, overfits completely
-    def __call__(self, parameters):
-        #TODO do tr
-        # try:
-        self.tensor_architecture = get_tensor_architectures(self.architecture,self.shape,parameters['R'])
+
+    def init_and_train(self,parameters):
+        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'])
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
         print(parameters)
-        # try:
         if self.bayesian:
             if self.cuda:
-                model = variational_KFT(initialization_data=init_dict,KL_weight=parameters['reg_para'],cuda=self.device,config=self.config,old_setup=self.old_setup).to(self.device)
+                model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                                        cuda=self.device, config=self.config, old_setup=self.old_setup).to(self.device)
             else:
-                model = variational_KFT(initialization_data=init_dict,KL_weight=parameters['reg_para'],cuda='cpu',config=self.config,old_setup=self.old_setup)
+                model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'], cuda='cpu',
+                                        config=self.config, old_setup=self.old_setup)
         else:
             if self.cuda:
-                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device, config=self.config, old_setup=self.old_setup).to(self.device)
+                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                            config=self.config, old_setup=self.old_setup).to(self.device)
             else:
-                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu', config=self.config, old_setup=self.old_setup)
-      # print_model_parameters(model)
+                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
+                            config=self.config, old_setup=self.old_setup)
         print(model)
-        dataloader_train = get_dataloader_tensor(self.data_path,seed = self.seed,mode='train',bs_ratio=parameters['batch_size_ratio'])
-        dataloader_val = get_dataloader_tensor(self.data_path,seed = self.seed,mode='val',bs_ratio=parameters['batch_size_ratio'])
-        dataloader_test = get_dataloader_tensor(self.data_path,seed = self.seed,mode='test',bs_ratio=parameters['batch_size_ratio'])
-        val_loss_final,test_loss_final = train(model=model,train_config=train_config,dataloader_train=dataloader_train,dataloader_val=dataloader_val,dataloader_test=dataloader_test)
-        # except Exception as e:
-        #     print(e)
-        #     val_loss_final = -np.inf
-        #     test_loss_final = -np.inf
+        dataloader_train = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
+                                                 bs_ratio=parameters['batch_size_ratio'])
+        dataloader_val = get_dataloader_tensor(self.data_path, seed=self.seed, mode='val',
+                                               bs_ratio=parameters['batch_size_ratio'])
+        dataloader_test = get_dataloader_tensor(self.data_path, seed=self.seed, mode='test',
+                                                bs_ratio=parameters['batch_size_ratio'])
+        val_loss_final, test_loss_final = train(model=model, train_config=train_config,
+                                                dataloader_train=dataloader_train, dataloader_val=dataloader_val,
+                                                dataloader_test=dataloader_test)
+        return val_loss_final, test_loss_final
 
+    def __call__(self, parameters):
+        # Architecture one super weird, overfits completely
+        if self.deep_kernel:
+            for i in range(10):
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    ref_met = 'R2' if self.task == 'reg' else 'auc'
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+        else:
+            val_loss_final, test_loss_final = self.init_and_train(parameters)
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
 
@@ -479,6 +494,7 @@ class job_object():
         training_params['bayesian'] = self.bayesian
         training_params['old_setup'] = self.old_setup
         training_params['architecture'] = self.architecture
+        training_params['deep_kernel'] = self.deep_kernel
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
 

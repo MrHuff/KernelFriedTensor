@@ -13,12 +13,12 @@ class AutoregressiveLinear(nn.Module):
         self.in_size = in_size
         self.out_size = out_size
 
-        self.weight = Parameter(t.Tensor(self.in_size, self.out_size),requires_grad=True)
+        self.weight = Parameter(t.randn(*(self.in_size, self.out_size)),requires_grad=True)
 
         if bias:
-            self.bias = Parameter(t.Tensor(self.out_size),requires_grad=True)
+            self.bias = Parameter(t.randn(self.out_size),requires_grad=True)
         else:
-            self.register_parameter('bias', None)
+            self.register_buffer('bias', t.tensor(0))
 
         self.reset_parameters()
 
