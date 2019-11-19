@@ -409,7 +409,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         """Do tensor ops"""
         mean = self.core_param
         sig = self.variance_parameters
-        T = mean + self.variance_parameters.exp()*torch.randn_like(mean)
+        T = mean + (0.5*self.variance_parameters).exp()*torch.randn_like(mean)
         for key, val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:
@@ -452,7 +452,24 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     T = lazy_mode_product(T, val.t(), key)
                     T = lazy_mode_product(T, val, key)
-        return T,self.core_param,self.variance_parameters.exp()**2,KL
+        return T,self.core_param,self.variance_parameters.exp(),KL
+
+    def apply_kernels(self,T):
+        for key, val in self.n_dict.items():
+            if val is not None:
+                if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self, f'transformation_{key}')
+                        X = f(X)
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(X).evaluate()
+                if not self.RFF_dict[key]:
+                    T = lazy_mode_product(T, val, key)
+                else:
+                    T = lazy_mode_product(T, val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        return T
 
     def mean_forward(self,indices):
         """Do tensor ops"""
@@ -561,17 +578,17 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
-            mat  = val.evaluate() + torch.eye(val.shape[0],device=self.device)
+            mat  = val + torch.eye(val.shape[0])*1e-3
             if len(self.shape_list) > 3:
                 prior_log_det = -gpytorch.logdet(mat)*(mat.shape[0])
             else:
                 prior_log_det = -gpytorch.logdet(mat)
-            setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale*torch.ones(mat.shape[0], 1), requires_grad=True))
+            setattr(self, f'D_{key}', torch.nn.Parameter(1e-3*torch.ones(mat.shape[0], 1), requires_grad=True))
             setattr(self, f'priors_inv_{key}', mat)
         self.noise_shape.append(R)
         setattr(self,f'prior_log_det_{key}',prior_log_det)
         self.register_buffer(f'n_const_{key}',torch.tensor(self.shape_list[key]).float())
-        setattr(self,f'B_{key}',torch.nn.Parameter(self.init_scale * torch.rand(self.shape_list[key],R),requires_grad=True))
+        setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(self.shape_list[key],R),requires_grad=True))
 
     def get_trace_term_KL(self,key):
         if self.RFF_dict[key]:
@@ -684,8 +701,8 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key, val in self.n_dict.items(): #Sample from multivariate
             B = getattr(self,f'B_{key}')
             diag = lazy_mode_hadamard(diag,getattr(self,f'D_{key}'), key)
-            covariance = lazy_mode_product(covariance,B, key)
-            covariance = lazy_mode_product(covariance,B.t(),key)
+            covariance = lazy_mode_product(covariance,B.t(), key)
+            covariance = lazy_mode_product(covariance,B,key)
 
         sigma_tensor = diag + covariance
         T = self.core_param
@@ -792,8 +809,9 @@ class variational_KFT(KFT):
             tt_prime = self.TT_cores_prime[str(i)]
             V_prime, var_prime, KL_prime = tt_prime(ix)
             T, V, sigma_tensor, KL = tt(ix)
+            # print(sigma_tensor.sum())
             pred_all = T*V_prime
-            X = tt.apply_kernels(torch.sum(pred_all)*(V+sigma_tensor))
+            X = tt.apply_kernels(pred_all*(V+sigma_tensor))
             L = V_prime+var_prime
             if self.full_grad:
                 middle_term.append(pred_all)

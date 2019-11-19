@@ -142,6 +142,10 @@ class stableBCEwithlogits(_Loss):
         return torch.mean(self.f(x)-x*y)
 
 def analytical_reconstruction_error_VI(y,middle_term,last_term):
+    # print(y.mean())
+    # print(middle_term.mean())
+    # print(last_term.mean()) #Last term blowing up completely
+    # print(torch.mean(y**2 -2*y*middle_term))
     return torch.mean(y**2 -2*y*middle_term+last_term)
 
 def auc_check(y_pred,Y):
@@ -152,7 +156,6 @@ def auc_check(y_pred,Y):
         return auc
 
 def calculate_loss_no_grad(model,dataloader,train_config,task='reg'):
-    loss_func = get_loss_func(train_config)
     loss_list = []
     y_s = []
     _y_preds = []
@@ -161,11 +164,7 @@ def calculate_loss_no_grad(model,dataloader,train_config,task='reg'):
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
-        if train_config['bayesian']:
-            y_pred = model.mean_forward(X)
-        else:
-            y_pred, _ = model(X)
-        loss = loss_func(y_pred.float(), y.float())
+        loss,y_pred = correct_validation_loss(X, y, model, train_config)
         loss_list.append(loss)
         y_s.append(y)
         _y_preds.append(y_pred)
@@ -179,23 +178,75 @@ def calculate_loss_no_grad(model,dataloader,train_config,task='reg'):
             ref_metric = auc_check(y_preds,Y)
     return ref_metric
 
+def train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p):
+    with torch.no_grad():
+        ERROR = False
+        if torch.isnan(total_loss) or torch.isinf(total_loss):
+            print('FOUND INF/NAN RIP, RESTARTING')
+            print(reg)
+            print(pred_loss)
+            ERROR = True
+        # if train_config['bayesian']:
+        #     y_pred = model.mean_forward(X)
+        #     mean_pred_loss = loss_func(y_pred, y)
+        #     if (y_pred == 0).all():
+        #         fac = train_config['reset']
+        #         print(f'dead model_reinit factor: {fac}')
+        #         for n, param in model.named_parameters():
+        #             if 'core_param' in n:
+        #                 param.normal_(0, train_config['reset'])
+        #         train_config['reset'] = train_config['reset'] * 1.1
+        # else:
+        if (y_pred == 0).all():
+            fac = train_config['reset']
+            print(f'dead model_reinit factor: {fac}')
+            for n, param in model.named_parameters():
+                if 'core_param' in n:
+                    param.normal_(0, train_config['reset'])
+            train_config['reset'] = train_config['reset'] * 1.1
+
+        if p % train_config['train_loss_interval_print'] == 0:
+            print(f'reg_term it {p}: {reg.data}')
+            print(f'train_loss it {p}: {pred_loss.data}')
+            print(f'val error it {p}: {l}')
+            # if train_config['bayesian']:
+            #     print(f'mean_loss it {p}: {mean_pred_loss.data}')
+    return ERROR
+
+def correct_validation_loss(X,y,model,train_config):
+    if train_config['task'] == 'reg':
+        loss_func = torch.nn.MSELoss()
+        if train_config['bayesian']:
+            y_pred, _,_ = model(X)
+        else:
+            y_pred, _ = model(X)
+        pred_loss = loss_func(y, y_pred)
+    else:
+        loss_func = torch.nn.BCELoss()
+        y_pred, reg = model(X)
+        pred_loss = loss_func(y_pred, y)
+    return pred_loss,y_pred
+def correct_forward_loss(X,y,model,train_config,loss_func):
+    if train_config['task']=='reg' and train_config['bayesian']:
+            y_pred,last_term, reg = model(X)
+            pred_loss = loss_func(y,y_pred,last_term)
+    else:
+        y_pred, reg = model(X)
+        pred_loss = loss_func(y_pred, y)
+    return pred_loss+reg,reg,pred_loss,y_pred
+
 def train_loop(model, dataloader, loss_func,lr, train_config,sub_epoch,dataloader_val,warmup=False):
     model, opt, lrs,amp = opt_reinit(train_config, model, lr, warmup=warmup)
     print_garbage()
-    ERROR = False
     for p in range(sub_epoch+1):
         X,y = dataloader.get_batch()
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
-        y_pred, reg = model(X)
-        if warmup:
-            pred_loss = loss_func(y_pred.float(), y)
-            print(torch.isnan(y_pred).any(), reg, torch.isnan(y).any(), pred_loss)
-            print(y_pred.type(), reg.type(), y.type(), pred_loss.type())
-        else:
-            pred_loss = loss_func(y_pred, y)
-        total_loss = pred_loss + reg
+        total_loss,reg,pred_loss,y_pred = correct_forward_loss(X,y,model,train_config,loss_func)
+        # y_pred, reg = model(X)
+        # pred_loss = loss_func(y_pred, y)
+        # total_loss = pred_loss + reg
         opt.zero_grad()
         if train_config['fp_16'] and not warmup:
             with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
@@ -205,42 +256,10 @@ def train_loop(model, dataloader, loss_func,lr, train_config,sub_epoch,dataloade
         opt.step()
         l = calculate_loss_no_grad(model,dataloader_val,train_config=train_config)
         lrs.step(-l)
-
-
-        with torch.no_grad():
-            if torch.isnan(total_loss) or torch.isinf(total_loss):
-                print('FOUND INF/NAN RIP, RESTARTING')
-                print(reg)
-                print(pred_loss)
-                ERROR = True
-            if train_config['bayesian']:
-                y_pred= model.mean_forward(X)
-                mean_pred_loss = loss_func(y_pred, y)
-                if (y_pred==0).all():
-                    fac=train_config['reset']
-                    print(f'dead model_reinit factor: {fac}')
-                    for n,param in model.named_parameters():
-                        if 'core_param' in n:
-                            param.normal_(0, train_config['reset'])
-                    train_config['reset'] = train_config['reset']*1.1
-            else:
-                if (y_pred == 0).all():
-                    fac = train_config['reset']
-                    print(f'dead model_reinit factor: {fac}')
-                    for n,param in model.named_parameters():
-                        if 'core_param' in n:
-                            param.normal_(0, train_config['reset'])
-                    train_config['reset'] = train_config['reset']*1.1
-
-            if p%train_config['train_loss_interval_print']==0:
-                print(f'reg_term it {p}: {reg.data}')
-                print(f'train_loss it {p}: {pred_loss.data}')
-                print(f'val error it {p}: {l}')
-                if train_config['bayesian']:
-                    print(f'mean_loss it {p}: {mean_pred_loss.data}')
+        ERROR = train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
-    return ERROR
+    return False
 
 def print_garbage():
     obj_list = []
@@ -254,7 +273,6 @@ def print_garbage():
     print(len(obj_list))
 
 def opt_reinit(train_config,model,lr_param,warmup=False):
-
     if train_config['fp_16'] and not warmup:
         from apex import amp
         import apex
