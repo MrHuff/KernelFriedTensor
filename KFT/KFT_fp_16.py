@@ -10,6 +10,11 @@ PI  = math.pi
 torch.set_printoptions(profile="full")
 
 def row_outer_prod(x,y):
+    """
+    :param x: n x c
+    :param y: n x d
+    :return: n x (cd)
+    """
     y = y.unsqueeze(-1).expand(-1,-1,y.shape[1]).permute(0,2,1)
     return torch.einsum('ij,ijk->ijk', x, y).flatten(1)
 
@@ -117,6 +122,9 @@ class TT_component(torch.nn.Module):
                 T = lazy_mode_product(T, ones.t(), mode+1)
                 T = lazy_mode_product(T, ones, mode+1)
             return T
+
+
+
 
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0):
@@ -403,6 +411,13 @@ class variational_TT_component(TT_component):
             KL = self.calculate_KL(mean,sig)
         return self.core_param,self.variance_parameters.exp()**2,KL
 
+    def get_VI_term(self):
+        T = self.core_param
+        for mode, ones in enumerate(self.n_list):
+            ones = getattr(self, f'reg_ones_{mode}')
+            T = lazy_mode_product(T, ones.t(), mode + 1)
+            T = lazy_mode_product(T, ones, mode + 1)
+        return T
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
@@ -427,16 +442,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
             return T.permute(self.permutation_list)[
                        indices],self.calculate_KL(mean,sig)  # return both to calculate regularization when doing freque
 
-    def forward(self,indices):
-        if self.full_grad:
-            KL = self.calculate_KL(self.core_param, self.variance_parameters)
-        else:
-            mean = self.core_param.permute(self.permutation_list)[indices]
-            sig = self.variance_parameters.permute(self.permutation_list)[indices]
-            KL = self.calculate_KL(mean, sig)
-        T = self.apply_kernels(self.core_param)
-        T_sig = self.apply_square_kernel(self.variance_parameters.exp())
-        return T,T_sig ,KL
+
 
     def apply_square_kernel(self,T):
         for key, val in self.n_dict.items():
@@ -451,9 +457,26 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val**2, key)
                 else:
-                    T = lazy_mode_product(T, val.t()**2, key)
-                    T = lazy_mode_product(T, val**2, key)
+                    val = row_outer_prod(val,val)
+                    T = lazy_mode_product(T,val.t(), key)
+                    T = lazy_mode_product(T, val, key)
         return T
+
+    def forward(self,indices):
+        if self.full_grad:
+            KL = self.calculate_KL(self.core_param, self.variance_parameters)
+        else:
+            mean = self.core_param.permute(self.permutation_list)[indices]
+            sig = self.variance_parameters.permute(self.permutation_list)[indices]
+            KL = self.calculate_KL(mean, sig)
+        T = self.apply_kernels(self.core_param)
+        T_additional = self.apply_square_kernel(self.variance_parameters.exp())
+        if self.full_grad:
+            return T,T_additional, KL
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[indices],T_additional.permute(self.permutation_list)[indices], KL
 
     def mean_forward(self,indices):
         """Do tensor ops"""
@@ -647,19 +670,45 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             if len(indices.shape) > 1:
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices], KL
-    #TODO Keep working on this and apply "row kronecker prod"
-    def cross_apply_tensor(self):
-        ones = self.ones
-        for key, _ in self.n_dict.items():
-            if not self.RFF_dict[key]:
-                pass
 
     def forward(self,indices):
-
+        T = self.apply_kernels(self.core_param)
+        T_cross_sigma = self.apply_cross_kernel()
+        T_additional = self.apply_kernels(T_cross_sigma)
         if not self.V_mode:
             self.recalculate_priors()
         KL = self.calculate_KL()
-        return T,T_cross_sigma, KL
+        if self.full_grad:
+            return T,T_additional, KL
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[indices],T_additional.permute(self.permutation_list)[indices], KL
+
+    def apply_cross_kernel(self):
+        T = self.ones
+        T_D = self.ones
+        for key, val in self.n_dict.items():
+            if val is not None:
+                D = getattr(self, f'D_{key}') ** 2
+                T_D = lazy_mode_hadamard(T_D,D,key)
+                if not self.V_mode:
+                    X = getattr(self, f'kernel_data_{key}')
+                    if self.deep_mode:
+                        f = getattr(self, f'transformation_{key}')
+                        X = f(X)
+                    tmp_kernel_func = getattr(self, f'kernel_{key}')
+                    val = tmp_kernel_func(X).evaluate()
+                if not self.RFF_dict[key]:
+                    cov,_,_ = self.build_cov(key)
+                    T = lazy_mode_product(T, val*cov, key)
+                else:
+                    B = getattr(self, f'B_{key}')
+                    val = row_outer_prod(B,val)
+                    T = lazy_mode_product(T,val.t(), key)
+                    T = lazy_mode_product(T, val, key)
+        return T+T_D
+
 
     def mean_forward(self,indices):
         """Do tensor ops"""
@@ -700,27 +749,26 @@ class variational_KFT(KFT):
                                                               r_2=v['r_2'],
                                                               cuda=cuda,
                                                               config=config)
-            if v['has_side_info']:
-                if v['multivariate']:
-                    tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                          n_list=v['n_list'],
-                                                                          r_2=v['r_2'],
-                                                                          side_information_dict=v['side_info'],
-                                                                          kernel_para_dict=v['kernel_para'],
-                                                                          cuda=cuda,
-                                                                          config=config,
-                                                                          init_scale=v['init_scale'])
-                else:
-                    tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                          n_list=v['n_list'],
-                                                                          r_2=v['r_2'],
-                                                                          side_information_dict=v['side_info'],
-                                                                          kernel_para_dict=v['kernel_para'],
-                                                                          cuda=cuda,
-                                                                          config=config,
-                                                                          init_scale=v['init_scale'])
+            if v['has_side_info'] and v['multivariate']:
+                tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
+                                                                      n_list=v['n_list'],
+                                                                      r_2=v['r_2'],
+                                                                      side_information_dict=v['side_info'],
+                                                                      kernel_para_dict=v['kernel_para'],
+                                                                      cuda=cuda,
+                                                                      config=config,
+                                                                      init_scale=v['init_scale'])
             else:
-                tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda,config=config,old_setup=old_setup)
+                tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
+                                                                      n_list=v['n_list'],
+                                                                      r_2=v['r_2'],
+                                                                      side_information_dict=v['side_info'],
+                                                                      kernel_para_dict=v['kernel_para'],
+                                                                      cuda=cuda,
+                                                                      config=config,
+                                                                      init_scale=v['init_scale'])
+            # else:
+            #     tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda,config=config,old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
@@ -735,31 +783,37 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
         return pred_outputs
 
-    def collect_core_outputs(self,indices):
-        middle_term = []
-        last_term = []
+    def collect_core_outputs_univariate(self,indices):
+        first_term = []
+        second_term = []
+        third_term = []
         total_KL = 0
         for i, v in self.ii.items():
             ix = indices[:, v]
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
             V_prime, var_prime, KL_prime = tt_prime(ix)
-            T, V, sigma_tensor, KL = tt(ix)
-            # print(sigma_tensor.sum())
-            pred_all = T*V_prime
-            X = tt.apply_kernels(pred_all*(V+sigma_tensor))
-            L = V_prime+var_prime
+            V_prime_sum = tt_prime.get_VI_term()
+            base, extra, KL = tt(ix)
+            first_term.append(V_prime*base)
+            second_term.append((extra+base**2)*var_prime)
+            third_term.append((V_prime*V_prime_sum)*extra)
+            total_KL += KL.abs() + KL_prime.abs()
+
+        if self.full_grad:
+            preds = self.edge_mode_collate(first_term)**2
+        else:
+            preds = self.bmm_collate(first_term)**2
+        for preds_list in [second_term,third_term]:
             if self.full_grad:
-                middle_term.append(pred_all)
-                last_term.append(X*L)
+                preds +=  self.edge_mode_collate(preds_list)
             else:
-                pred = tt.index_select(ix,pred_all)
-                x = tt.index_select(ix,X)
-                l = tt.index_select(ix,L)
-                middle_term.append(pred)
-                last_term.append(x*l)
-            total_KL +=  KL.abs() + KL_prime.abs()
-        return middle_term,last_term, total_KL * self.KL_weight
+                preds += self.bmm_collate(preds_list)
+        if self.full_grad:
+            preds = preds[torch.unbind(indices, dim=1)]
+
+        return preds, total_KL * self.KL_weight
+
 
     def collect_core_outputs_reparametrization(self, indices):
         pred_outputs = []
@@ -778,22 +832,22 @@ class variational_KFT(KFT):
         preds_list, regularization = self.collect_core_outputs_reparametrization(indices)
         if self.full_grad:
             preds = self.edge_mode_collate(preds_list)
-            return preds.squeeze()[torch.unbind(indices, dim=1)], regularization
+            return preds[torch.unbind(indices, dim=1)], regularization
         else:
             preds = self.bmm_collate(preds_list)
-            return preds.squeeze(), regularization
+            return preds, regularization
     
     def bmm_collate(self,preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
             preds = torch.bmm(preds, preds_list[i])
-        return preds
+        return preds.squeeze()
 
     def edge_mode_collate(self,preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
             preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
-        return preds
+        return preds.squeeze()
     
     def forward(self, indices):
         middle_term_list,last_term_list, regularization = self.collect_core_outputs(indices)
@@ -816,6 +870,6 @@ class variational_KFT(KFT):
             else:
                 preds = torch.bmm(preds, preds_list[i])
         if self.full_grad:
-            return preds.squeeze()[torch.unbind(indices, dim=1)]
+            return preds[torch.unbind(indices, dim=1)]
         else:
-            return preds.squeeze()
+            return preds
