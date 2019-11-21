@@ -1,10 +1,10 @@
 from pykeops.torch import KernelSolve
 from KFT.job_utils import run_job_func
 import warnings
-from KFT.KFT_fp_16 import edge_mode_product
+from KFT.KFT_fp_16 import edge_mode_product,row_outer_prod
 import torch
 from tensorly.tenalg import multi_mode_dot,mode_dot
-
+import numpy as np
 def fxn():
     warnings.warn("deprecated", DeprecationWarning)
 
@@ -33,7 +33,10 @@ if __name__ == '__main__':
     # print(res_2)
     # print(res_2.shape)
     # print(res_2==res)
-
-    a = torch.tensor(1e-6).half().cuda()
-    b = torch.tensor(1e-6).half().cuda()
-    print(a+b)
+    a = torch.tensor(np.arange(1,11)).expand(10,-1)
+    c = row_outer_prod(a,2*a)
+    c_2 = row_outer_prod(2*a,a)
+    print((c_2==c).all())
+    # a = torch.tensor(1e-6).half().cuda()
+    # b = torch.tensor(1e-6).half().cuda()
+    # print(a+b)
