@@ -142,6 +142,9 @@ class stableBCEwithlogits(_Loss):
         return torch.mean(self.f(x)-x*y)
 
 def analytical_reconstruction_error_VI(y,middle_term,last_term):
+    # print(y.shape)
+    # print(middle_term.shape)
+    # print(last_term.shape)
     # print(y.mean())
     # print(middle_term.mean())
     # print(last_term.mean()) #Last term blowing up completely
@@ -406,7 +409,7 @@ class job_object():
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[False])
 
 
     def init_and_train(self,parameters):

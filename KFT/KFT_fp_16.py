@@ -405,19 +405,24 @@ class variational_TT_component(TT_component):
     def forward(self,indices):
         if self.full_grad:
             KL = self.calculate_KL(self.core_param,self.variance_parameters)
+            mean = self.core_param
+            sig = self.variance_parameters
         else:
             mean = self.core_param.permute(self.permutation_list)[indices]
             sig = self.variance_parameters.permute(self.permutation_list)[indices]
             KL = self.calculate_KL(mean,sig)
-        return self.core_param,self.variance_parameters.exp()**2,KL
+        return mean,sig.exp()**2,KL
 
-    def get_VI_term(self):
+    def get_VI_term(self,indices):
         T = self.core_param
         for mode, ones in enumerate(self.n_list):
             ones = getattr(self, f'reg_ones_{mode}')
             T = lazy_mode_product(T, ones.t(), mode + 1)
             T = lazy_mode_product(T, ones, mode + 1)
-        return T
+        if self.full_grad:
+            return T
+        else:
+            return T.permute(self.permutation_list)[indices]
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
@@ -442,8 +447,6 @@ class univariate_variational_kernel_TT(TT_kernel_component):
             return T.permute(self.permutation_list)[
                        indices],self.calculate_KL(mean,sig)  # return both to calculate regularization when doing freque
 
-
-
     def apply_square_kernel(self,T):
         for key, val in self.n_dict.items():
             if val is not None:
@@ -455,7 +458,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
                     val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
-                    T = lazy_mode_product(T, val**2, key)
+                    T = lazy_mode_product(T, val*val, key)
                 else:
                     val = row_outer_prod(val,val)
                     T = lazy_mode_product(T,val.t(), key)
@@ -783,7 +786,7 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
         return pred_outputs
 
-    def collect_core_outputs_univariate(self,indices):
+    def collect_core_outputs(self,indices):
         first_term = []
         second_term = []
         third_term = []
@@ -793,27 +796,28 @@ class variational_KFT(KFT):
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
             V_prime, var_prime, KL_prime = tt_prime(ix)
-            V_prime_sum = tt_prime.get_VI_term()
+            V_prime_sum = tt_prime.get_VI_term(ix)
             base, extra, KL = tt(ix)
             first_term.append(V_prime*base)
-            second_term.append((extra+base**2)*var_prime)
+            second_term.append((extra+base*base)*var_prime)
             third_term.append((V_prime*V_prime_sum)*extra)
             total_KL += KL.abs() + KL_prime.abs()
 
         if self.full_grad:
-            preds = self.edge_mode_collate(first_term)**2
+            middle = self.edge_mode_collate(first_term)
         else:
-            preds = self.bmm_collate(first_term)**2
+            middle = self.bmm_collate(first_term)
+        preds = middle**2
         for preds_list in [second_term,third_term]:
             if self.full_grad:
                 preds +=  self.edge_mode_collate(preds_list)
             else:
                 preds += self.bmm_collate(preds_list)
         if self.full_grad:
+            middle = middle[torch.unbind(indices, dim=1)]
             preds = preds[torch.unbind(indices, dim=1)]
 
-        return preds, total_KL * self.KL_weight
-
+        return middle,preds, total_KL * self.KL_weight
 
     def collect_core_outputs_reparametrization(self, indices):
         pred_outputs = []
@@ -850,16 +854,8 @@ class variational_KFT(KFT):
         return preds.squeeze()
     
     def forward(self, indices):
-        middle_term_list,last_term_list, regularization = self.collect_core_outputs(indices)
-        # middle_term = middle_term_list[0]
-        # last_term = last_term_list[0]
-        #
-        #
-        #
-        # if self.full_grad:
-        #     return middle_term.squeeze()[torch.unbind(indices, dim=1)],last_term.squeeze()[torch.unbind(indices, dim=1)], regularization
-        # else:
-        #     return middle_term.squeeze(), last_term.squeeze(),regularization
+        middle,third, regularization = self.collect_core_outputs(indices)
+        return middle,third,regularization
 
     def mean_forward(self,indices):
         preds_list = self.collect_core_outputs_mean(indices)
