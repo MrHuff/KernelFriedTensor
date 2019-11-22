@@ -409,7 +409,8 @@ class job_object():
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[False])
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True
+                                                                                                ])
 
 
     def init_and_train(self,parameters):
@@ -473,6 +474,7 @@ class job_object():
             if dim in self.available_side_info_dims:
                 k,nu = self.get_kernel_vals(parameters[f'kernel_{dim}_choice'])
                 kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k,'p':1.0}
+
         return kernel_param
 
     def construct_side_info_params(self,side_info_dims):

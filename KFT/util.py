@@ -68,7 +68,7 @@ def job_parser():
     parser.add_argument('--epochs', type=int, nargs='?', default=5, help='epochs')
     parser.add_argument('--bayesian', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
-    parser.add_argument('--full_grad', default=True, help='full_grad',type=str2bool, nargs='?')
+    parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
     parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=200, help='sub_epoch_V')
     parser.add_argument('--sub_epoch_ls', type=int, nargs='?', default=200, help='sub_epoch_ls')
     parser.add_argument('--sub_epoch_prime', type=int, nargs='?', default=200, help='sub_epoch_prime')

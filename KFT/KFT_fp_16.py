@@ -408,6 +408,8 @@ class variational_TT_component(TT_component):
             mean = self.core_param
             sig = self.variance_parameters
         else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
             mean = self.core_param.permute(self.permutation_list)[indices]
             sig = self.variance_parameters.permute(self.permutation_list)[indices]
             KL = self.calculate_KL(mean,sig)
@@ -422,6 +424,8 @@ class variational_TT_component(TT_component):
         if self.full_grad:
             return T
         else:
+            if len(indices.shape)>1:
+                indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices]
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
