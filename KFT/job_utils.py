@@ -412,7 +412,6 @@ class job_object():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True
                                                                                                 ])
 
-
     def init_and_train(self,parameters):
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'])
         init_dict = self.construct_init_dict(parameters)

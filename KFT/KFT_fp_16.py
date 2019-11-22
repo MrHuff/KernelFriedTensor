@@ -112,6 +112,14 @@ class TT_component(torch.nn.Module):
                 indices = indices.unbind(1)
             return self.core_param.permute(self.permutation_list)[indices], self.get_aux_reg_term()
 
+    def forward_scale(self,indices):
+        if self.full_grad:
+            return self.core_param, self.core_param**2
+        else:
+            if len(indices.shape)>1:
+                indices = indices.unbind(1)
+            return self.core_param.permute(self.permutation_list)[indices], self.core_param**2
+
     def get_aux_reg_term(self):
         if self.old_setup:
             return 1.
@@ -370,6 +378,142 @@ class KFT(torch.nn.Module):
             return preds.squeeze()[torch.unbind(indices,dim=1)],regularization
         else:
             return preds.squeeze(),regularization
+
+class KFT_scale(torch.nn.Module):
+    def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+        super(KFT_scale, self).__init__()
+        self.kernel_class_name = ['TT_kernel_component']
+        self.cuda = cuda
+        self.config = config
+        self.old_setup = old_setup
+        self.register_buffer('lambda_reg',torch.tensor(lambda_reg))
+        tmp_dict = {}
+        tmp_dict_s = {}
+        tmp_dict_b = {}
+        self.full_grad = config['full_grad']
+        self.ii = {}
+        for i,v in initialization_data.items():
+            self.ii[i] = v['ii']
+            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            if v['has_side_info']:
+                tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
+                                                       n_list=v['n_list'],
+                                                       r_2=v['r_2'],
+                                                       side_information_dict=v['side_info'],
+                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            else:
+                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
+        self.TT_cores = torch.nn.ModuleDict(tmp_dict)
+        self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
+        self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
+
+    def turn_on_V(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_off()
+            else:
+                self.TT_cores[str(i)].turn_on()
+            self.TT_cores_s[str(i)].turn_off()
+            self.TT_cores_b[str(i)].turn_off()
+        return 0
+
+    def turn_on_prime(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_off()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_s[str(i)].turn_on()
+            self.TT_cores_b[str(i)].turn_on()
+
+        return 0
+    #TODO: fix deep kernel by properly activating and turning of parameters
+    def turn_on_deep_kernel(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_off()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_on()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_s[str(i)].turn_off()
+            self.TT_cores_b[str(i)].turn_off()
+        return 0
+
+    def has_kernel_component(self):
+        for i, v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                for v in self.TT_cores[str(i)].n_dict.values():
+                    if v is not None:
+                        if self.TT_cores[str(i)].deep_kernel:
+                            return True,True
+                        else:
+                            return True,False
+        return False,False
+
+    def turn_on_kernel_mode(self):
+        for i,v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_on()
+                if self.TT_cores[str(i)].deep_kernel:
+                    self.TT_cores[str(i)].deep_kernel_mode_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_s[str(i)].turn_off()
+            self.TT_cores_b[str(i)].turn_off()
+        return 0
+
+    def turn_off_kernel_mode(self):
+        for i,v in self.ii.items():
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+            else:
+                self.TT_cores[str(i)].turn_on()
+            self.TT_cores_s[str(i)].turn_on()
+            self.TT_cores_b[str(i)].turn_on()
+        return 0
+
+    def collect_core_outputs(self,indices):
+        scale = []
+        regression = []
+        bias = []
+        reg_output=0
+        for i,v in self.ii.items():
+            ix = indices[:,v]
+            tt = self.TT_cores[str(i)]
+            tt_s = self.TT_cores_s[str(i)]
+            tt_b = self.TT_cores_b[str(i)]
+            prime_s,reg_s = tt_s.forward_scale(ix)
+            prime_b,reg_b = tt_b.forward_scale(ix)
+            pred, reg = tt(ix)
+            reg_output += torch.mean(reg.float()*reg_s.float()+reg_b.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            scale.append(prime_s)
+            bias.append(prime_b)
+            regression.append(pred)
+
+        if self.full_grad:
+            s = self.edge_mode_collate(scale)
+            r = self.edge_mode_collate(regression)
+            b = self.edge_mode_collate(bias)
+            pred = s*r+b
+            return pred[torch.unbind(indices, dim=1)], reg_output * self.lambda_reg
+        else:
+            s = self.edge_mode_collate(scale)
+            r = self.edge_mode_collate(regression)
+            b = self.edge_mode_collate(bias)
+            return s*r+b,reg_output*self.lambda_reg
+
+    def forward(self,indices):
+        pred, reg = self.collect_core_outputs(indices)
+        return pred,reg
+
 
 class variational_TT_component(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
@@ -774,8 +918,6 @@ class variational_KFT(KFT):
                                                                       cuda=cuda,
                                                                       config=config,
                                                                       init_scale=v['init_scale'])
-            # else:
-            #     tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'], n_list=v['n_list'], r_2=v['r_2'], cuda=cuda,config=config,old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
