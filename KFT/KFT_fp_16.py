@@ -364,20 +364,26 @@ class KFT(torch.nn.Module):
 
         return pred_outputs,reg_output*self.lambda_reg
 
-    def forward(self,indices):
-
-        preds_list,regularization = self.collect_core_outputs(indices)
+    def bmm_collate(self, preds_list):
         preds = preds_list[0]
+        for i in range(1, len(preds_list)):
+            preds = torch.bmm(preds, preds_list[i])
+        return preds.squeeze()
 
-        for i in range(1,len(preds_list)):
-            if self.full_grad:
-                preds = edge_mode_product(preds,preds_list[i],len(preds.shape)-1,0) #General mode product!
-            else:
-                preds = torch.bmm(preds,preds_list[i])
+    def edge_mode_collate(self, preds_list):
+        preds = preds_list[0]
+        for i in range(1, len(preds_list)):
+            preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
+        return preds.squeeze()
+
+    def forward(self,indices):
+        preds_list,regularization = self.collect_core_outputs(indices)
         if self.full_grad:
-            return preds.squeeze()[torch.unbind(indices,dim=1)],regularization
+            preds = self.edge_mode_collate(preds_list=preds_list)
+            return preds[torch.unbind(indices,dim=1)],regularization
         else:
-            return preds.squeeze(),regularization
+            preds = self.bmm_collate(preds_list=preds_list)
+            return preds,regularization
 
 class KFT_scale(torch.nn.Module):
     def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
@@ -394,8 +400,8 @@ class KFT_scale(torch.nn.Module):
         self.ii = {}
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
-            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
@@ -480,6 +486,18 @@ class KFT_scale(torch.nn.Module):
             self.TT_cores_b[str(i)].turn_on()
         return 0
 
+    def bmm_collate(self, preds_list):
+        preds = preds_list[0]
+        for i in range(1, len(preds_list)):
+            preds = torch.bmm(preds, preds_list[i])
+        return preds.squeeze()
+
+    def edge_mode_collate(self, preds_list):
+        preds = preds_list[0]
+        for i in range(1, len(preds_list)):
+            preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
+        return preds.squeeze()
+
     def collect_core_outputs(self,indices):
         scale = []
         regression = []
@@ -493,23 +511,23 @@ class KFT_scale(torch.nn.Module):
             prime_s,reg_s = tt_s.forward_scale(ix)
             prime_b,reg_b = tt_b.forward_scale(ix)
             pred, reg = tt(ix)
-            reg_output += torch.mean(reg.float()*reg_s.float()+reg_b.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            reg_output += torch.mean(reg.float())*torch.mean(reg_s.float())+torch.mean(reg_b.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             scale.append(prime_s)
             bias.append(prime_b)
             regression.append(pred)
 
         if self.full_grad:
-            s = self.edge_mode_collate(scale)
-            r = self.edge_mode_collate(regression)
-            b = self.edge_mode_collate(bias)
-            pred = s*r+b
+            group_func = self.edge_mode_collate
+        else:
+            group_func = self.bmm_collate
+        s = group_func(scale)
+        r = group_func(regression)
+        b = group_func(bias)
+        pred = s*r+b
+        if self.full_grad:
             return pred[torch.unbind(indices, dim=1)], reg_output * self.lambda_reg
         else:
-            s = self.edge_mode_collate(scale)
-            r = self.edge_mode_collate(regression)
-            b = self.edge_mode_collate(bias)
-            return s*r+b,reg_output*self.lambda_reg
-
+            return pred,reg_output * self.lambda_reg
     def forward(self,indices):
         pred, reg = self.collect_core_outputs(indices)
         return pred,reg
@@ -571,6 +589,7 @@ class variational_TT_component(TT_component):
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices]
+
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
@@ -950,20 +969,18 @@ class variational_KFT(KFT):
             total_KL += KL.abs() + KL_prime.abs()
 
         if self.full_grad:
-            middle = self.edge_mode_collate(first_term)
+            group_func = self.edge_mode_collate
         else:
-            middle = self.bmm_collate(first_term)
-        preds = middle**2
+            group_func = self.bmm_collate
+        middle = group_func(first_term)
+        last_term = middle**2
         for preds_list in [second_term,third_term]:
-            if self.full_grad:
-                preds +=  self.edge_mode_collate(preds_list)
-            else:
-                preds += self.bmm_collate(preds_list)
+            last_term +=  group_func(preds_list)
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
-            preds = preds[torch.unbind(indices, dim=1)]
+            last_term = last_term[torch.unbind(indices, dim=1)]
 
-        return middle,preds, total_KL * self.KL_weight
+        return middle,last_term, total_KL * self.KL_weight
 
     def collect_core_outputs_reparametrization(self, indices):
         pred_outputs = []
@@ -986,32 +1003,107 @@ class variational_KFT(KFT):
         else:
             preds = self.bmm_collate(preds_list)
             return preds, regularization
-    
-    def bmm_collate(self,preds_list):
-        preds = preds_list[0]
-        for i in range(1, len(preds_list)):
-            preds = torch.bmm(preds, preds_list[i])
-        return preds.squeeze()
 
-    def edge_mode_collate(self,preds_list):
-        preds = preds_list[0]
-        for i in range(1, len(preds_list)):
-            preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
-        return preds.squeeze()
-    
     def forward(self, indices):
         middle,third, regularization = self.collect_core_outputs(indices)
         return middle,third,regularization
 
     def mean_forward(self,indices):
         preds_list = self.collect_core_outputs_mean(indices)
-        preds = preds_list[0]
-        for i in range(1, len(preds_list)):
-            if self.full_grad:
-                preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
-            else:
-                preds = torch.bmm(preds, preds_list[i])
         if self.full_grad:
+            preds = self.edge_mode_collate(preds_list)
             return preds[torch.unbind(indices, dim=1)]
         else:
+            preds = self.bmm_collate(preds_list)
             return preds
+
+
+class varitional_KFT_scale(KFT_scale):
+    def __init__(self,initialization_data,KL_weight,cuda=None,config=None,old_setup=False):
+        super(varitional_KFT_scale, self).__init__(initialization_data,KL_weight,cuda,config,old_setup)
+        tmp_dict = {}
+        tmp_dict_s = {}
+        tmp_dict_b = {}
+        self.kernel_class_name = ['multivariate_variational_kernel_TT', 'univariate_variational_kernel_TT']
+        self.full_grad = config['full_grad']
+        self.ii = {}
+        self.KL_weight = torch.nn.Parameter(torch.tensor(KL_weight), requires_grad=False)
+        for i, v in initialization_data.items():
+            self.ii[i] = v['ii']
+            tmp_dict_s[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
+                                                              n_list=v['n_list'],
+                                                              r_2=v['r_2_latent'],
+                                                              cuda=cuda,
+                                                              config=config)
+            tmp_dict_b[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
+                                                          n_list=v['n_list'],
+                                                          r_2=v['r_2_latent'],
+                                                          cuda=cuda,
+                                                          config=config)
+            if v['has_side_info'] and v['multivariate']:
+                tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
+                                                                      n_list=v['n_list'],
+                                                                      r_2=v['r_2'],
+                                                                      side_information_dict=v['side_info'],
+                                                                      kernel_para_dict=v['kernel_para'],
+                                                                      cuda=cuda,
+                                                                      config=config,
+                                                                      init_scale=v['init_scale'])
+            else:
+                tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
+                                                                    n_list=v['n_list'],
+                                                                    r_2=v['r_2'],
+                                                                    side_information_dict=v['side_info'],
+                                                                    kernel_para_dict=v['kernel_para'],
+                                                                    cuda=cuda,
+                                                                    config=config,
+                                                                    init_scale=v['init_scale'])
+        self.TT_cores = torch.nn.ModuleDict(tmp_dict)
+        self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
+        self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
+
+    def collect_core_outputs(self, indices):
+        scale = []
+        scale_var = []
+        bias = []
+        bias_var = []
+        core = []
+        core_var = []
+        total_KL = 0
+        for i, v in self.ii.items():
+            ix = indices[:, v]
+            tt = self.TT_cores[str(i)]
+            tt_s = self.TT_cores_s[str(i)]
+            tt_b = self.TT_cores_b[str(i)]
+            V_s, var_s, KL_s = tt_s(ix)
+            V_b, var_b, KL_b = tt_b(ix)
+            base, extra, KL = tt(ix)
+            scale.append(V_s)
+            scale_var.append(var_s)
+            bias.append(V_b)
+            bias_var.append(var_b)
+            core.append(base)
+            core_var.append(extra)
+            total_KL+= KL_s+KL_b+KL
+
+        if self.full_grad:
+            group_func = self.edge_mode_collate
+        else:
+            group_func = self.bmm_collate
+        scale_forward = group_func(scale)
+        scale_forward_var = group_func(scale_var)
+        bias_forward = group_func(bias)
+        bias_forward_var = group_func(bias_var)
+        core_forward = group_func(core)
+        core_forward_var = group_func(core_var)
+        middle = scale_forward*core_forward+bias_forward
+        third_term = (scale_forward**2+scale_forward_var)*(core_forward**2+core_forward_var)+2*scale_forward*core_forward*bias_forward+bias_forward**2+bias_forward_var
+
+        if self.full_grad:
+            return middle[torch.unbind(indices, dim=1)], third_term[torch.unbind(indices, dim=1)], total_KL * self.KL_weight
+        else:
+            return middle, third_term, total_KL * self.KL_weight
+
+    def forward(self,indices):
+        middle_term,third_term,reg = self.collect_core_outputs(indices)
+        return middle_term,third_term,reg

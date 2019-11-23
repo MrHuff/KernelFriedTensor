@@ -1,5 +1,5 @@
 import torch
-from KFT.KFT_fp_16 import KFT, variational_KFT
+from KFT.KFT_fp_16 import KFT, variational_KFT,KFT_scale,varitional_KFT_scale
 from torch.nn.modules.loss import _Loss
 import gc
 import pickle
@@ -61,6 +61,7 @@ def run_job_func(args):
             'max_R': args['max_R'],
             'max_lr':args['max_lr'],
             'old_setup':args['old_setup'],
+            'latent_scale':args['latent_scale']
 
         }
         j = job_object(
@@ -81,38 +82,38 @@ def get_loss_func(train_config):
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     return loss_func
-def get_tensor_architectures(i,shape,R=2): #Two component tends to overfit?! Really weird!
+def get_tensor_architectures(i,shape,R=2,R_scale=1): #Two component tends to overfit?! Really weird!
     TENSOR_ARCHITECTURES = {
         0:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True},
-           1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True}, #Magnitude of kernel sum
-           2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
+           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True,'r_1_latent':1,'r_2_latent':R_scale},
+           1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':R_scale}, #Magnitude of kernel sum
+           2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
            },
         1:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True},
-           1: {'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True}, #Magnitude of kernel sum
+           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True,'r_1_latent':1,'r_2_latent':R_scale},
+           1: {'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
            },
         2: {
-            0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True},
-            1: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
+            0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
         },
         3: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
-            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2': 1, 'has_side_info': False},
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
         },
         4: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
-            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2':  1, 'has_side_info': True},
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2':  1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
         },
         5: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
-            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False},  # Magnitude of kernel sum
-            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': False},
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
+            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
         },
         6: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False},
-            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False},  # Magnitude of kernel sum
-            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True},
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
+            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
         },
 
     }
@@ -189,17 +190,6 @@ def train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p):
             print(reg)
             print(pred_loss)
             ERROR = True
-        # if train_config['bayesian']:
-        #     y_pred = model.mean_forward(X)
-        #     mean_pred_loss = loss_func(y_pred, y)
-        #     if (y_pred == 0).all():
-        #         fac = train_config['reset']
-        #         print(f'dead model_reinit factor: {fac}')
-        #         for n, param in model.named_parameters():
-        #             if 'core_param' in n:
-        #                 param.normal_(0, train_config['reset'])
-        #         train_config['reset'] = train_config['reset'] * 1.1
-        # else:
         if (y_pred == 0).all():
             fac = train_config['reset']
             print(f'dead model_reinit factor: {fac}')
@@ -212,8 +202,6 @@ def train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p):
             print(f'reg_term it {p}: {reg.data}')
             print(f'train_loss it {p}: {pred_loss.data}')
             print(f'val error it {p}: {l}')
-            # if train_config['bayesian']:
-            #     print(f'mean_loss it {p}: {mean_pred_loss.data}')
     return ERROR
 
 def correct_validation_loss(X,y,model,train_config):
@@ -229,6 +217,7 @@ def correct_validation_loss(X,y,model,train_config):
         y_pred, reg = model(X)
         pred_loss = loss_func(y_pred, y)
     return pred_loss,y_pred
+
 def correct_forward_loss(X,y,model,train_config,loss_func):
     if train_config['task']=='reg' and train_config['bayesian']:
             y_pred,last_term, reg = model(X)
@@ -378,6 +367,7 @@ class job_object():
         self.max_R = configs['max_R']
         self.max_lr = configs['max_lr']
         self.old_setup = configs['old_setup']
+        self.latent_scale = configs['latent_scale']
         self.lrs = [self.max_lr/10**i for i in range(3)]
         self.seed = seed
         self.trials = Trials()
@@ -403,34 +393,52 @@ class job_object():
             self.available_side_info_dims.append(dim)
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
+        if self.latent_scale:
+            self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(1,self.max_R//2,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True
-                                                                                                ])
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[False])
 
     def init_and_train(self,parameters):
-        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'])
+        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
         print(parameters)
         if self.bayesian:
-            if self.cuda:
-                model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'],
-                                        cuda=self.device, config=self.config, old_setup=self.old_setup).to(self.device)
+            if self.latent_scale:
+                if self.cuda:
+                    model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                                            cuda=self.device, config=self.config, old_setup=self.old_setup).to(
+                        self.device)
+                else:
+                    model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=parameters['reg_para'], cuda='cpu',
+                                            config=self.config, old_setup=self.old_setup)
             else:
-                model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'], cuda='cpu',
-                                        config=self.config, old_setup=self.old_setup)
+                if self.cuda:
+                    model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                                            cuda=self.device, config=self.config, old_setup=self.old_setup).to(self.device)
+                else:
+                    model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'], cuda='cpu',
+                                            config=self.config, old_setup=self.old_setup)
         else:
-            if self.cuda:
-                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
-                            config=self.config, old_setup=self.old_setup).to(self.device)
+            if self.latent_scale:
+                if self.cuda:
+                    model = KFT_scale(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                                config=self.config, old_setup=self.old_setup).to(self.device)
+                else:
+                    model = KFT_scale(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
+                                config=self.config, old_setup=self.old_setup)
             else:
-                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
-                            config=self.config, old_setup=self.old_setup)
+                if self.cuda:
+                    model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                                config=self.config, old_setup=self.old_setup).to(self.device)
+                else:
+                    model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
+                                config=self.config, old_setup=self.old_setup)
         print(model)
         dataloader_train = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
