@@ -321,9 +321,6 @@ def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=
 
 def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
     train_config['reset'] = 1.0
-    ERROR = outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=not train_config['deep_kernel'])
-    if ERROR:
-        return -np.inf,-np.inf
     for i in range(train_config['epochs']+1):
         ERROR = outer_train_loop(model, train_config, dataloader_train, dataloader_val, warmup=False)
         if ERROR:
@@ -452,17 +449,13 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        # Architecture one super weird, overfits completely
-        if self.deep_kernel:
-            for i in range(10):
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    ref_met = 'R2' if self.task == 'reg' else 'auc'
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
-        else:
+        for i in range(10):
             val_loss_final, test_loss_final = self.init_and_train(parameters)
+            if not np.isinf(val_loss_final):
+                ref_met = 'R2' if self.task == 'reg' else 'auc'
+                return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
         ref_met = 'R2' if self.task == 'reg' else 'auc'
-        return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+        return {'loss': np.inf, 'status': STATUS_OK, f'test_{ref_met}': np.inf}
 
     def get_kernel_vals(self,desc):
         if 'matern_1'== desc:
@@ -501,7 +494,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = 1.0
+            component_init['init_scale'] = 1e-1
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict

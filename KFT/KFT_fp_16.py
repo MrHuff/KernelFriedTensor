@@ -8,7 +8,6 @@ from KFT.FLOWS.flows import IAF_no_h
 import math
 PI  = math.pi
 torch.set_printoptions(profile="full")
-
 def row_outer_prod(x,y):
     """
     :param x: n x c
@@ -272,13 +271,13 @@ class KFT(torch.nn.Module):
         self.ii = {}
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=1.0)
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
-                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=1.0)
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
@@ -368,6 +367,8 @@ class KFT(torch.nn.Module):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
             preds = torch.bmm(preds, preds_list[i])
+            # print(f'inner: {i}')
+            # print(preds_list[i].mean())
         return preds.squeeze()
 
     def edge_mode_collate(self, preds_list):
@@ -400,14 +401,14 @@ class KFT_scale(torch.nn.Module):
         self.ii = {}
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=v['init_scale'])
-            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=1.0)
+            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=1.0)
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
-                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=1.0)
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
@@ -577,24 +578,11 @@ class variational_TT_component(TT_component):
             KL = self.calculate_KL(mean,sig)
         return mean,sig.exp()**2,KL
 
-    def get_VI_term(self,indices):
-        T = self.core_param
-        for mode, ones in enumerate(self.n_list):
-            ones = getattr(self, f'reg_ones_{mode}')
-            T = lazy_mode_product(T, ones.t(), mode + 1)
-            T = lazy_mode_product(T, ones, mode + 1)
-        if self.full_grad:
-            return T
-        else:
-            if len(indices.shape)>1:
-                indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices]
-
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                  kernel_para_dict, cuda, config, init_scale)
-        self.variance_parameters = torch.nn.Parameter(torch.zeros(*self.shape_list),requires_grad=True)
+        self.variance_parameters = torch.nn.Parameter(-10.*torch.ones(*self.shape_list),requires_grad=True)
 
     def calculate_KL(self,mean,sig):
         KL = torch.mean(0.5*(sig.exp()+mean**2-sig-1))
@@ -918,7 +906,8 @@ class variational_KFT(KFT):
                                                               n_list=v['n_list'],
                                                               r_2=v['r_2'],
                                                               cuda=cuda,
-                                                              config=config)
+                                                              config=config,
+                                                              init_scale=v['init_scale'])
             if v['has_side_info'] and v['multivariate']:
                 tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
                                                                       n_list=v['n_list'],
@@ -927,7 +916,7 @@ class variational_KFT(KFT):
                                                                       kernel_para_dict=v['kernel_para'],
                                                                       cuda=cuda,
                                                                       config=config,
-                                                                      init_scale=v['init_scale'])
+                                                                      init_scale=1.0)
             else:
                 tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
                                                                       n_list=v['n_list'],
@@ -936,7 +925,7 @@ class variational_KFT(KFT):
                                                                       kernel_para_dict=v['kernel_para'],
                                                                       cuda=cuda,
                                                                       config=config,
-                                                                      init_scale=v['init_scale'])
+                                                                      init_scale=1.0)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
@@ -961,21 +950,20 @@ class variational_KFT(KFT):
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
             V_prime, var_prime, KL_prime = tt_prime(ix)
-            V_prime_sum = tt_prime.get_VI_term(ix)
             base, extra, KL = tt(ix)
             first_term.append(V_prime*base)
             second_term.append((extra+base*base)*var_prime)
-            third_term.append((V_prime*V_prime_sum)*extra)
+            third_term.append((V_prime*V_prime)*extra)
             total_KL += KL.abs() + KL_prime.abs()
-
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
             group_func = self.bmm_collate
         middle = group_func(first_term)
         last_term = middle**2
-        for preds_list in [second_term,third_term]:
-            last_term +=  group_func(preds_list)
+        for i,preds_list in enumerate([second_term,third_term]):
+            tmp = group_func(preds_list)
+            last_term +=  tmp
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
             last_term = last_term[torch.unbind(indices, dim=1)]
@@ -1048,7 +1036,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                       kernel_para_dict=v['kernel_para'],
                                                                       cuda=cuda,
                                                                       config=config,
-                                                                      init_scale=v['init_scale'])
+                                                                      init_scale=1.0)
             else:
                 tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
                                                                     n_list=v['n_list'],
@@ -1057,7 +1045,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                     kernel_para_dict=v['kernel_para'],
                                                                     cuda=cuda,
                                                                     config=config,
-                                                                    init_scale=v['init_scale'])
+                                                                    init_scale=1.0)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
         self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
