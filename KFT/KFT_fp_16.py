@@ -130,9 +130,6 @@ class TT_component(torch.nn.Module):
                 T = lazy_mode_product(T, ones, mode+1)
             return T
 
-
-
-
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale)
@@ -224,7 +221,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     requires_grad=False)
                 getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(kernel_para_dict['p']*torch.ones(*(1,1)),requires_grad=False)
         tmp_kernel_func = getattr(self,f'kernel_{key}')
-        self.n_dict[key] =  tmp_kernel_func(value).evaluate() #.to(self.device)
+        self.n_dict[key] =  tmp_kernel_func(value).evaluate().to(self.device)
         self.register_buffer(f'kernel_data_{key}',value)
         if deep_kernel:
             setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=2,tanh_flag_h=True,C=10))
@@ -677,14 +674,14 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     k.raw_period_length.requires_grad = False
                 with torch.no_grad():
                     value = getattr(self,f'kernel_data_{key}')
-                    self.n_dict[key] = k(value)
+                    self.n_dict[key] = k(value).evaluate()
         self.recalculate_priors()
 
     def recalculate_priors(self):
         for key, val in self.n_dict.items():
             if val is not None:
+                mat = val
                 if self.RFF_dict[key]:
-                    mat = val
                     self.register_buffer(f'Phi_T_{key}',mat.t()@mat)
                     sig_p_2 = getattr(self, f'sig_p_2_{key}')
                     raw_cov = getattr(self,f'Phi_T_{key}')
@@ -692,21 +689,19 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     eye = getattr(self,f'eye_{key}')
                     RFF_dim_const = getattr(self,f'RFF_dim_const_{key}')
                     if len(self.shape_list) > 3:
-                        prior_log_det = -(gpytorch.logdet(raw_cov + eye * sig_p_2) * mat.shape[0] + torch.log(
+                        prior_log_det = -(torch.logdet(raw_cov + eye * sig_p_2) * mat.shape[0] + torch.log(
                             sig_p_2) * (RFF_dim_const))
                     else:
-                        prior_log_det = -gpytorch.logdet(raw_cov + eye * sig_p_2) + torch.log(sig_p_2) * (
+                        prior_log_det = -torch.logdet(raw_cov + eye * sig_p_2) + torch.log(sig_p_2) * (
                             RFF_dim_const)
                 else:
-                    mat = val.evaluate()
-                    mat = mat + torch.eye(mat.shape[0],device=self.device)*1e-3
-                    setattr(self, f'priors_inv_{key}', mat)
+                    mat = val + torch.eye(val.shape[0], device=self.device)
+                    self.register_buffer( f'priors_inv_{key}', mat)
                     if len(self.shape_list) > 3:
-                        prior_log_det = -gpytorch.logdet(mat) * mat.shape[0]
+                        prior_log_det = -torch.logdet(mat) * mat.shape[0]
                     else:
-                        prior_log_det = -gpytorch.logdet(mat)
-
-                setattr(self, f'prior_log_det_{key}', prior_log_det)
+                        prior_log_det = -torch.logdet(mat)
+                self.register_buffer(f'prior_log_det_{key}', prior_log_det)
 
     def set_variational_parameters(self,key,val):
         if val is None:
@@ -720,13 +715,13 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'r_const_{key}',torch.tensor(R).float())
                 self.register_buffer(f'Phi_T_{key}',torch.ones_like(eye))
                 self.register_buffer(f'Phi_T_trace_{key}',eye.mean())
-                setattr(self,f'RFF_dim_const_{key}',0)
-                prior_log_det = torch.tensor(0,device=self.device)
+                self.register_buffer(f'RFF_dim_const_{key}',torch.tensor(0))
+                prior_log_det = torch.tensor(0)
             else:
                 mat  = val
                 R = mat.shape[1]
-                self.register_buffer(f'sig_p_2_{key}',torch.tensor(1e-2,device=self.device))
-                eye = torch.eye(R).to(self.device)
+                self.register_buffer(f'sig_p_2_{key}',torch.tensor(1e-2))
+                eye = torch.eye(R)
                 self.register_buffer(f'eye_{key}',eye)
                 self.register_buffer(f'r_const_{key}',torch.tensor(R).float())
                 self.register_buffer(f'Phi_T_{key}',mat.t()@mat)
@@ -735,23 +730,23 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
                 self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
                 RFF_dim_const = mat.shape[0]-R
-                setattr(self,f'RFF_dim_const_{key}',RFF_dim_const)
+                self.register_buffer(f'RFF_dim_const_{key}',torch.tensor(RFF_dim_const))
                 if len(self.shape_list)>3:
-                    prior_log_det = -(gpytorch.logdet(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(torch.logdet(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
                 else:
-                    prior_log_det = -(gpytorch.logdet(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(torch.logdet(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
-            mat  = val + torch.eye(val.shape[0])*1e-3
+            mat  = val + torch.eye(val.shape[0],device=self.device)
             if len(self.shape_list) > 3:
-                prior_log_det = -gpytorch.logdet(mat)*(mat.shape[0])
+                prior_log_det = -torch.logdet(mat)*(mat.shape[0])
             else:
-                prior_log_det = -gpytorch.logdet(mat)
+                prior_log_det = -torch.logdet(mat)
             setattr(self, f'D_{key}', torch.nn.Parameter(1e-3*torch.ones(mat.shape[0], 1), requires_grad=True))
-            setattr(self, f'priors_inv_{key}', mat)
+            self.register_buffer(f'priors_inv_{key}', mat)
         self.noise_shape.append(R)
-        setattr(self,f'prior_log_det_{key}',prior_log_det)
+        self.register_buffer(f'prior_log_det_{key}',prior_log_det)
         self.register_buffer(f'n_const_{key}',torch.tensor(self.shape_list[key]).float())
         setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(self.shape_list[key],R),requires_grad=True))
 
@@ -774,14 +769,14 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             dim_const = getattr(self, f'RFF_dim_const_{key}')
             input = cov+getattr(self,f'eye_{key}')*D
             if len(self.shape_list) > 3:
-                det = gpytorch.logdet(input)*n + dim_const * torch.log(D)
+                det = torch.logdet(input)*n + dim_const * torch.log(D)
             else:
-                det = gpytorch.logdet(input) + dim_const * torch.log(D)
+                det = torch.logdet(input) + dim_const * torch.log(D)
         else:
             if len(self.shape_list) > 3:
-                det = gpytorch.logdet(cov)*n
+                det = torch.logdet(cov)*n
             else:
-                det = gpytorch.logdet(cov)
+                det = torch.logdet(cov)
         return det.squeeze()
 
     def calculate_KL(self):
@@ -1035,8 +1030,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                       side_information_dict=v['side_info'],
                                                                       kernel_para_dict=v['kernel_para'],
                                                                       cuda=cuda,
-                                                                      config=config,
-                                                                      init_scale=1.0)
+                                                                      config=config)
             else:
                 tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
                                                                     n_list=v['n_list'],
@@ -1044,8 +1038,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                     side_information_dict=v['side_info'],
                                                                     kernel_para_dict=v['kernel_para'],
                                                                     cuda=cuda,
-                                                                    config=config,
-                                                                    init_scale=1.0)
+                                                                    config=config)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
         self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
