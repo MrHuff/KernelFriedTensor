@@ -13,7 +13,6 @@ import numpy as np
 import timeit
 import apex
 from apex import amp
-
 def run_job_func(args):
     print(args)
     with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
@@ -226,12 +225,12 @@ def correct_forward_loss(X,y,model,train_config,loss_func):
 def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=False):
 
     lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.5)
-    if warmup:
-        dataloader.ratio = train_config['batch_ratio']/1e2
-    else:
-        dataloader.ratio = train_config['batch_ratio']
     print_garbage()
     for p in range(sub_epoch+1):
+        if warmup:
+            dataloader.ratio = train_config['batch_ratio'] / 1e2
+        else:
+            dataloader.ratio = train_config['batch_ratio']
         dataloader.set_mode('train')
         X,y = dataloader.get_batch()
         if train_config['cuda']:
@@ -265,12 +264,11 @@ def print_garbage():
 
 
 def opt_reinit(train_config,model,lr_params,warmup=False):
-
     if train_config['fp_16'] and not warmup:
         if train_config['fused']:
             tmp_opt_list = []
             for lr in lr_params:
-                tmp_opt_list.append(apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr]))
+                tmp_opt_list.append(apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr])) #Calling this again makes the model completely in FP16 wtf
             [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
             opts  = {x:y for x,y in zip(lr_params,tmp_opt_list)}
             model.amp = amp
@@ -509,7 +507,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = 1e0
+            component_init['init_scale'] = 1e-1
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict
