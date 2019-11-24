@@ -72,6 +72,7 @@ def job_parser():
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
     parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=5, help='sub_epoch_V')
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
+    parser.add_argument('--chunks', type=int, nargs='?', help='chunks',default=1)
     parser.add_argument('--side_info_order', nargs='+', type=int)
     parser.add_argument('--temporal_tag', nargs='+', type=int)
     parser.add_argument('--architecture', type=int, nargs='?', default=0, help='architecture')
@@ -223,6 +224,7 @@ def load_side_info(side_info_path,indices):
 
 class tensor_dataset(Dataset):
     def __init__(self, tensor_path,seed,mode,bs_ratio=1.):
+        self.chunks = 1
         self.ratio = bs_ratio
         self.indices,self.Y = torch.load(tensor_path)
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.indices.numpy(),
@@ -245,12 +247,15 @@ class tensor_dataset(Dataset):
             self.ratio = 1.
             self.X = torch.from_numpy(self.X_val)
             self.Y = torch.from_numpy(self.Y_val)
-            self.bs = int(round(self.X.shape[0]))
+            self.X_chunks = torch.chunk(self.X,self.chunks)
+            self.Y_chunks = torch.chunk(self.Y,self.chunks)
+
         elif mode == 'test':
             self.ratio = 1.
             self.X = torch.from_numpy(self.X_test)
             self.Y = torch.from_numpy(self.Y_test)
-            self.bs = int(round(self.X.shape[0]))
+            self.X_chunks = torch.chunk(self.X,self.chunks)
+            self.Y_chunks = torch.chunk(self.Y,self.chunks)
 
     def get_batch(self):
         if self.ratio==1.:
@@ -260,6 +265,8 @@ class tensor_dataset(Dataset):
                                          replace=False)
             return self.X[batch_msk, :], self.Y[batch_msk]
 
+    def get_chunk(self,i):
+        return self.X_chunks[i],self.Y_chunks[i]
     def __len__(self):
         return self.X.shape[0]
 

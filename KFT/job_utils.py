@@ -11,8 +11,6 @@ from sklearn import metrics
 # from KFT.lookahead_opt import Lookahead
 import numpy as np
 import timeit
-import apex
-from apex import amp
 def run_job_func(args):
     print(args)
     with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
@@ -24,7 +22,6 @@ def run_job_func(args):
         if not os.path.exists(PATH + 'all_data.pt'):
             process_old_setup(PATH, tensor_name=args['tensor_name'])
             concat_old_side_info(PATH, args['side_info_name'])
-
         side_info = load_side_info(side_info_path=PATH, indices=args['side_info_order'])
         shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
 
@@ -61,7 +58,8 @@ def run_job_func(args):
             'max_R': args['max_R'],
             'max_lr':args['max_lr'],
             'old_setup':args['old_setup'],
-            'latent_scale':args['latent_scale']
+            'latent_scale':args['latent_scale'],
+            'chunks':args['chunks']
 
         }
         j = job_object(
@@ -158,16 +156,17 @@ def calculate_loss_no_grad(model,dataloader,train_config,task='reg',mode='val'):
     _y_preds = []
     dataloader.set_mode(mode)
     with torch.no_grad():
-        X, y = dataloader.get_batch()
-        if train_config['cuda']:
-            X = X.to(train_config['device'])
-            y = y.to(train_config['device'])
-        loss,y_pred = correct_validation_loss(X, y, model, train_config)
-        loss_list.append(loss)
-        y_s.append(y)
-        _y_preds.append(y_pred)
+        for i in range(dataloader.chunks):
+            X, y = dataloader.get_chunk(i)
+            if train_config['cuda']:
+                X = X.to(train_config['device'])
+                y = y.to(train_config['device'])
+            loss,y_pred = correct_validation_loss(X, y, model, train_config)
+            loss_list.append(loss)
+            y_s.append(y)
+            _y_preds.append(y_pred)
         total_loss = torch.tensor(loss_list).mean().data
-        Y = torch.cat(y_s)
+        Y = torch.cat(y_s,dim=0)
         y_preds = torch.cat(_y_preds)
         if task=='reg':
             var_Y = Y.var()
@@ -224,8 +223,9 @@ def correct_forward_loss(X,y,model,train_config,loss_func):
 
 def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=False):
 
-    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.5)
+    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=0,factor=0.5)
     print_garbage()
+    s = timeit.timeit()
     for p in range(sub_epoch+1):
         if warmup:
             dataloader.ratio = train_config['batch_ratio'] / 1e2
@@ -244,11 +244,14 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
         else:
             total_loss.backward()
         opt.step()
-        l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
-        lrs.step(-l)
+        if p % train_config['patience'] == 0:
+            l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
+            lrs.step(-l)
         ERROR = train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
+    e = timeit.timeit()
+    print(e-s)
     return False
 
 def print_garbage():
@@ -262,9 +265,11 @@ def print_garbage():
             pass
     print(len(obj_list))
 
-
 def opt_reinit(train_config,model,lr_params,warmup=False):
     if train_config['fp_16'] and not warmup:
+        import apex
+        from apex import amp
+        amp.register_float_function(torch, 'bmm')#TODO: HALLELUJA
         if train_config['fused']:
             tmp_opt_list = []
             for lr in lr_params:
@@ -282,13 +287,13 @@ def opt_reinit(train_config,model,lr_params,warmup=False):
             [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
             model.amp = amp
             model.amp_patch(amp)
+        train_config['amp'] = amp
     else:
         # amp=None
         tmp_opt_list = []
         for lr in lr_params:
             tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
         opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
-    train_config['amp'] = amp
     return model,opts
 
 def setup_runs(model,train_config,warmup):
@@ -344,8 +349,6 @@ def train(model, train_config, dataloader):
             return -np.inf, -np.inf
     val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
     test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
-    del train_config
-    del model
 
     print(val_loss_final,test_loss_final)
     return val_loss_final,test_loss_final
@@ -383,6 +386,7 @@ class job_object():
         self.max_lr = configs['max_lr']
         self.old_setup = configs['old_setup']
         self.latent_scale = configs['latent_scale']
+        self.chunks = configs['chunks']
         self.lrs = [self.max_lr/10**i for i in range(3)]
         self.seed = seed
         self.trials = Trials()
@@ -457,6 +461,7 @@ class job_object():
         print(model)
         dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
+        dataloader.chunks = train_config['chunks']
         val_loss_final, test_loss_final = train(model=model, train_config=train_config,
                                                 dataloader=dataloader)
         return val_loss_final, test_loss_final
@@ -530,6 +535,8 @@ class job_object():
         training_params['architecture'] = self.architecture
         training_params['deep_kernel'] = self.deep_kernel
         training_params['batch_ratio'] = parameters['batch_size_ratio']
+        training_params['patience'] = self.sub_epoch_V//4
+        training_params['chunks'] = self.chunks
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
 

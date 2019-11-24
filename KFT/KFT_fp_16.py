@@ -7,6 +7,8 @@ from tensorly.tenalg import multi_mode_dot,mode_dot
 from KFT.FLOWS.flows import IAF_no_h
 import math
 import timeit
+from apex import amp
+import apex
 PI  = math.pi
 torch.set_printoptions(profile="full")
 def row_outer_prod(x,y):
@@ -373,11 +375,7 @@ class KFT(torch.nn.Module):
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
-            if self.amp is not None:
-                with self.amp.disable_casts():
-                    preds = torch.bmm(preds, preds_list[i])
-            else:
-                preds = torch.bmm(preds, preds_list[i])
+            preds = torch.bmm(preds, preds_list[i])
         return preds.squeeze()
 
     def edge_mode_collate(self, preds_list):
@@ -523,11 +521,7 @@ class KFT_scale(torch.nn.Module):
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
-            if self.amp is not None:
-                with self.amp.disable_casts():
-                    preds = torch.bmm(preds, preds_list[i])
-            else:
-                preds = torch.bmm(preds, preds_list[i])
+            preds = torch.bmm(preds, preds_list[i])
         return preds.squeeze()
 
     def edge_mode_collate(self, preds_list):
@@ -552,7 +546,7 @@ class KFT_scale(torch.nn.Module):
             reg_output += torch.mean(reg.float())*torch.mean(reg_s.float())+torch.mean(reg_b.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             scale.append(prime_s)
             bias.append(prime_b)
-            regression.append(pred.float())
+            regression.append(pred)
 
         if self.full_grad:
             group_func = self.edge_mode_collate
