@@ -66,13 +66,11 @@ def job_parser():
     parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')
     parser.add_argument('--save_path', type=str, nargs='?')
     parser.add_argument('--task', type=str, nargs='?')
-    parser.add_argument('--epochs', type=int, nargs='?', default=5, help='epochs')
+    parser.add_argument('--epochs', type=int, nargs='?', default=1, help='epochs')
     parser.add_argument('--bayesian', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
-    parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=200, help='sub_epoch_V')
-    parser.add_argument('--sub_epoch_ls', type=int, nargs='?', default=200, help='sub_epoch_ls')
-    parser.add_argument('--sub_epoch_prime', type=int, nargs='?', default=200, help='sub_epoch_prime')
+    parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=5, help='sub_epoch_V')
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
     parser.add_argument('--side_info_order', nargs='+', type=int)
     parser.add_argument('--temporal_tag', nargs='+', type=int)
@@ -236,17 +234,20 @@ class tensor_dataset(Dataset):
                                                                               self.Y_train,
                                                                               test_size=0.25,
                                                                               random_state=seed)
-        if mode=='train':
+        self.set_mode(mode)
+
+    def set_mode(self,mode):
+        if mode == 'train':
             self.X = torch.from_numpy(self.X_train)
             self.Y = torch.from_numpy(self.Y_train)
-            self.bs = int(round(self.X.shape[0]*bs_ratio))
-        elif mode=='val':
-            self.ratio=1.
+            self.bs = int(round(self.X.shape[0] * self.ratio))
+        elif mode == 'val':
+            self.ratio = 1.
             self.X = torch.from_numpy(self.X_val)
             self.Y = torch.from_numpy(self.Y_val)
             self.bs = int(round(self.X.shape[0]))
-        elif mode=='test':
-            self.ratio=1.
+        elif mode == 'test':
+            self.ratio = 1.
             self.X = torch.from_numpy(self.X_test)
             self.Y = torch.from_numpy(self.Y_test)
             self.bs = int(round(self.X.shape[0]))

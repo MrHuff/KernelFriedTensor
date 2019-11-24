@@ -76,6 +76,7 @@ class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
         super(TT_component, self).__init__()
         self.n_list = n_list
+        self.amp = None
         self.V_mode = True
         self.device = cuda
         self.old_setup = old_setup
@@ -226,17 +227,19 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         if deep_kernel:
             setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=2,tanh_flag_h=True,C=10))
 
-
+    def side_data_eval(self,key):
+        X = getattr(self, f'kernel_data_{key}')
+        tmp_kernel_func = getattr(self, f'kernel_{key}')
+        if self.deep_mode:
+            f = getattr(self, f'transformation_{key}')
+            X = f(X)
+        val = tmp_kernel_func(X).evaluate()
+        return val
     def apply_kernels(self,T):
         for key, val in self.n_dict.items():
             if val is not None:
                 if not self.V_mode:
-                    X = getattr(self, f'kernel_data_{key}')
-                    if self.deep_mode:
-                        f = getattr(self, f'transformation_{key}')
-                        X = f(X)
-                    tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(X).evaluate()
+                    val = self.side_data_eval(key)
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val, key)
                 else:
@@ -259,6 +262,7 @@ class KFT(torch.nn.Module):
         super(KFT, self).__init__()
         self.kernel_class_name = ['TT_kernel_component']
         self.cuda = cuda
+        self.amp = None
         self.config = config
         self.old_setup = old_setup
         self.register_buffer('lambda_reg',torch.tensor(lambda_reg))
@@ -268,13 +272,13 @@ class KFT(torch.nn.Module):
         self.ii = {}
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=1.0)
+            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
-                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=1.0)
+                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
@@ -346,6 +350,11 @@ class KFT(torch.nn.Module):
             self.TT_cores_prime[str(i)].turn_on()
         return 0
 
+    def amp_patch(self,amp):
+        for i,v in self.ii.items():
+            self.TT_cores[str(i)].amp=amp
+            self.TT_cores_prime[str(i)].amp=amp
+
     def collect_core_outputs(self,indices):
         pred_outputs = []
         reg_output=0
@@ -363,9 +372,11 @@ class KFT(torch.nn.Module):
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
-            preds = torch.bmm(preds, preds_list[i])
-            # print(f'inner: {i}')
-            # print(preds_list[i].mean())
+            if self.amp is not None:
+                with self.amp.disable_casts():
+                    preds = torch.bmm(preds, preds_list[i])
+            else:
+                preds = torch.bmm(preds, preds_list[i])
         return preds.squeeze()
 
     def edge_mode_collate(self, preds_list):
@@ -383,12 +394,30 @@ class KFT(torch.nn.Module):
             preds = self.bmm_collate(preds_list=preds_list)
             return preds,regularization
 
+    def full_grad_debug(self,indices):
+        pred_outputs = []
+        reg_output = 0
+        for i, v in self.ii.items():
+            ix = indices[:, v]
+            tt = self.TT_cores[str(i)]
+            tt_prime = self.TT_cores_prime[str(i)]
+            tt.full_grad=True
+            tt_prime.full_grad=True
+            prime_pred, reg_prime = tt_prime(ix)
+            pred, reg = tt(ix)
+            pred_outputs.append(pred * prime_pred)
+            reg_output += torch.sum(
+                reg.float() * reg_prime.float())  # numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+
+        return pred_outputs, reg_output * self.lambda_reg
+
 class KFT_scale(torch.nn.Module):
     def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT_scale, self).__init__()
         self.kernel_class_name = ['TT_kernel_component']
         self.cuda = cuda
         self.config = config
+        self.amp = None
         self.old_setup = old_setup
         self.register_buffer('lambda_reg',torch.tensor(lambda_reg))
         tmp_dict = {}
@@ -398,14 +427,14 @@ class KFT_scale(torch.nn.Module):
         self.ii = {}
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=1.0)
-            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=1.0)
+            tmp_dict_b[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            tmp_dict_s[str(i)] = TT_component(r_1=v['r_1_latent'],n_list=v['n_list'],r_2=v['r_2_latent'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
-                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=1.0)
+                                                       kernel_para_dict=v['kernel_para'],cuda=cuda,config=config,init_scale=v['init_scale'])
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
@@ -423,6 +452,12 @@ class KFT_scale(torch.nn.Module):
             self.TT_cores_s[str(i)].turn_off()
             self.TT_cores_b[str(i)].turn_off()
         return 0
+
+    def amp_patch(self,amp):
+        for i,v in self.ii.items():
+            self.TT_cores[str(i)].amp=amp
+            self.TT_cores_s[str(i)].amp=amp
+            self.TT_cores_b[str(i)].amp=amp
 
     def turn_on_prime(self):
         for i, v in self.ii.items():
@@ -487,7 +522,11 @@ class KFT_scale(torch.nn.Module):
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
-            preds = torch.bmm(preds, preds_list[i])
+            if self.amp is not None:
+                with self.amp.disable_casts():
+                    preds = torch.bmm(preds, preds_list[i])
+            else:
+                preds = torch.bmm(preds, preds_list[i])
         return preds.squeeze()
 
     def edge_mode_collate(self, preds_list):
@@ -512,7 +551,7 @@ class KFT_scale(torch.nn.Module):
             reg_output += torch.mean(reg.float())*torch.mean(reg_s.float())+torch.mean(reg_b.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             scale.append(prime_s)
             bias.append(prime_b)
-            regression.append(pred)
+            regression.append(pred.float())
 
         if self.full_grad:
             group_func = self.edge_mode_collate
@@ -521,11 +560,13 @@ class KFT_scale(torch.nn.Module):
         s = group_func(scale)
         r = group_func(regression)
         b = group_func(bias)
+
         pred = s*r+b
         if self.full_grad:
             return pred[torch.unbind(indices, dim=1)], reg_output * self.lambda_reg
         else:
             return pred,reg_output * self.lambda_reg
+
     def forward(self,indices):
         pred, reg = self.collect_core_outputs(indices)
         return pred,reg

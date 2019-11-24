@@ -11,6 +11,9 @@ from sklearn import metrics
 # from KFT.lookahead_opt import Lookahead
 import numpy as np
 import timeit
+import apex
+from apex import amp
+
 def run_job_func(args):
     print(args)
     with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
@@ -53,8 +56,6 @@ def run_job_func(args):
             'device': f'cuda:{gpu_choice}',
             'train_loss_interval_print': args['sub_epoch_V'] // 2,
             'sub_epoch_V': args['sub_epoch_V'],
-            'sub_epoch_ls': args['sub_epoch_ls'],
-            'sub_epoch_prime': args['sub_epoch_prime'],
             'config': {'full_grad': args['full_grad'],'deep_kernel':args['deep_kernel']},
             'shape':shape,
             'architecture': args['architecture'],
@@ -143,13 +144,6 @@ class stableBCEwithlogits(_Loss):
         return torch.mean(self.f(x)-x*y)
 
 def analytical_reconstruction_error_VI(y,middle_term,last_term):
-    # print(y.shape)
-    # print(middle_term.shape)
-    # print(last_term.shape)
-    # print(y.mean())
-    # print(middle_term.mean())
-    # print(last_term.mean()) #Last term blowing up completely
-    # print(torch.mean(y**2 -2*y*middle_term))
     return torch.mean(y**2 -2*y*middle_term+last_term)
 
 def auc_check(y_pred,Y):
@@ -159,10 +153,11 @@ def auc_check(y_pred,Y):
         auc =  metrics.auc(fpr, tpr)
         return auc
 
-def calculate_loss_no_grad(model,dataloader,train_config,task='reg'):
+def calculate_loss_no_grad(model,dataloader,train_config,task='reg',mode='val'):
     loss_list = []
     y_s = []
     _y_preds = []
+    dataloader.set_mode(mode)
     with torch.no_grad():
         X, y = dataloader.get_batch()
         if train_config['cuda']:
@@ -189,6 +184,7 @@ def train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p):
             print('FOUND INF/NAN RIP, RESTARTING')
             print(reg)
             print(pred_loss)
+            print(y_pred.mean())
             ERROR = True
         if (y_pred == 0).all():
             fac = train_config['reset']
@@ -227,26 +223,29 @@ def correct_forward_loss(X,y,model,train_config,loss_func):
         pred_loss = loss_func(y_pred, y)
     return pred_loss+reg,reg,pred_loss,y_pred
 
-def train_loop(model, dataloader, loss_func,lr, train_config,sub_epoch,dataloader_val,warmup=False):
-    model, opt, lrs,amp = opt_reinit(train_config, model, lr, warmup=warmup)
+def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=False):
+
+    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.5)
+    if warmup:
+        dataloader.ratio = train_config['batch_ratio']/1e2
+    else:
+        dataloader.ratio = train_config['batch_ratio']
     print_garbage()
     for p in range(sub_epoch+1):
+        dataloader.set_mode('train')
         X,y = dataloader.get_batch()
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
         total_loss,reg,pred_loss,y_pred = correct_forward_loss(X,y,model,train_config,loss_func)
-        # y_pred, reg = model(X)
-        # pred_loss = loss_func(y_pred, y)
-        # total_loss = pred_loss + reg
         opt.zero_grad()
         if train_config['fp_16'] and not warmup:
-            with amp.scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
+            with train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
                 loss_scaled.backward()
         else:
             total_loss.backward()
         opt.step()
-        l = calculate_loss_no_grad(model,dataloader_val,train_config=train_config)
+        l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
         lrs.step(-l)
         ERROR = train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
@@ -264,43 +263,60 @@ def print_garbage():
             pass
     print(len(obj_list))
 
-def opt_reinit(train_config,model,lr_param,warmup=False):
+
+def opt_reinit(train_config,model,lr_params,warmup=False):
+
     if train_config['fp_16'] and not warmup:
-        from apex import amp
-        import apex
         if train_config['fused']:
-            opt = apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr_param])
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
+            tmp_opt_list = []
+            for lr in lr_params:
+                tmp_opt_list.append(apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr]))
+            [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
+            opts  = {x:y for x,y in zip(lr_params,tmp_opt_list)}
+            model.amp = amp
+            model.amp_patch(amp)
         else:
-            opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
-            [model], [opt] = amp.initialize([model],[opt], opt_level='O1',num_losses=1)
+            tmp_opt_list = []
+            for lr in lr_params:
+                tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
+            [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
+            opts  = {x:y for x,y in zip(lr_params,tmp_opt_list)}
+            [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
+            model.amp = amp
+            model.amp_patch(amp)
     else:
-        amp=None
-        opt = torch.optim.Adam(model.parameters(), lr=train_config[lr_param], amsgrad=False)
-    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=10,factor=0.5)
-    return model,opt,lrs,amp
+        # amp=None
+        tmp_opt_list = []
+        for lr in lr_params:
+            tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
+        opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
+    train_config['amp'] = amp
+    return model,opts
 
-def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=False):
-
+def setup_runs(model,train_config,warmup):
     loss_func = get_loss_func(train_config)
-    ERROR=False
-    kernel,deep_kernel = model.has_kernel_component()
-    train_dict = {0: {'para':'V_lr','call':model.turn_on_V}}
+    ERROR = False
+    kernel, deep_kernel = model.has_kernel_component()
+    train_dict = {0: {'para': 'V_lr', 'call': model.turn_on_V}}
     train_list = [0]
     if not train_config['old_setup']:
-        train_dict[1] = {'para':'prime_lr','call':model.turn_on_prime}
+        train_dict[1] = {'para': 'prime_lr', 'call': model.turn_on_prime}
         train_list.append(1)
     if kernel:
-        train_dict[2] = {'para':'ls_lr','call':model.turn_on_kernel_mode}
-        train_list.insert(0,2)
+        train_dict[2] = {'para': 'ls_lr', 'call': model.turn_on_kernel_mode}
+        train_list.insert(-1, 2)
     if deep_kernel:
-        train_dict[3] = {'para':'deep_lr','call':model.turn_on_deep_kernel}
-        train_list.insert(0,3)
+        train_dict[3] = {'para': 'deep_lr', 'call': model.turn_on_deep_kernel}
+        train_list.insert(-2, 3)
     if warmup:
         train_list = [0]
-        if not train_config:
+        if not train_config['old_setup']:
             train_list.append(1)
+    lrs = [v['para'] for v in train_dict.values()]
+    model, opts = opt_reinit(train_config, model, lrs, warmup=warmup)
+    return model,opts,loss_func,ERROR,train_list,train_dict
 
+def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False):
     for i in train_list:
         print_garbage()
         settings = train_dict[i]
@@ -308,25 +324,31 @@ def outer_train_loop(model,train_config,dataloader_train, dataloader_val,warmup=
         lr = settings['para']
         f()
         print(lr)
-        ERROR = train_loop(model, dataloader_train, loss_func, lr, train_config, train_config['sub_epoch_V'],
-                           dataloader_val,warmup=warmup)
+        opt = opts[lr]
+        ERROR = train_loop(model,opt, dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
         print_garbage()
         if ERROR:
             return ERROR
         print(torch.cuda.memory_cached() / 1e6)
         print(torch.cuda.memory_allocated() / 1e6)
         torch.cuda.empty_cache()
-
     return ERROR
 
-def train(model,train_config,dataloader_train, dataloader_val, dataloader_test):
+def train(model, train_config, dataloader):
     train_config['reset'] = 1.0
+    model,opts,loss_func,ERROR,train_list,train_dict = setup_runs(model,train_config,warmup=False)
     for i in range(train_config['epochs']+1):
-        ERROR = outer_train_loop(model, train_config, dataloader_train, dataloader_val, warmup=False)
+        # ERROR = outer_train_loop(model, train_config, dataloader, warmup=True)
+        # if ERROR:
+        #     return -np.inf, -np.inf
+        ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
         if ERROR:
             return -np.inf, -np.inf
-    val_loss_final = calculate_loss_no_grad(model,dataloader_val,train_config=train_config)
-    test_loss_final = calculate_loss_no_grad(model,dataloader_test,train_config=train_config)
+    val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
+    test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
+    del train_config
+    del model
+
     print(val_loss_final,test_loss_final)
     return val_loss_final,test_loss_final
 
@@ -356,8 +378,6 @@ class job_object():
         self.device = configs['device']
         self.train_loss_interval_print  = configs['train_loss_interval_print']
         self.sub_epoch_V = configs['sub_epoch_V']
-        self.sub_epoch_prime = configs['sub_epoch_prime']
-        self.sub_epoch_ls = configs['sub_epoch_ls']
         self.config = configs['config']
         self.deep_kernel = self.config['deep_kernel']
         self.shape = configs['shape']
@@ -437,15 +457,10 @@ class job_object():
                     model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
                                 config=self.config, old_setup=self.old_setup)
         print(model)
-        dataloader_train = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
+        dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
-        dataloader_val = get_dataloader_tensor(self.data_path, seed=self.seed, mode='val',
-                                               bs_ratio=parameters['batch_size_ratio'])
-        dataloader_test = get_dataloader_tensor(self.data_path, seed=self.seed, mode='test',
-                                                bs_ratio=parameters['batch_size_ratio'])
         val_loss_final, test_loss_final = train(model=model, train_config=train_config,
-                                                dataloader_train=dataloader_train, dataloader_val=dataloader_val,
-                                                dataloader_test=dataloader_test)
+                                                dataloader=dataloader)
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
@@ -494,7 +509,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = 1e-1
+            component_init['init_scale'] = 1e0
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict
@@ -512,12 +527,11 @@ class job_object():
         training_params['cuda'] = self.cuda
         training_params['train_loss_interval_print']=self.train_loss_interval_print
         training_params['sub_epoch_V']=self.sub_epoch_V
-        training_params['sub_epoch_prime']=self.sub_epoch_prime
-        training_params['sub_epoch_ls']=self.sub_epoch_ls
         training_params['bayesian'] = self.bayesian
         training_params['old_setup'] = self.old_setup
         training_params['architecture'] = self.architecture
         training_params['deep_kernel'] = self.deep_kernel
+        training_params['batch_ratio'] = parameters['batch_size_ratio']
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
 
