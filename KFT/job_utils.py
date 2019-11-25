@@ -438,7 +438,7 @@ class job_object():
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[False])
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True])
 
     def init_and_train(self,parameters):
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
