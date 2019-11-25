@@ -69,9 +69,8 @@ class RFF(torch.nn.Module):
 
         print(f'I= {self.n_feat}')
         self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
-        self.w = torch.randn(*(self.n_feat,self.n_input_feat),device=device)
-        self.b = torch.rand(*(self.n_feat, 1),device=device)*2.0*PI
-
+        self.register_buffer('w' ,torch.randn(*(self.n_feat,self.n_input_feat)))
+        self.register_buffer('b' ,torch.rand(*(self.n_feat, 1),device=device)*2.0*PI)
     def forward(self,X,dum_2=None):
         return torch.transpose(math.sqrt(2./float(self.n_feat))*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
 
@@ -163,7 +162,10 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     k.raw_period_length.requires_grad = False
                 with torch.no_grad():
                     value = getattr(self,f'kernel_data_{key}')
-                    self.n_dict[key] = k(value).evaluate()
+                    if  k.__class__.__name__=='RFF':
+                        self.n_dict[key] = k(value)
+                    else:
+                        self.n_dict[key] = k(value).evaluate()
         return 0
 
     def deep_kernel_mode_on(self):
@@ -224,8 +226,12 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     self.gamma_sq_init * torch.ones(*(1, 1)),
                     requires_grad=False)
                 getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(kernel_para_dict['p']*torch.ones(*(1,1)),requires_grad=False)
+
         tmp_kernel_func = getattr(self,f'kernel_{key}')
-        self.n_dict[key] =  tmp_kernel_func(value).evaluate().to(self.device)
+        if tmp_kernel_func.__class__.__name__ in 'RFF':
+            self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
+        else:
+            self.n_dict[key] =  tmp_kernel_func(value).evaluate().to(self.device)
         self.register_buffer(f'kernel_data_{key}',value)
         if deep_kernel:
             setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=2,tanh_flag_h=True,C=10))
@@ -236,7 +242,10 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         if self.deep_mode:
             f = getattr(self, f'transformation_{key}')
             X = f(X)
-        val = tmp_kernel_func(X).evaluate()
+        if tmp_kernel_func.__class__.__name__=='RFF':
+            val = tmp_kernel_func(X)
+        else:
+            val = tmp_kernel_func(X).evaluate()
         return val
     def apply_kernels(self,T):
         for key, val in self.n_dict.items():

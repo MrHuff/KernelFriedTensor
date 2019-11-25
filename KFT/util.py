@@ -66,11 +66,11 @@ def job_parser():
     parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')
     parser.add_argument('--save_path', type=str, nargs='?')
     parser.add_argument('--task', type=str, nargs='?')
-    parser.add_argument('--epochs', type=int, nargs='?', default=1, help='epochs')
+    parser.add_argument('--epochs', type=int, nargs='?', default=10, help='epochs')
     parser.add_argument('--bayesian', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
-    parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=5, help='sub_epoch_V')
+    parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=100, help='sub_epoch_V')
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
     parser.add_argument('--chunks', type=int, nargs='?', help='chunks',default=1)
     parser.add_argument('--side_info_order', nargs='+', type=int)
@@ -240,19 +240,19 @@ class tensor_dataset(Dataset):
 
     def set_mode(self,mode):
         if mode == 'train':
-            self.X = torch.from_numpy(self.X_train)
+            self.X = torch.from_numpy(self.X_train).long()
             self.Y = torch.from_numpy(self.Y_train)
             self.bs = int(round(self.X.shape[0] * self.ratio))
         elif mode == 'val':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_val)
+            self.X = torch.from_numpy(self.X_val).long()
             self.Y = torch.from_numpy(self.Y_val)
             self.X_chunks = torch.chunk(self.X,self.chunks)
             self.Y_chunks = torch.chunk(self.Y,self.chunks)
 
         elif mode == 'test':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_test)
+            self.X = torch.from_numpy(self.X_test).long()
             self.Y = torch.from_numpy(self.Y_test)
             self.X_chunks = torch.chunk(self.X,self.chunks)
             self.Y_chunks = torch.chunk(self.Y,self.chunks)

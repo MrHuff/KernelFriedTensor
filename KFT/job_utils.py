@@ -24,7 +24,6 @@ def run_job_func(args):
             concat_old_side_info(PATH, args['side_info_name'])
         side_info = load_side_info(side_info_path=PATH, indices=args['side_info_order'])
         shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
-
         if args['temporal_tag'] is not None:
             for i in args['temporal_tag']:
                 side_info[i]['temporal'] = True
@@ -35,6 +34,7 @@ def run_job_func(args):
         for key in side_info.keys():
             print(key)
         print(f'USING GPU:{gpu_choice}')
+        print(shape)
         other_configs = {
             'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
             'reg_para_b': args['reg_para_b'],
@@ -112,6 +112,22 @@ def get_tensor_architectures(i,shape,R=2,R_scale=1): #Two component tends to ove
             0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
             1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
             2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
+        },
+        7: {
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': True, 'r_1_latent': 1,
+                'r_2_latent': R_scale},
+            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False, 'r_1_latent': R_scale,
+                'r_2_latent': R_scale},  # Magnitude of kernel sum
+            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
+                'r_2_latent': 1},
+        },
+        8: {
+            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False, 'r_1_latent': 1,
+                'r_2_latent': R_scale},
+            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True, 'r_1_latent': R_scale,
+                'r_2_latent': R_scale},  # Magnitude of kernel sum
+            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
+                'r_2_latent': 1},
         },
 
     }
@@ -205,11 +221,11 @@ def correct_validation_loss(X,y,model,train_config):
             y_pred, _,_ = model(X)
         else:
             y_pred, _ = model(X)
-        pred_loss = loss_func(y, y_pred)
+        pred_loss = loss_func(y_pred,y.squeeze())
     else:
         loss_func = torch.nn.BCELoss()
         y_pred, reg = model(X)
-        pred_loss = loss_func(y_pred, y)
+        pred_loss = loss_func(y_pred, y.squeeze())
     return pred_loss,y_pred
 
 def correct_forward_loss(X,y,model,train_config,loss_func):
@@ -218,7 +234,7 @@ def correct_forward_loss(X,y,model,train_config,loss_func):
             pred_loss = loss_func(y,y_pred,last_term)
     else:
         y_pred, reg = model(X)
-        pred_loss = loss_func(y_pred, y)
+        pred_loss = loss_func(y_pred, y.squeeze())
     return pred_loss+reg,reg,pred_loss,y_pred
 
 def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=False):
