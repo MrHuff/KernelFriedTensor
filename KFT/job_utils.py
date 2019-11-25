@@ -231,7 +231,7 @@ def correct_validation_loss(X,y,model,train_config):
 def correct_forward_loss(X,y,model,train_config,loss_func):
     if train_config['task']=='reg' and train_config['bayesian']:
             y_pred,last_term, reg = model(X)
-            pred_loss = loss_func(y,y_pred,last_term)
+            pred_loss = loss_func(y.squeeze(),y_pred,last_term)
     else:
         y_pred, reg = model(X)
         pred_loss = loss_func(y_pred, y.squeeze())
@@ -390,6 +390,8 @@ class job_object():
         self.task = configs['task']
         self.epochs = configs['epochs']
         self.bayesian = configs['bayesian']
+        if self.bayesian:
+            self.fp_16=False
         self.data_path = configs['data_path']
         self.cuda = configs['cuda']
         self.device = configs['device']
@@ -436,7 +438,7 @@ class job_object():
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True])
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[False])
 
     def init_and_train(self,parameters):
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)

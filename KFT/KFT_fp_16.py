@@ -188,7 +188,10 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 input = getattr(self,f'kernel_data_{key}')
                 with torch.no_grad():
                     X = f(input)
-                    self.n_dict[key] = k(X).evaluate()
+                    if  k.__class__.__name__=='RFF':
+                        self.n_dict[key] = k(X)
+                    else:
+                        self.n_dict[key] = k(X).evaluate()
         return 0
 
     def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
@@ -653,7 +656,10 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                         f = getattr(self, f'transformation_{key}')
                         X = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(X).evaluate()
+                    if tmp_kernel_func.__class__.__name__=='RFF':
+                        val = tmp_kernel_func(X)
+                    else:
+                        val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
                     T = lazy_mode_product(T, val*val, key)
                 else:
@@ -719,7 +725,10 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     k.raw_period_length.requires_grad = False
                 with torch.no_grad():
                     value = getattr(self,f'kernel_data_{key}')
-                    self.n_dict[key] = k(value).evaluate()
+                    if k.__class__.__name__=='RFF':
+                        self.n_dict[key] = k(value)
+                    else:
+                        self.n_dict[key] = k(value).evaluate()
         self.recalculate_priors()
 
     def recalculate_priors(self):
@@ -734,10 +743,10 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     eye = getattr(self,f'eye_{key}')
                     RFF_dim_const = getattr(self,f'RFF_dim_const_{key}')
                     if len(self.shape_list) > 3:
-                        prior_log_det = -(torch.logdet(raw_cov.float() + (eye * sig_p_2).float()) * mat.shape[0] + torch.log(
+                        prior_log_det = -(gpytorch.logdet(raw_cov.float() + (eye * sig_p_2).float()) * mat.shape[0] + torch.log(
                             sig_p_2) * (RFF_dim_const))
                     else:
-                        prior_log_det = -torch.logdet(raw_cov.float() + (eye * sig_p_2).float()) + torch.log(sig_p_2) * (
+                        prior_log_det = -gpytorch.logdet(raw_cov.float() + (eye * sig_p_2).float()) + torch.log(sig_p_2) * (
                             RFF_dim_const)
                 else:
                     mat = val + getattr(self,f'reg_diag_cholesky_{key}')
@@ -766,7 +775,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 mat  = val
                 R = mat.shape[1]
                 self.register_buffer(f'sig_p_2_{key}',torch.tensor(1e-2))
-                eye = torch.eye(R)
+                eye = torch.eye(R,device=self.device)
                 self.register_buffer(f'eye_{key}',eye)
                 self.register_buffer(f'r_const_{key}',torch.tensor(R).float())
                 self.register_buffer(f'Phi_T_{key}',mat.t()@mat)
@@ -776,11 +785,10 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
                 RFF_dim_const = mat.shape[0]-R
                 self.register_buffer(f'RFF_dim_const_{key}',torch.tensor(RFF_dim_const))
-                L = torch.cholesky((raw_cov+eye*sig_p_2).float())
                 if len(self.shape_list)>3:
-                    prior_log_det = -(self.fast_log_det(L))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(gpytorch.log_det(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
                 else:
-                    prior_log_det = -(self.fast_log_det(L)) + torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(gpytorch.log_det(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
@@ -902,7 +910,10 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                         f = getattr(self, f'transformation_{key}')
                         X = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(X).evaluate()
+                    if tmp_kernel_func.__class__.__name__=='RFF':
+                        val = tmp_kernel_func(X)
+                    else:
+                        val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
                     cov,_,_ = self.build_cov(key)
                     T = lazy_mode_product(T, val*cov, key)
@@ -1000,7 +1011,7 @@ class variational_KFT(KFT):
             first_term.append(V_prime*base)
             second_term.append((extra+base*base)*var_prime)
             third_term.append((V_prime*V_prime)*extra)
-            total_KL += KL + KL_prime
+            total_KL += KL.abs() + KL_prime
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
