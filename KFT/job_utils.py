@@ -31,8 +31,12 @@ def run_job_func(args):
         if args['delete_side_info'] is not None:
             for i in args['delete_side_info']:
                 del side_info[i]
-        for key in side_info.keys():
+        primal_dims = list(shape)
+        for key,val in side_info.items():
             print(key)
+            print(val['data'].shape[1])
+            primal_dims[key] = val['data'].shape[1]
+        print(primal_dims)
         print(f'USING GPU:{gpu_choice}')
         print(shape)
         other_configs = {
@@ -59,7 +63,8 @@ def run_job_func(args):
             'max_lr':args['max_lr'],
             'old_setup':args['old_setup'],
             'latent_scale':args['latent_scale'],
-            'chunks':args['chunks']
+            'chunks':args['chunks'],
+            'primal_list': primal_dims
 
         }
         j = job_object(
@@ -68,8 +73,6 @@ def run_job_func(args):
             seed=args['seed']
         )
         j.run_hyperparam_opt()
-
-#Hypothesis 2: Change to 1.1 cuda 10.0
 
 def get_loss_func(train_config):
     if train_config['task']=='reg':
@@ -80,53 +83,49 @@ def get_loss_func(train_config):
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     return loss_func
-def get_tensor_architectures(i,shape,R=2,R_scale=1): #Two component tends to overfit?! Really weird!
+def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component tends to overfit?! Really weird!
     TENSOR_ARCHITECTURES = {
         0:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True,'r_1_latent':1,'r_2_latent':R_scale},
-           1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':R_scale}, #Magnitude of kernel sum
-           2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
+           0:{'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True,'r_1_latent':1,'r_2_latent':R_scale},
+           1:{'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':R_scale}, #Magnitude of kernel sum
+           2:{'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
            },
         1:{
-           0:{'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True,'r_1_latent':1,'r_2_latent':R_scale},
-           1: {'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
+           0: {'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'has_side_info':True,'r_1_latent':1,'r_2_latent':R_scale},
+           1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
            },
         2: {
-            0: {'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':1,'r_2_latent':R_scale},
-            1: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
+            0: {'primal_list':[primal_dims[0]],'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
         },
         3: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
+            0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
         },
         4: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-            1: {'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2':  1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
+            0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2':  1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
         },
         5: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
-            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
+            0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
+            2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
         },
         6: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
-            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
+            0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
+            1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
+            2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
         },
         7: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': True, 'r_1_latent': 1,
-                'r_2_latent': R_scale},
-            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False, 'r_1_latent': R_scale,
-                'r_2_latent': R_scale},  # Magnitude of kernel sum
-            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
+            0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': True, 'r_1_latent': 1,'r_2_latent': R_scale},
+            1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False, 'r_1_latent': R_scale,'r_2_latent': R_scale},  # Magnitude of kernel sum
+            2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
                 'r_2_latent': 1},
         },
         8: {
-            0: {'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False, 'r_1_latent': 1,
-                'r_2_latent': R_scale},
-            1: {'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True, 'r_1_latent': R_scale,
-                'r_2_latent': R_scale},  # Magnitude of kernel sum
-            2: {'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
+            0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False, 'r_1_latent': 1,'r_2_latent': R_scale},
+            1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True, 'r_1_latent': R_scale,'r_2_latent': R_scale},  # Magnitude of kernel sum
+            2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
                 'r_2_latent': 1},
         },
 
@@ -321,12 +320,13 @@ def setup_runs(model,train_config,warmup):
     if not train_config['old_setup']:
         train_dict[1] = {'para': 'prime_lr', 'call': model.turn_on_prime}
         train_list.append(1)
-    if kernel:
-        train_dict[2] = {'para': 'ls_lr', 'call': model.turn_on_kernel_mode}
-        train_list.insert(-1, 2)
-    if deep_kernel:
-        train_dict[3] = {'para': 'deep_lr', 'call': model.turn_on_deep_kernel}
-        train_list.insert(-2, 3)
+    if train_config['dual']:
+        if kernel:
+            train_dict[2] = {'para': 'ls_lr', 'call': model.turn_on_kernel_mode}
+            train_list.insert(-1, 2)
+        if deep_kernel:
+            train_dict[3] = {'para': 'deep_lr', 'call': model.turn_on_deep_kernel}
+            train_list.insert(-2, 3)
     if warmup:
         train_list = [0]
         if not train_config['old_setup']:
@@ -390,8 +390,6 @@ class job_object():
         self.task = configs['task']
         self.epochs = configs['epochs']
         self.bayesian = configs['bayesian']
-        if self.bayesian:
-            self.fp_16=False
         self.data_path = configs['data_path']
         self.cuda = configs['cuda']
         self.device = configs['device']
@@ -405,6 +403,7 @@ class job_object():
         self.old_setup = configs['old_setup']
         self.latent_scale = configs['latent_scale']
         self.chunks = configs['chunks']
+        self.primal_dims = configs['primal_list']
         self.lrs = [self.max_lr/10**i for i in range(3)]
         self.seed = seed
         self.trials = Trials()
@@ -413,7 +412,7 @@ class job_object():
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
-        t_act = get_tensor_architectures(self.architecture,self.shape,2)
+        t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
         for dim,val in self.side_info.items():
             if self.fp_16:
                 if val['temporal']:
@@ -425,9 +424,10 @@ class job_object():
                     self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
                 else:
                     self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
-
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
             self.available_side_info_dims.append(dim)
+
+        self.hyperparameter_space['dual'] = hp.choice('dual', [False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
@@ -441,7 +441,8 @@ class job_object():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True])
 
     def init_and_train(self,parameters):
-        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
+        self.config['dual'] = parameters['dual']
+        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
         print(parameters)
@@ -510,7 +511,6 @@ class job_object():
             if dim in self.available_side_info_dims:
                 k,nu = self.get_kernel_vals(parameters[f'kernel_{dim}_choice'])
                 kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k,'p':1.0}
-
         return kernel_param
 
     def construct_side_info_params(self,side_info_dims):
@@ -537,7 +537,7 @@ class job_object():
 
     def extract_training_params(self,parameters):
         training_params = {}
-        training_params['fp_16'] = self.fp_16
+        training_params['fp_16'] = (self.fp_16 and not self.bayesian)
         training_params['fused'] = self.fused
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
@@ -555,6 +555,7 @@ class job_object():
         training_params['batch_ratio'] = parameters['batch_size_ratio']
         training_params['patience'] = self.sub_epoch_V//4
         training_params['chunks'] = self.chunks
+        training_params['dual'] = parameters['dual']
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
 
