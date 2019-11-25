@@ -427,7 +427,7 @@ class job_object():
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
             self.available_side_info_dims.append(dim)
 
-        self.hyperparameter_space['dual'] = hp.choice('dual', [False])
+        self.hyperparameter_space['dual'] = hp.choice('dual', [False,True])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
@@ -438,7 +438,7 @@ class job_object():
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True])
+                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def init_and_train(self,parameters):
         self.config['dual'] = parameters['dual']
