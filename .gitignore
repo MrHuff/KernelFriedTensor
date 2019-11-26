@@ -18,3 +18,5 @@ dist
 *egg-info*
 *.out
 ml-20m
+*.parquet
+*_metadata
