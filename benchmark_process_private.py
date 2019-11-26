@@ -21,7 +21,6 @@ if __name__ == '__main__':
         articles = pd.read_csv(PATH + 'articles.csv')
         articles['unique_id'] = articles['article_id'].astype(str) + articles['enterprise_size_id'].astype(str)
         df['unique_id'] = df['article_id'].astype(str) + df['enterprise_size_id'].astype(str)
-
         category_list_article = [
             'graphical_appearance_id',
             'colour_id',
@@ -83,6 +82,7 @@ if __name__ == '__main__':
     df = dd.merge(df, articles, on='unique_id',suffixes=('','_repeat'))
     end = time.time()
     print('join articles took {}'.format(end-start))
+    df = df.drop('article_id',axis=1)
     #df = df.reset_index()
     print(df)
     #df['article_id']=df['article_id'].apply(str)
@@ -99,11 +99,10 @@ if __name__ == '__main__':
                            'product_season_id',
                            'product_type_id',
                            'product_group_no',
-                           'product_id'
+                           'product_id',
+                           'unique_id',
                           ]
+
     df[categorical_columns] = df[categorical_columns].astype(int)
     df = df.categorize(categorical_columns)
-    num_cols = df.columns[df.dtypes.apply(lambda c: np.issubdtype(c, np.number))]
-    print(num_cols)
-    print(df)
     df.to_parquet('./benchmark_data_lgbm/')
