@@ -305,11 +305,12 @@ def opt_reinit(train_config,model,lr_params,warmup=False):
         train_config['amp'] = amp
     else:
         # amp=None
-        tmp_opt_list = []
-        for lr in lr_params:
-            tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
-        opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
+        opts = []
     return model,opts
+
+def opt_32_reinit(model,train_config,lr):
+    opt = torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False)
+    return opt
 
 def setup_runs(model,train_config,warmup):
     loss_func = get_loss_func(train_config)
@@ -343,7 +344,10 @@ def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_con
         lr = settings['para']
         f()
         print(lr)
-        opt = opts[lr]
+        if train_config['fp_16']:
+            opt = opts[lr]
+        else:
+            opt = opt_32_reinit(model,train_config,lr)
         ERROR = train_loop(model,opt, dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
         print_garbage()
         if ERROR:
@@ -427,7 +431,7 @@ class job_object():
             self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
             self.available_side_info_dims.append(dim)
 
-        self.hyperparameter_space['dual'] = hp.choice('dual', [False,True])
+        self.hyperparameter_space['dual'] = hp.choice('dual', [True,False])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
