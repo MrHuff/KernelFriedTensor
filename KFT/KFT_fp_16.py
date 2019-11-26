@@ -157,8 +157,11 @@ class KFT(torch.nn.Module):
             prime_pred, reg_prime = tt_prime(ix)
             pred, reg = tt(ix)
             pred_outputs.append(pred * prime_pred)
-            reg_output += torch.sum(
-                reg.float() * reg_prime.float())  # numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            if self.config['dual']:
+                reg_output += torch.sum(
+                    reg.float() * reg_prime.float())  # numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            else:
+                reg_output += torch.mean(reg.float()) + torch.mean(reg_prime.float())  # numerical issue with fp 16 how fix,
 
         return pred_outputs, reg_output * self.lambda_reg
 
@@ -295,11 +298,7 @@ class KFT_scale(torch.nn.Module):
             prime_s,reg_s = tt_s.forward_scale(ix)
             prime_b,reg_b = tt_b.forward_scale(ix)
             pred, reg = tt(ix)
-            if self.config['dual']:
-                reg_output += torch.mean(reg)*torch.mean(reg_s)+torch.mean(reg_b) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
-            else:
-                reg_output += torch.mean(reg)+torch.mean(reg_s)+torch.mean(reg_b) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
-
+            reg_output += torch.mean(reg)+torch.mean(reg_s)+torch.mean(reg_b) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             scale.append(prime_s)
             bias.append(prime_b)
             regression.append(pred)
