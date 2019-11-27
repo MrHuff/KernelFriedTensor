@@ -20,3 +20,4 @@ dist
 ml-20m
 *.parquet
 *_metadata
+*dask*
