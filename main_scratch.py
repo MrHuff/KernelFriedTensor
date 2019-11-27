@@ -45,7 +45,7 @@ from KFT.benchmarks.lgbm import lgbm
 
 if __name__ == '__main__':
     params= dict()
-    params['its'] = 10
+    params['its'] = 1000
     params['hyperopts'] = 20
     params['regression'] = True
     SAVE_PATH = './lgbm_test'

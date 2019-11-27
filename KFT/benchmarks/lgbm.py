@@ -79,7 +79,7 @@ class lgbm():
                                num_boost_round=self.its,
                                valid_sets=self.D_val,
                                early_stopping_rounds=100,
-                               verbose_eval=False,
+                               verbose_eval=True,
                                )
         end = time.time()
         print(end-start)
