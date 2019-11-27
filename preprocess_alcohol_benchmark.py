@@ -40,8 +40,9 @@ if __name__ == '__main__':
     df = df.groupby(aggregate_on, as_index=False)['Bottles Sold'].sum()
     print(df.head())
     df = df[df['year'].isin([2016, 2015])]
-    sd = dd.from_pandas(df, npartitions=10)
+    sd = dd.from_pandas(df, npartitions=100)
     sd.to_parquet('./alcohol_sales_parquet/')
+    sd = sd.categorize(categoricals)
     de = DummyEncoder()
     sd_ohe = de.fit_transform(sd)
     sd_ohe.to_parquet('./alcohol_sales_parquet_ohe/')

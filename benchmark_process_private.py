@@ -4,6 +4,7 @@ import dask.dataframe as dd
 from dask_ml.preprocessing import DummyEncoder,StandardScaler
 import os
 import pandas as pd
+from dask.diagnostics import ProgressBar
 
 PATH = './raw_data_hm/'
 de = DummyEncoder()
@@ -11,6 +12,7 @@ s = StandardScaler()
 np.random.seed(1337)
 
 if __name__ == '__main__':
+    ProgressBar().register()
     if not os.path.exists('./hm_sales_parquet/'):
         try:
             df = pd.read_hdf(PATH + 'sales.h5')
@@ -35,7 +37,7 @@ if __name__ == '__main__':
         for el in category_list_article:
             articles[el] = articles[el].astype(str)
         articles.to_csv(PATH + 'article_id_processed.csv', index=False)
-        sd = dd.from_pandas(df, npartitions=10)
+        sd = dd.from_pandas(df, npartitions=1000)
         sd.to_parquet('./hm_sales_parquet/')
     if not os.path.exists('./benchmark_data_lgbm/'):
         n_articles = 400000
@@ -90,6 +92,23 @@ if __name__ == '__main__':
         df = df.categorize(categorical_columns)
         df.to_parquet('./benchmark_data_lgbm/')
     df = dd.read_parquet('./benchmark_data_lgbm/')
+    categorical_columns = [
+        'location_id',
+        'city_id',
+        'corporate_brand_id',
+        'graphical_appearance_id',
+        'colour_id',
+        'enterprise_size_id',
+        'department_id',
+        'product_season_id',
+        'product_type_id',
+        'product_group_no',
+        'product_id',
+    ]
+    df = df.categorize(categorical_columns)
+    df = df.compute()
+    df = dd.from_pandas(df, npartitions=2000)
+    print(df)
     de = DummyEncoder()
     sd_ohe = de.fit_transform(df)
     sd_ohe.to_parquet('./benchmark_data_lgbm_ohe/')
