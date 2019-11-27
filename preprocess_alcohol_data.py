@@ -4,24 +4,6 @@ import numpy as np
 import os
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import re
-import scipy.sparse as ssp
-from sklearn.model_selection import train_test_split
-
-def sparse_ohe(df, col, vals):
-    """One-hot encoder using a sparse ndarray."""
-    colaray = df[col].values
-    # construct a sparse matrix of the appropriate size and an appropriate,
-    # memory-efficient dtype
-    spmtx = ssp.dok_matrix((df.shape[0], vals.shape[0]), dtype=np.uint8)
-    # do the encoding
-    spmtx[np.where(colaray.reshape(-1, 1) == vals.reshape(1, -1))] = 1
-    print('done with the important')
-    # Construct a SparseDataFrame from the sparse matrix
-    dfnew = pd.SparseDataFrame(spmtx, dtype=np.uint8, index=df.index,
-                               columns=[col + '_' + str(el) for el in vals])
-    dfnew.fillna(0, inplace=True)
-    return dfnew
 
 if __name__ == '__main__':
     PATH = './public_data/'

@@ -4,6 +4,19 @@ import dask.dataframe as dd
 from dask.diagnostics import ProgressBar
 import torch
 import numpy as np
+from sklearn.metrics.regression import mean_squared_error
+import  sklearn.metrics as metrics
+
+def get_auc(Y,y_pred):
+    fpr, tpr, thresholds = metrics.roc_curve(Y, y_pred, pos_label=1)
+    auc = metrics.auc(fpr, tpr)
+    return auc
+def get_R_square(Y,y_pred):
+    mse = mean_squared_error(Y,y_pred)
+    var = np.var(Y)
+    return -(1-mse/var)
+
+
 class read_benchmark_data():
     def __init__(self, y_name, path, seed):
         ProgressBar().register()

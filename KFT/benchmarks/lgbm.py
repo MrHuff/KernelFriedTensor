@@ -1,23 +1,11 @@
 from hyperopt import hp,tpe,fmin,Trials,STATUS_OK,space_eval
 import hyperopt
-from sklearn.metrics.regression import mean_squared_error
-import  sklearn.metrics as metrics
+
 import os
 import time
 import pickle
-from KFT.benchmarks.utils import read_benchmark_data
+from KFT.benchmarks.utils import read_benchmark_data,get_auc,get_R_square
 import lightgbm
-import numpy as np
-
-
-def get_auc(Y,y_pred):
-    fpr, tpr, thresholds = metrics.roc_curve(Y, y_pred, pos_label=1)
-    auc = metrics.auc(fpr, tpr)
-    return auc
-def get_R_square(Y,y_pred):
-    mse = mean_squared_error(Y,y_pred)
-    var = np.var(Y)
-    return -(1-mse/var)
 
 class lgbm():
     def __init__(self,seed,y_name,data_path,save_path,params):
