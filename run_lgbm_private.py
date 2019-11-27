@@ -9,5 +9,5 @@ if __name__ == '__main__':
     y_name = 'total_sales'
     data_path = 'benchmark_data_lgbm'
     for i in [1,2,3,4,5]:
-        l = lgbm(seed=seed,y_name=y_name,data_path=data_path,save_path=SAVE_PATH,params=params)
+        l = lgbm(seed=i,y_name=y_name,data_path=data_path,save_path=SAVE_PATH,params=params)
         l.run()
