@@ -2,10 +2,8 @@ import pandas as pd
 import torch
 import numpy as np
 import os
-from sklearn.preprocessing import StandardScaler
-import re
 import scipy.sparse as ssp
-from sklearn.model_selection import train_test_split
+import dask.dataframe as dd
 
 def sparse_ohe(df, col, vals):
     """One-hot encoder using a sparse ndarray."""
@@ -61,4 +59,5 @@ if __name__ == '__main__':
         df = df[df['year'].isin([2016, 2015])]
         num_cols = df.columns[df.dtypes.apply(lambda c: np.issubdtype(c, np.number))]
         print(num_cols)
-        df.to_hdf(PATH + 'liqour_sales_processed.h5', key='liqour_sales_processed')
+        sd = dd.from_pandas(df, npartitions=10)
+        sd.to_parquet('./alcohol_sales_parquet/')

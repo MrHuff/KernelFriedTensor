@@ -1,6 +1,5 @@
-from hyperopt import hp,tpe,fmin,Trials,STATUS_OK
+from hyperopt import hp,tpe,fmin,Trials,STATUS_OK,space_eval
 import hyperopt
-import numpy as np
 from sklearn.metrics.regression import mean_squared_error
 import  sklearn.metrics as metrics
 import os
@@ -8,6 +7,8 @@ import time
 import pickle
 from KFT.benchmarks.utils import read_benchmark_data
 import lightgbm
+
+
 
 def get_auc(Y,y_pred):
     fpr, tpr, thresholds = metrics.roc_curve(Y, y_pred, pos_label=1)
@@ -29,12 +30,14 @@ class lgbm():
         self.D_train = lightgbm.Dataset(X_train, y_train, categorical_feature='auto')
         self.D_val = lightgbm.Dataset(self.X_val, self.y_val, categorical_feature='auto')
         self.hyperits = params['hyperopts']
-        self.task = 'regression' if params['regression'] else 'classification'
-        self.train_objective = 'mse' if params['regression'] else 'bce'
+        self.task = 'regression' if params['regression'] else 'cross_entropy'
+        self.train_objective = 'mse' if params['regression'] else 'cross_entropy'
         self.eval_objective = mean_squared_error if params['regression'] else get_auc
+        self.name = f'{self.task}_lgbm_{seed}'
+        self.its = params['its']
         self.space = {
             'num_leaves': hp.quniform('num_leaves', 1, 200, 1),
-            'min_data_in_leaf': hp.quniform('min_data_in_leaf', 10, 200, 1),
+            'min_data_in_leaf': hp.quniform('min_data_in_leaf', 10, 30, 1),
             'feature_fraction': hp.uniform('feature_fraction', 0.75, 1.0),
             'bagging_fraction': hp.uniform('bagging_fraction', 0.75, 1.0),
             'learning_rate': hp.loguniform('learning_rate', -5.0, -2.3),
@@ -48,7 +51,7 @@ class lgbm():
     def get_lgb_params(self,space):
         lgb_params = dict()
         lgb_params['boosting_type'] = space['boosting_type'] if 'boosting_type' in space else 'gbdt'
-        lgb_params['application'] = 'regression'
+        lgb_params['application'] = self.task
         lgb_params['metric'] = 'mse'
         lgb_params['num_class'] = 1
         lgb_params['learning_rate'] = space['learning_rate']
@@ -69,7 +72,7 @@ class lgbm():
         start = time.time()
         model = lightgbm.train(lgb_params,
                                self.D_train,
-                               num_boost_round=10,
+                               num_boost_round=self.its,
                                valid_sets=self.D_val,
                                early_stopping_rounds=100,
                                verbose_eval=False,
@@ -88,11 +91,15 @@ class lgbm():
         return self.eval_objective(y,preds)
 
     def run(self):
-        trials = Trials()
+        self.trials = Trials()
         best = hyperopt.fmin(fn=self,
                              space=self.space,
                              algo=tpe.suggest,
                              max_evals=self.hyperits,
-                             trials=trials,
+                             trials=self.trials,
                              verbose=3)
+        print(space_eval(self.space, best))
+        pickle.dump(self.trials,
+                    open(self.save_path + '/' + self.name + '.p',
+                         "wb"))
 

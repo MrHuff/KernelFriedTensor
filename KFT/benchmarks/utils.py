@@ -1,6 +1,6 @@
 import re
 from sklearn.model_selection import train_test_split
-import dask as dd
+import dask.dataframe as dd
 from dask.diagnostics import ProgressBar
 import torch
 import numpy as np

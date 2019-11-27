@@ -59,34 +59,19 @@ if __name__ == '__main__':
 
     articles = articles.categorize(['unique_id'])
     location = location.categorize(['location_id'])
-
-    #print(location)
-    #print(articles)
-    #df = df.set_index('location_id')
-    #location = location.set_index('location_id')
-
     start = time.time()
     df = dd.merge(df, location, on='location_id',suffixes=('','_repeat'))
     end = time.time()
     print('join locations took {}'.format(end-start))
-    #df = df.reset_index()
-
-
-
-    #print(len(sampled_list))
     df = df[df['unique_id'].isin(sampled_list)]
     articles = articles[articles['unique_id'].isin(sampled_list)]
-    #df = df.set_index('article_id')
-    #articles = articles.set_index('article_id')
     start = time.time()
     df = dd.merge(df, articles, on='unique_id',suffixes=('','_repeat'))
     end = time.time()
     print('join articles took {}'.format(end-start))
     df = df.drop('article_id',axis=1)
-    #df = df.reset_index()
+    df = df.drop('unique_id',axis=1)
     print(df)
-    #df['article_id']=df['article_id'].apply(str)
-    #df['location_id']=df['location_id'].apply(str)
     start = time.time()
     categorical_columns = [
                            'location_id',
