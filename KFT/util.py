@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import torch
-import re
 from torch.utils.data import DataLoader,Dataset
 from sklearn.model_selection import train_test_split
 import pickle
@@ -107,59 +106,6 @@ def get_int_dates(x):
 def chunkify(lst, n):
     return [lst[i::n] for i in range(n)]
 
-class read_benchmark_data():
-    def __init__(self, y_name, path='benchmark_data.h5', seed=1337, backend='dask'):
-
-        if backend == 'pandas':
-            if '.h5' in path:
-                self.df = pd.read_hdf(path)
-            else:
-                self.df = pd.read_parquet(path, engine='fastparquet')
-            regex = re.compile(r"\[|\]|<", re.IGNORECASE)
-            self.df.columns = [regex.sub("_", col) if any(x in str(col) for x in set(('[', ']', '<'))) else col for col
-                               in
-                               self.df.columns.values]
-
-            self.Y = self.df[y_name]
-            self.X = self.df.drop(y_name, axis=1)
-
-        else:
-
-            ProgressBar().register()
-            self.df = dd.read_parquet(path)
-            regex = re.compile(r"\[|\]|<", re.IGNORECASE)
-            self.df.columns = [regex.sub("_", col) if any(x in str(col) for x in set(('[', ']', '<'))) else col for col
-                               in
-                               self.df.columns.values]
-
-            self.Y = self.df[y_name]
-            self.X = self.df.drop(y_name, axis=1)
-            self.X = self.X.compute()
-            self.Y = self.Y.compute()
-
-        self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.X,
-                                                                                self.Y,
-                                                                                test_size=0.2,
-                                                                                random_state=seed
-                                                                                )
-        self.X_train, self.X_val, self.Y_train, self.Y_val = train_test_split(self.X_train,
-                                                                              self.Y_train,
-                                                                              test_size=0.25,
-                                                                              random_state=seed
-                                                                              )
-        self.n = len(self.X_train)
-        print("Succesfully loaded data")
-
-    def get_batch(self, ratio):
-        msk = np.random.rand(self.n) < ratio
-        return self.X_train[msk], self.Y_train[msk]
-
-    def get_test_batch(self, chunks):
-        return chunkify(self.X_test, chunks), chunkify(self.Y_test, chunks)
-
-    def get_validation_batch(self, chunks):
-        return chunkify(self.X_val, chunks), chunkify(self.Y_val, chunks)
-
 class kernel_adding_tensor():
     def __init__(self,tensor_path):
         self.data = torch.load(tensor_path + 'tensor_data.pt')
@@ -241,19 +187,19 @@ class tensor_dataset(Dataset):
     def set_mode(self,mode):
         if mode == 'train':
             self.X = torch.from_numpy(self.X_train).long()
-            self.Y = torch.from_numpy(self.Y_train)
+            self.Y = torch.from_numpy(self.Y_train).float()
             self.bs = int(round(self.X.shape[0] * self.ratio))
         elif mode == 'val':
             self.ratio = 1.
             self.X = torch.from_numpy(self.X_val).long()
-            self.Y = torch.from_numpy(self.Y_val)
+            self.Y = torch.from_numpy(self.Y_val).float()
             self.X_chunks = torch.chunk(self.X,self.chunks)
             self.Y_chunks = torch.chunk(self.Y,self.chunks)
 
         elif mode == 'test':
             self.ratio = 1.
             self.X = torch.from_numpy(self.X_test).long()
-            self.Y = torch.from_numpy(self.Y_test)
+            self.Y = torch.from_numpy(self.Y_test).float()
             self.X_chunks = torch.chunk(self.X,self.chunks)
             self.Y_chunks = torch.chunk(self.Y,self.chunks)
 

@@ -102,7 +102,6 @@ if __name__ == '__main__':
                            'product_id',
                           ]
     df[categorical_columns] = df[categorical_columns].astype(int)
-    categorical_columns.append('unique_id')
     df = df.categorize(categorical_columns)
     print(df)
     df.to_parquet('./benchmark_data_lgbm/')
