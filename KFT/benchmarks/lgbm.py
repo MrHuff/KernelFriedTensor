@@ -7,13 +7,17 @@ import time
 import pickle
 from KFT.benchmarks.utils import read_benchmark_data
 import lightgbm
-
+import numpy as np
 
 
 def get_auc(Y,y_pred):
     fpr, tpr, thresholds = metrics.roc_curve(Y, y_pred, pos_label=1)
     auc = metrics.auc(fpr, tpr)
     return auc
+def get_R_square(Y,y_pred):
+    mse = mean_squared_error(Y,y_pred)
+    var = np.var(Y)
+    return -(1-mse/var)
 
 class lgbm():
     def __init__(self,seed,y_name,data_path,save_path,params):
@@ -32,7 +36,7 @@ class lgbm():
         self.hyperits = params['hyperopts']
         self.task = 'regression' if params['regression'] else 'cross_entropy'
         self.train_objective = 'mse' if params['regression'] else 'cross_entropy'
-        self.eval_objective = mean_squared_error if params['regression'] else get_auc
+        self.eval_objective = get_R_square if params['regression'] else get_auc
         self.name = f'{self.task}_lgbm_{seed}'
         self.its = params['its']
         self.space = {
