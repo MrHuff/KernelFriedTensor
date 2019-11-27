@@ -534,7 +534,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = 1e-1
+            component_init['init_scale'] = 1.0
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict
