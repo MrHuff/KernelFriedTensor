@@ -23,7 +23,8 @@ class KFT(torch.nn.Module):
         self.ii = {}
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+            if not self.old_setup:
+                tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'] if config['dual'] else v['primal_list'],
@@ -43,19 +44,21 @@ class KFT(torch.nn.Module):
                     self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
-            self.TT_cores_prime[str(i)].turn_off()
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
         return 0
 
     def turn_on_prime(self):
-        for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_off()
-                self.TT_cores[str(i)].turn_off()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_off()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            self.TT_cores_prime[str(i)].turn_on()
+        if not self.old_setup:
+            for i, v in self.ii.items():
+                if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                    self.TT_cores[str(i)].kernel_train_mode_off()
+                    self.TT_cores[str(i)].turn_off()
+                    if self.TT_cores[str(i)].deep_kernel:
+                        self.TT_cores[str(i)].deep_kernel_mode_off()
+                else:
+                    self.TT_cores[str(i)].turn_off()
+                self.TT_cores_prime[str(i)].turn_on()
         return 0
     #TODO: fix deep kernel by properly activating and turning of parameters
     def turn_on_deep_kernel(self):
@@ -67,7 +70,8 @@ class KFT(torch.nn.Module):
                     self.TT_cores[str(i)].deep_kernel_mode_on()
             else:
                 self.TT_cores[str(i)].turn_off()
-            self.TT_cores_prime[str(i)].turn_off()
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
         return 0
 
     def has_kernel_component(self):
@@ -89,7 +93,8 @@ class KFT(torch.nn.Module):
                     self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_off()
-            self.TT_cores_prime[str(i)].turn_off()
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
         return 0
 
     def turn_off_kernel_mode(self):
@@ -98,7 +103,8 @@ class KFT(torch.nn.Module):
                 self.TT_cores[str(i)].kernel_train_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
-            self.TT_cores_prime[str(i)].turn_on()
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
         return 0
 
     def amp_patch(self,amp):
@@ -112,15 +118,24 @@ class KFT(torch.nn.Module):
         for i,v in self.ii.items():
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
-            tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred,reg_prime = tt_prime(ix)
-            pred, reg = tt(ix)
-            pred_outputs.append(pred*prime_pred)
-            if self.config['dual']:
-                reg_output += torch.sum(reg.float()*reg_prime.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            if not self.old_setup:
+                tt_prime = self.TT_cores_prime[str(i)]
+                prime_pred,reg_prime = tt_prime(ix)
+                pred, reg = tt(ix)
+                pred_outputs.append(pred*prime_pred)
             else:
-                reg_output += torch.mean(reg)+torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
-
+                pred, reg = tt(ix)
+                pred_outputs.append(pred)
+            if self.config['dual']:
+                if not self.old_setup:
+                    reg_output += torch.sum(reg.float()*reg_prime.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                else:
+                    reg_output += torch.mean(reg.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+            else:
+                if not self.old_setup:
+                    reg_output += torch.mean(reg)+torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                else:
+                    reg_output += torch.mean(reg) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
         return pred_outputs,reg_output*self.lambda_reg
 
     def bmm_collate(self, preds_list):

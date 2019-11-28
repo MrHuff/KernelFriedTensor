@@ -107,7 +107,7 @@ class TT_component(torch.nn.Module):
         self.V_mode=True
 
     def forward(self,indices):
-        if self.dual:
+        if self.dual and not self.old_setup:
             reg = self.get_aux_reg_term()
         else:
             reg = self.core_param**2

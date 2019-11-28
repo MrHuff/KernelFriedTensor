@@ -444,7 +444,7 @@ class job_object():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def init_and_train(self,parameters):
-        self.config['dual'] = parameters['dual']
+        self.config['dual'] = parameters['dual'] if not self.old_setup else True
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
