@@ -108,9 +108,6 @@ if __name__ == '__main__':
     #     'product_id',
     # ]
     # df = df.categorize(categorical_columns)
-    # # df = df.compute()
-    # # df = dd.from_pandas(df, npartitions=4000)
-    # # print(df)
     # de = DummyEncoder()
     # sd_ohe = de.fit_transform(df)
     # sd_ohe.to_parquet('./benchmark_data_lgbm_ohe/')

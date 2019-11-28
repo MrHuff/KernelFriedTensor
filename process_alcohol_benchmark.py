@@ -3,11 +3,14 @@ import os
 import dask.dataframe as dd
 from dask_ml.preprocessing import DummyEncoder,StandardScaler
 from dask.distributed import Client,LocalCluster
+from dask.diagnostics import ProgressBar
 
 if __name__ == '__main__':
     PATH = './public_data/'
-    cluster = LocalCluster(n_workers=63,threads_per_worker=1)
-    client = Client(cluster)
+    ProgressBar().register()
+
+    # cluster = LocalCluster(n_workers=63,threads_per_worker=1)
+    # client = Client(cluster)
     if not os.path.exists('./alcohol_sales_parquet/'):
         '''
         Generall preprocessing - this goes into lightgbm
@@ -42,16 +45,16 @@ if __name__ == '__main__':
         df = df.groupby(aggregate_on, as_index=False)['Bottles Sold'].sum()
         print(df.head())
         df = df[df['year'].isin([2016, 2015])]
-        sd = dd.from_pandas(df, npartitions=1000)
+        sd = dd.from_pandas(df, npartitions=64)
         sd.to_parquet('./alcohol_sales_parquet/')
-    categoricals = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category', 'Item Number']
-    sd = dd.read_parquet('./alcohol_sales_parquet/')
-    sd = sd.categorize(categoricals)
-    de = DummyEncoder()
-    scaler = StandardScaler()
-    sd_ohe = de.fit_transform(sd)
-    sd_ohe = scaler.fit_transform(sd_ohe)
-    sd_ohe.to_parquet('./alcohol_sales_parquet_ohe/')
+    # categoricals = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category', 'Item Number']
+    # sd = dd.read_parquet('./alcohol_sales_parquet/')
+    # sd = sd.categorize(categoricals)
+    # de = DummyEncoder()
+    # scaler = StandardScaler()
+    # sd_ohe = de.fit_transform(sd)
+    # sd_ohe = scaler.fit_transform(sd_ohe)
+    # sd_ohe.to_parquet('./alcohol_sales_parquet_ohe/')
 
 
 
