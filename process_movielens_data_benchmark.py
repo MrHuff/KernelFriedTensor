@@ -31,13 +31,11 @@ if __name__ == '__main__':
         print(df)
             # /= dd.to_datetime(df['timestamp'].values,infer_datetime_format=True,unit='s').hour
         movie_side_info = dd.read_csv('./ml-20m/genome-scores_PCA.csv',blocksize=8000000)
-        movie_side_info=movie_side_info.categorize('movieId')
         movie_side_info.columns = movie_side_info.columns.map(str)
-        categoricals = ['userId','movieId','timestamp']
-        df = df.categorize(categoricals)
-        print(df)
         df = dd.merge(df, movie_side_info, on='movieId', suffixes=('', '_repeat'))
         df.columns = df.columns.map(str)
+        categoricals = ['userId','movieId','timestamp']
+        df = df.categorize(categoricals)
         print(df)
         df.to_parquet('./movielens_parquet/',object_encoding='utf8')
     #TODO: figure out what to do with indices...
