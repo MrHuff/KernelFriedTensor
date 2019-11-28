@@ -4,6 +4,7 @@ from dask_ml.preprocessing import DummyEncoder,StandardScaler
 from sklearn.decomposition import PCA
 import dask.dataframe as dd
 from dask.distributed import Client,LocalCluster
+from sklearn.feature_extraction import FeatureHasher
 from dask.diagnostics import ProgressBar
 import os
 if __name__ == '__main__':

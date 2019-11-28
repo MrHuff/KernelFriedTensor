@@ -4,7 +4,7 @@ import dask.dataframe as dd
 from dask_ml.preprocessing import DummyEncoder,StandardScaler
 from dask.distributed import Client,LocalCluster
 from dask.diagnostics import ProgressBar
-
+from sklearn.feature_extraction import FeatureHasher
 if __name__ == '__main__':
     PATH = './public_data/'
     ProgressBar().register()
@@ -47,14 +47,10 @@ if __name__ == '__main__':
         df = df[df['year'].isin([2016, 2015])]
         sd = dd.from_pandas(df, npartitions=64)
         sd.to_parquet('./alcohol_sales_parquet/')
-    # categoricals = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category', 'Item Number']
-    # sd = dd.read_parquet('./alcohol_sales_parquet/')
-    # sd = sd.categorize(categoricals)
-    # de = DummyEncoder()
-    # scaler = StandardScaler()
-    # sd_ohe = de.fit_transform(sd)
-    # sd_ohe = scaler.fit_transform(sd_ohe)
-    # sd_ohe.to_parquet('./alcohol_sales_parquet_ohe/')
+    categoricals = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category', 'Item Number']
+    sd = dd.read_parquet('./alcohol_sales_parquet/')
+    sd = sd.categorize(categoricals)
+    sd_ohe.to_parquet('./alcohol_sales_parquet_ohe/')
 
 
 
