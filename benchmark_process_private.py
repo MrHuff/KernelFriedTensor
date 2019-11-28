@@ -39,7 +39,7 @@ if __name__ == '__main__':
         for el in category_list_article:
             articles[el] = articles[el].astype(str)
         articles.to_csv(PATH + 'article_id_processed.csv', index=False)
-        sd = dd.from_pandas(df, npartitions=1000)
+        sd = dd.from_pandas(df, npartitions=64)
         sd.to_parquet('./hm_sales_parquet/')
     if not os.path.exists('./benchmark_data_lgbm/'):
         n_articles = 400000
