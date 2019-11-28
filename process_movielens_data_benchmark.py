@@ -8,15 +8,15 @@ from dask.diagnostics import ProgressBar
 import os
 if __name__ == '__main__':
     ProgressBar().register()
-    if not os.path.exists('./ml-20m/genome-scores.csv'):
-        pca = PCA(n_components=100)
+    if not os.path.exists('./ml-20m/genome-scores_PCA.csv'):
+        pca = PCA(n_components=25)
         movie_side_info = pd.read_csv('./ml-20m/genome-scores.csv')
         movie_side_info = movie_side_info.pivot_table(index='movieId', columns='tagId', values='relevance')
         indices = np.int64(movie_side_info.index.values[:, np.newaxis])
         movie_side_info = pca.fit_transform(movie_side_info)
         print(np.cumsum(pca.explained_variance_ratio_))
         total = pd.DataFrame(np.concatenate([indices, movie_side_info], axis=1),
-                             columns=['movieId'] + [f'PCA_{i}' for i in range(100)])
+                             columns=['movieId'] + [f'PCA_{i}' for i in range(25)])
         total['movieId'] = total['movieId'].astype('int64')
         total.to_csv('./ml-20m/genome-scores_PCA.csv',index=False)
         del total

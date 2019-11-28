@@ -13,20 +13,19 @@ class lgbm():
             os.makedirs(save_path)
         self.save_path = save_path
         data_obj = read_benchmark_data(y_name=y_name, path=data_path, seed=seed)
-        X_train = data_obj.X_train
-        y_train = data_obj.Y_train
+        self.X_train = data_obj.X_train
+        self.y_train = data_obj.Y_train
         self.X_val = data_obj.X_val
         self.y_val = data_obj.Y_val
         self.X_test = data_obj.X_test
         self.y_test = data_obj.Y_test
-        self.D_train = lightgbm.Dataset(X_train, y_train, categorical_feature='auto')
-        self.D_val = lightgbm.Dataset(self.X_val, self.y_val, categorical_feature='auto')
         self.hyperits = params['hyperopts']
         self.task = 'regression' if params['regression'] else 'cross_entropy'
         self.train_objective = 'mse' if params['regression'] else 'cross_entropy'
         self.eval_objective = get_R_square if params['regression'] else get_auc
         self.name = f'{self.task}_lgbm_{seed}'
         self.its = params['its']
+        self.num_threads=params['num_threads']
         self.space = {
             'num_leaves': hp.quniform('num_leaves', 1, 200, 1),
             'min_data_in_leaf': hp.quniform('min_data_in_leaf', 10, 30, 1),
@@ -44,6 +43,7 @@ class lgbm():
         lgb_params = dict()
         lgb_params['boosting_type'] = space['boosting_type'] if 'boosting_type' in space else 'gbdt'
         lgb_params['application'] = self.task
+        lgb_params['num_threads'] = self.num_threads
         lgb_params['metric'] = 'mse'
         lgb_params['num_class'] = 1
         lgb_params['learning_rate'] = space['learning_rate']
@@ -57,11 +57,14 @@ class lgbm():
         lgb_params['feature_fraction'] = space['feature_fraction']
         lgb_params['bagging_fraction'] = space['bagging_fraction']
         lgb_params['bagging_freq'] = int(space['bagging_freq']) if 'bagging_freq' in space else 1
+
         return lgb_params
 
     def __call__(self, params):
         lgb_params = self.get_lgb_params(params)
         start = time.time()
+        self.D_train = lightgbm.Dataset(self.X_train, self.y_train, categorical_feature='auto')
+        self.D_val = lightgbm.Dataset(self.X_val, self.y_val, categorical_feature='auto')
         model = lightgbm.train(lgb_params,
                                self.D_train,
                                num_boost_round=self.its,
