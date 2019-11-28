@@ -1,7 +1,6 @@
 import torch
 import tensorly
 tensorly.set_backend('pytorch')
-import gpytorch
 import math
 import timeit
 from KFT.core_components import TT_component,TT_kernel_component,lazy_mode_product,lazy_mode_hadamard,row_outer_prod,edge_mode_product

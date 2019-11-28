@@ -267,6 +267,7 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
             return ERROR
     e = timeit.timeit()
     print(e-s)
+    del lrs
     return False
 
 def print_garbage():
@@ -354,6 +355,7 @@ def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_con
             return ERROR
         print(torch.cuda.memory_cached() / 1e6)
         print(torch.cuda.memory_allocated() / 1e6)
+        del opt
         torch.cuda.empty_cache()
     return ERROR
 
@@ -361,15 +363,12 @@ def train(model, train_config, dataloader):
     train_config['reset'] = 1.0
     model,opts,loss_func,ERROR,train_list,train_dict = setup_runs(model,train_config,warmup=False)
     for i in range(train_config['epochs']+1):
-        # ERROR = outer_train_loop(model, train_config, dataloader, warmup=True)
-        # if ERROR:
-        #     return -np.inf, -np.inf
         ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
         if ERROR:
             return -np.inf, -np.inf
     val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
     test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
-
+    del model
     print(val_loss_final,test_loss_final)
     return val_loss_final,test_loss_final
 
