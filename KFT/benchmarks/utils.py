@@ -42,24 +42,27 @@ class read_benchmark_data():
                                                                               random_state=seed
                                                                               )
         self.n = len(self.X_train)
+        self.ratio = 1e-6
+        self.chunks = 100
+        self.nr_cols = self.X.shape[1]
         print("Succesfully loaded data")
 
     def set_mode(self, mode):
         if mode == 'train':
-            self.X = torch.from_numpy(self.X_train).float()
-            self.Y = torch.from_numpy(self.Y_train).float()
+            self.X = torch.from_numpy(self.X_train.values).float()
+            self.Y = torch.from_numpy(self.Y_train.values).float()
             self.bs = int(round(self.X.shape[0] * self.ratio))
         elif mode == 'val':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_val).float()
-            self.Y = torch.from_numpy(self.Y_val).float()
+            self.X = torch.from_numpy(self.X_val.values).float()
+            self.Y = torch.from_numpy(self.Y_val.values).float()
             self.X_chunks = torch.chunk(self.X, self.chunks)
             self.Y_chunks = torch.chunk(self.Y, self.chunks)
 
         elif mode == 'test':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_test).float()
-            self.Y = torch.from_numpy(self.Y_test).float()
+            self.X = torch.from_numpy(self.X_test.values).float()
+            self.Y = torch.from_numpy(self.Y_test.values).float()
             self.X_chunks = torch.chunk(self.X, self.chunks)
             self.Y_chunks = torch.chunk(self.Y, self.chunks)
 
