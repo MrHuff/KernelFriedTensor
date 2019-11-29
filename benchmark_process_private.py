@@ -2,7 +2,7 @@ import numpy as np
 import time
 import dask.dataframe as dd
 import dask.array as da
-# from dask_ml.preprocessing import DummyEncoder,StandardScaler
+from dask_ml.preprocessing import StandardScaler
 import os
 import pandas as pd
 from dask.diagnostics import ProgressBar
@@ -10,8 +10,6 @@ from dask.distributed import Client,LocalCluster
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.compose import ColumnTransformer
 PATH = './raw_data_hm/'
-# de = DummyEncoder()
-# s = StandardScaler()
 np.random.seed(1337)
 
 if __name__ == '__main__':
@@ -97,43 +95,45 @@ if __name__ == '__main__':
         df[categorical_columns] = df[categorical_columns].astype(int)
         df = df.categorize(categorical_columns)
         df.to_parquet('./benchmark_data_lgbm/')
-    df = dd.read_parquet('./benchmark_data_lgbm/',index=False)
-    categorical_columns = [
-        'location_id',
-        'city_id',
-        'corporate_brand_id',
-        'graphical_appearance_id',
-        'colour_id',
-        'enterprise_size_id',
-        'department_id',
-        'product_season_id',
-        'product_type_id',
-        'product_group_no',
-        'product_id',
-        'article_id',
-    ]
-    hash_vector_size = 5
-    ct = ColumnTransformer([(f't_{i}', FeatureHasher(n_features=hash_vector_size,
-                                                     input_type='string'), i) for i in range(len(categorical_columns))],verbose=True)
-
-    to_be_hashed = df[categorical_columns].astype(str).compute()
-    df = df.drop(categorical_columns,axis=1)
-    df = df.drop('index',axis=1)
-    print(df.head())
-
-    # to_be_hashed = to_be_hashed.map_partitions(ct.fit_transform).compute()
-    to_be_hashed = ct.fit_transform(to_be_hashed)
-
-    to_be_hashed = pd.DataFrame(to_be_hashed,columns=[f'hash_{i}' for i in range(60)])
-    print(to_be_hashed.shape)
-    print(to_be_hashed.head())
-    print(df.shape)
-
-    df= pd.concat([df,to_be_hashed],axis=1)
+    if not os.path.exists('./benchmark_data_private_hashed/'):
+        df = dd.read_parquet('./benchmark_data_lgbm/',index=False)
+        categorical_columns = [
+            'location_id',
+            'city_id',
+            'corporate_brand_id',
+            'graphical_appearance_id',
+            'colour_id',
+            'enterprise_size_id',
+            'department_id',
+            'product_season_id',
+            'product_type_id',
+            'product_group_no',
+            'product_id',
+            'article_id',
+        ]
+        hash_vector_size = 5
+        ct = ColumnTransformer([(f't_{i}', FeatureHasher(n_features=hash_vector_size,
+                                                         input_type='string'), i) for i in range(len(categorical_columns))],verbose=True)
+        to_be_hashed = df[categorical_columns].astype(str).compute()
+        df = df.compute()
+        df = df.drop(categorical_columns,axis=1)
+        df = df.drop('index',axis=1)
+        # to_be_hashed = to_be_hashed.map_partitions(ct.fit_transform).compute()
+        to_be_hashed = ct.fit_transform(to_be_hashed)
+        to_be_hashed = pd.DataFrame(to_be_hashed,columns=[f'hash_{i}' for i in range(60)])
+        df = df.reset_index(drop=True)
+        to_be_hashed=to_be_hashed.reset_index(drop=True)
+        df= pd.concat([df,to_be_hashed],axis=1)
+        df = dd.from_pandas(df,npartitions=64)
+        df.to_parquet('./benchmark_data_private_hashed/')
+    df = dd.read_parquet('./benchmark_data_private_hashed/')
+    Y = df['total_sales'].compute()
+    X = df.drop('total_sales',axis=1)
+    print(X)
+    s = StandardScaler()
+    X = s.fit_transform(X).compute()
+    df = pd.concat([X, Y], axis=1)
     df = dd.from_pandas(df,npartitions=64)
-    df.to_parquet('./benchmark_data_private_hashed/')
-    # for el in categorical_columns:
-    #     print(len(df[el].value_counts().compute().index.tolist()))
-    # print(sum(df[categorical_columns].apply(pd.Series.nunique, meta=(None, 'int64'), axis=1)))
+    df.to_parquet('./benchmark_data_private_hashed_scaled/')
 
-    # sd_ohe.to_parquet('./benchmark_data_private_hashed/')
+
