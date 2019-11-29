@@ -306,7 +306,10 @@ def opt_reinit(train_config,model,lr_params,warmup=False):
         train_config['amp'] = amp
     else:
         # amp=None
-        opts = []
+        tmp_opt_list = []
+        for lr in lr_params:
+            tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
+        opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
     return model,opts
 
 def opt_32_reinit(model,train_config,lr):
@@ -345,17 +348,17 @@ def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_con
         lr = settings['para']
         f()
         print(lr)
-        if train_config['fp_16']:
-            opt = opts[lr]
-        else:
-            opt = opt_32_reinit(model,train_config,lr)
+        # if train_config['fp_16']:
+        opt = opts[lr]
+        # else:
+        #     opt = opt_32_reinit(model,train_config,lr)
         ERROR = train_loop(model,opt, dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
         print_garbage()
         if ERROR:
             return ERROR
         print(torch.cuda.memory_cached() / 1e6)
         print(torch.cuda.memory_allocated() / 1e6)
-        del opt
+        # del opt
         torch.cuda.empty_cache()
     return ERROR
 
@@ -369,6 +372,7 @@ def train(model, train_config, dataloader):
     val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
     test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
     del model
+    del opts
     print(val_loss_final,test_loss_final)
     return val_loss_final,test_loss_final
 
@@ -431,6 +435,7 @@ class job_object():
             self.available_side_info_dims.append(dim)
 
         self.hyperparameter_space['dual'] = hp.choice('dual', [True,False])
+        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-2,1e-1,1])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
@@ -533,7 +538,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = 1.0
+            component_init['init_scale'] = parameters['init_scale']
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict
