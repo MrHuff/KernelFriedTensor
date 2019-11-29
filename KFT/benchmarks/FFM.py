@@ -24,35 +24,38 @@ class xl_FFM():
         self.D_train = xl.DMatrix(X_train, y_train)
         self.D_val = xl.DMatrix(self.X_val, self.y_val) #needs to be OHE
         self.hyperits = params['hyperopts']
-        self.task = 'regression' if params['regression'] else 'cross_entropy'
-        self.train_objective = 'mse' if params['regression'] else 'cross_entropy'
+        self.task = 'reg' if params['regression'] else 'binary'
+        self.train_objective = 'rmse' if params['regression'] else 'auc'
         self.eval_objective = get_R_square if params['regression'] else get_auc
         self.name = f'{self.task}_lgbm_{seed}'
         self.its = params['its']
         self.space = {
-            'num_leaves': hp.quniform('num_leaves', 1, 200, 1),
-            'min_data_in_leaf': hp.quniform('min_data_in_leaf', 10, 30, 1),
-            'feature_fraction': hp.uniform('feature_fraction', 0.75, 1.0),
-            'bagging_fraction': hp.uniform('bagging_fraction', 0.75, 1.0),
-            'learning_rate': hp.loguniform('learning_rate', -5.0, -2.3),
-            'min_sum_hessian_in_leaf': hp.loguniform('min_sum_hessian_in_leaf', 0, 2.3),
-            'max_bin': hp.quniform('max_bin', 128, 512, 1),
-            'bagging_freq': hp.quniform('bagging_freq', 1, 5, 1),
-            'lambda_l1': hp.uniform('lambda_l1', 0, 10),
-            'lambda_l2': hp.uniform('lambda_l2', 0, 10),
+            'k': hp.quniform('k', 4, 20, 1),
+            'lambda': hp.uniform('lambda', 0.0, 0.005),
+            'lr': hp.uniform('lr', 0.05, 1.0),
         }
 
     def get_lgb_params(self,space):
         lgb_params = dict()
+        lgb_params['opt'] =  'adagrad'
+        lgb_params['epoch'] =  10
+        lgb_params['stop_window'] =  3
+        lgb_params['k'] =  int(space['k'])
+        lgb_params['lambda'] =  space['lambda']
+        lgb_params['lr'] =  space['lr']
+        lgb_params['nthread'] = 30
+        lgb_params['task'] = self.task
+        lgb_params['metric'] = self.train_objective
 
         return lgb_params
 
     def __call__(self, params):
         lgb_params = self.get_lgb_params(params)
         start = time.time()
-        model = xl.FFMModel()
+        model = xl.create_ffm()
         model.setTrain(self.D_train)  # Training data
         model.setValidate(self.D_val)
+        model.fit(lgb_params,self.save_path)
         end = time.time()
         print(end-start)
         nb_trees = model.best_iteration
