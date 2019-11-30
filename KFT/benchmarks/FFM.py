@@ -1,6 +1,5 @@
 from hyperopt import hp,tpe,fmin,Trials,STATUS_OK,space_eval
 import hyperopt
-import  sklearn.metrics as metrics
 from KFT.util import get_free_gpu
 import os
 import time
@@ -8,7 +7,6 @@ import pickle
 from KFT.benchmarks.utils import read_benchmark_data,get_auc,get_R_square
 import torch
 from KFT.job_utils import get_loss_func,calculate_loss_no_grad
-# from torchfm.model.ffm import FieldAwareFactorizationMachineModel
 import numpy as np
 class FeaturesLinear(torch.nn.Module):
 
@@ -98,10 +96,9 @@ class xl_FFM():
         lgb_params['k'] =  int(space['k'])
         lgb_params['lambda'] =  space['lambda']
         lgb_params['lr'] =  space['lr']
-        lgb_params['nthread'] = 30
         lgb_params['task'] = self.task
         lgb_params['bayesian'] = False
-        lgb_params['patience'] = 20
+        lgb_params['patience'] = 50
         lgb_params['cuda'] = self.cuda
         lgb_params['device'] = self.device
         self.data_obj.ratio =space['ratio']
@@ -115,7 +112,7 @@ class xl_FFM():
             print(p.shape)
             print(p.requires_grad)
         opt = torch.optim.Adam(model.parameters(), params['lr'])
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=50, factor=0.5)
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=params['patience'], factor=0.5)
         loss_func = get_loss_func(params)
         for i in range(params['epoch']):
             for j in range(self.its):

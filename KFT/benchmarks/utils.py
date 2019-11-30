@@ -18,6 +18,7 @@ def job_parser_FMM_and_linear():
     parser.add_argument('--its', type=int, nargs='?', default=100, help='its')
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--regression', default=True, help='reg or not',type=str2bool, nargs='?')
+    parser.add_argument('--bayesian', default=False, help='bayesian',type=str2bool, nargs='?')
     parser.add_argument('--y_name', type=str, nargs='?')
     parser.add_argument('--seed', type=int, nargs='?', default=1, help='seed')
     parser.add_argument('--SAVE_PATH', type=str, nargs='?')
