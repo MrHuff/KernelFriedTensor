@@ -6,6 +6,29 @@ import torch
 import numpy as np
 from sklearn.metrics.regression import mean_squared_error
 import  sklearn.metrics as metrics
+from dask_ml.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import LabelEncoder
+from sklearn.compose import ColumnTransformer
+import pandas as pd
+from sklearn.base import TransformerMixin #gives fit_transform method for free
+class NewLabelEncoder(LabelEncoder):
+    def fit(self, X, y=None):
+        return super(NewLabelEncoder, self).fit(X)
+    def transform(self, X, y=None):
+        return super(NewLabelEncoder, self).transform(X)
+    def fit_transform(self, X, y=None):
+        T = super(NewLabelEncoder, self).fit(X).transform(X)
+        T = T[:,np.newaxis]
+        print(T.shape)
+        return T
+
+def core_data_extract_df(df):
+    cols = df.columns
+    ct = ColumnTransformer([(str(el),NewLabelEncoder(), i) for i,el in enumerate(df.columns)],
+                           verbose=True)
+    df = ct.fit_transform(df)
+    df = pd.DataFrame(df,columns=cols)
+    return df
 
 def get_auc(Y,y_pred):
     fpr, tpr, thresholds = metrics.roc_curve(Y, y_pred, pos_label=1)

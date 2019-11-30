@@ -12,11 +12,13 @@ import os
 
 def post_process(folder_path,metric_name):
     trial_files = os.listdir(folder_path)
+    print(trial_files)
     metrics = []
     for el in trial_files:
-        trials = pickle.load(open(folder_path + el, "rb"))
-        best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
-        metrics.append(best_trial)
+        if 'results' not in el:
+            trials = pickle.load(open(folder_path + el, "rb"))
+            best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
+            metrics.append(best_trial)
     df = pd.DataFrame(metrics).describe()
     df.to_csv(folder_path+'results.csv')
 
