@@ -20,6 +20,7 @@ def post_process(folder_path,metric_name):
             best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
             metrics.append(best_trial)
     df = pd.DataFrame(metrics).describe()
+    df = df.round(3)
     df.to_csv(folder_path+'results.csv')
 
 def generate_timestamp_side_info(sorted_timestamp_data):
