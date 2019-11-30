@@ -7,6 +7,7 @@ from dask.distributed import Client,LocalCluster
 from sklearn.feature_extraction import FeatureHasher
 from dask.diagnostics import ProgressBar
 from sklearn.compose import ColumnTransformer
+from KFT.benchmarks.utils import core_data_extract_df
 import os
 if __name__ == '__main__':
     ProgressBar().register()
@@ -63,18 +64,42 @@ if __name__ == '__main__':
         df = dd.from_pandas(df, npartitions=64)
         print(df.head())
         df.to_parquet('./movielens_parquet_hashed/')
+    if not os.path.exists('movielens_parquet_hashed_scaled'):
 
-    df = dd.read_parquet('./movielens_parquet_hashed/')
-    Y = df['rating'].compute()
-    X = df.drop('rating', axis=1)
-    print(X)
-    s = StandardScaler()
-    X = s.fit_transform(X).compute()
-    df = pd.concat([X, Y], axis=1)
-    df = dd.from_pandas(df, npartitions=64)
-    df.to_parquet('./movielens_parquet_hashed_scaled/')
+        df = dd.read_parquet('./movielens_parquet_hashed/')
+        Y = df['rating'].compute()
+        X = df.drop('rating', axis=1)
+        print(X)
+        s = StandardScaler()
+        X = s.fit_transform(X).compute()
+        df = pd.concat([X, Y], axis=1)
+        df = dd.from_pandas(df, npartitions=64)
+        df.to_parquet('./movielens_parquet_hashed_scaled/')
 
+    if not os.path.exists('movielens_parquet_FFM'):
+        df = dd.read_parquet('./movielens_parquet/')  # .compute()
 
+        n_cat = 100
+        df = df.reset_index(drop=True)
+        Y = df['rating'].compute()
+        X = df.drop('rating', axis=1).compute()
+        df_num = X.select_dtypes(include=[np.float]).columns
+        print(df_num)
+        # for col in X.columns:
+        #     print(X[col].unique())
+        #     X[col] = X[col].fillna(X[col].mean())
+        for el in df_num:
+            X[el] = pd.cut(X[el], n_cat, labels=False)
+        X = core_data_extract_df(X)
+        X = X.reset_index(drop=True)
+        Y = Y.reset_index(drop=True)
+        df = pd.concat([X, Y], axis=1)
+        df = dd.from_pandas(df, npartitions=64)
+        df.to_parquet('./movielens_parquet_FFM/')
+    df = dd.read_parquet('./movielens_parquet_FFM/').compute()
+    print(df.min())
+    print(df.max())
+    print(df.nunique())
 
 
 

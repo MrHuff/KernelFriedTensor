@@ -15,6 +15,20 @@ PATH = './raw_data_hm/'
 np.random.seed(1337)
 
 if __name__ == '__main__':
+    categorical_columns = [
+        'location_id',
+        'city_id',
+        'corporate_brand_id',
+        'graphical_appearance_id',
+        'colour_id',
+        'enterprise_size_id',
+        'department_id',
+        'product_season_id',
+        'product_type_id',
+        'product_group_no',
+        'product_id',
+        'article_id',
+    ]
     ProgressBar().register()
     # cluster = LocalCluster(n_workers=63,threads_per_worker=1)
     # client = Client(cluster)
@@ -80,39 +94,11 @@ if __name__ == '__main__':
         df = df.drop('unique_id',axis=1)
         print(df)
         start = time.time()
-        categorical_columns = [
-                               'location_id',
-                               'city_id',
-                               'corporate_brand_id',
-                               'graphical_appearance_id',
-                               'colour_id',
-                               'enterprise_size_id',
-                               'department_id',
-                               'product_season_id',
-                               'product_type_id',
-                               'product_group_no',
-                               'product_id',
-                                'article_id',
-                              ]
         df[categorical_columns] = df[categorical_columns].astype(int)
         df = df.categorize(categorical_columns)
         df.to_parquet('./benchmark_data_lgbm/')
     if not os.path.exists('./benchmark_data_private_hashed/'):
         df = dd.read_parquet('./benchmark_data_lgbm/',index=False)
-        categorical_columns = [
-            'location_id',
-            'city_id',
-            'corporate_brand_id',
-            'graphical_appearance_id',
-            'colour_id',
-            'enterprise_size_id',
-            'department_id',
-            'product_season_id',
-            'product_type_id',
-            'product_group_no',
-            'product_id',
-            'article_id',
-        ]
         hash_vector_size = 5
         ct = ColumnTransformer([(f't_{i}', FeatureHasher(n_features=hash_vector_size,
                                                          input_type='string'), i) for i in range(len(categorical_columns))],verbose=True)
@@ -142,20 +128,7 @@ if __name__ == '__main__':
 
     if not os.path.exists('benchmark_data_private_FFM'):
         df = dd.read_parquet('./benchmark_data_lgbm/')  # .compute()
-        categorical_columns = [
-            'location_id',
-            'city_id',
-            'corporate_brand_id',
-            'graphical_appearance_id',
-            'colour_id',
-            'enterprise_size_id',
-            'department_id',
-            'product_season_id',
-            'product_type_id',
-            'product_group_no',
-            'product_id',
-            'article_id',
-        ]
+
         n_cat = 100
         df = df.reset_index(drop=True)
         Y = df['total_sales'].compute()
@@ -174,6 +147,8 @@ if __name__ == '__main__':
         df = dd.from_pandas(df, npartitions=64)
         df.to_parquet('./benchmark_data_private_FFM/')
     df = dd.read_parquet('./benchmark_data_private_FFM/').compute()
+    print(df.min())
+    print(df.max())
     print(df.nunique())
 
 

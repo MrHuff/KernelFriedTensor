@@ -6,9 +6,13 @@ from dask.distributed import Client,LocalCluster
 from dask.diagnostics import ProgressBar
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.compose import ColumnTransformer
+from KFT.benchmarks.utils import core_data_extract_df
+import numpy as np
 if __name__ == '__main__':
     PATH = './public_data/'
     ProgressBar().register()
+    categorical_columns = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category',
+                           'Item Number']
 
     # cluster = LocalCluster(n_workers=63,threads_per_worker=1)
     # client = Client(cluster)
@@ -48,8 +52,8 @@ if __name__ == '__main__':
         df = df[df['year'].isin([2016, 2015])]
         sd = dd.from_pandas(df, npartitions=64)
         sd.to_parquet('./alcohol_sales_parquet/')
+
     if not os.path.exists('./alcohol_sales_parquet_hashed'):
-        categorical_columns = ['Store Location', 'Store Number', 'City', 'Zip Code', 'County Number', 'Category', 'Item Number']
         df = dd.read_parquet('./alcohol_sales_parquet/',index=False)
         hash_vector_size = 25
         ct = ColumnTransformer([(f't_{i}', FeatureHasher(n_features=hash_vector_size,
@@ -70,14 +74,42 @@ if __name__ == '__main__':
         print(df.head())
         df.to_parquet('./alcohol_sales_parquet_hashed/')
 
-    df = dd.read_parquet('./alcohol_sales_parquet_hashed/')
-    Y = df['Bottles Sold'].compute()
-    X = df.drop('Bottles Sold',axis=1)
-    print(X)
-    s = StandardScaler()
-    X = s.fit_transform(X).compute()
-    df = pd.concat([X, Y], axis=1)
-    df = dd.from_pandas(df,npartitions=64)
-    df.to_parquet('./alcohol_sales_parquet_hashed_scaled/')
+    if not os.path.exists('./alcohol_sales_parquet_hashed'):
+
+        df = dd.read_parquet('./alcohol_sales_parquet_hashed/')
+        Y = df['Bottles Sold'].compute()
+        X = df.drop('Bottles Sold',axis=1)
+        print(X)
+        s = StandardScaler()
+        X = s.fit_transform(X).compute()
+        df = pd.concat([X, Y], axis=1)
+        df = dd.from_pandas(df,npartitions=64)
+        df.to_parquet('./alcohol_sales_parquet_hashed_scaled/')
+
+    if not os.path.exists('alcohol_sales_parquet_FFM'):
+        df = dd.read_parquet('./alcohol_sales_parquet/')  # .compute()
+
+        n_cat = 100
+        df = df.reset_index(drop=True)
+        Y = df['Bottles Sold'].compute()
+        X = df.drop('Bottles Sold',axis=1).compute()
+        df_num = X.select_dtypes(include=[np.float]).columns
+        print(df_num)
+        # for col in X.columns:
+        #     print(X[col].unique())
+        #     X[col] = X[col].fillna(X[col].mean())
+        for el in df_num:
+            X[el] =pd.cut(X[el],n_cat,labels=False)
+        print(X.columns[-1])
+        X = core_data_extract_df(X)
+        X = X.reset_index(drop=True)
+        Y=Y.reset_index(drop=True)
+        df = pd.concat([X,Y],axis=1)
+        df = dd.from_pandas(df, npartitions=64)
+        df.to_parquet('./alcohol_sales_parquet_FFM/')
+    df = dd.read_parquet('./alcohol_sales_parquet_FFM/').compute()
+    print(df.min())
+    print(df.max())
+    print(df.nunique())
 
 
