@@ -6,11 +6,24 @@ import torch
 import numpy as np
 from sklearn.metrics.regression import mean_squared_error
 import  sklearn.metrics as metrics
-from dask_ml.preprocessing import OrdinalEncoder
 from sklearn.preprocessing import LabelEncoder
 from sklearn.compose import ColumnTransformer
 import pandas as pd
-from sklearn.base import TransformerMixin #gives fit_transform method for free
+import argparse
+from ..util import str2bool
+def job_parser_FMM_and_linear():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--chunk', type=int, nargs='?', default=50, help='chunk')
+    parser.add_argument('--hyperopts', type=int, nargs='?', default=20, help='hyperopts')
+    parser.add_argument('--its', type=int, nargs='?', default=100, help='its')
+    parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
+    parser.add_argument('--regression', default=True, help='reg or not',type=str2bool, nargs='?')
+    parser.add_argument('--y_name', type=str, nargs='?')
+    parser.add_argument('--seed', type=int, nargs='?', default=1, help='seed')
+    parser.add_argument('--SAVE_PATH', type=str, nargs='?')
+    parser.add_argument('--data_path', type=str, nargs='?')
+    return parser
+
 class NewLabelEncoder(LabelEncoder):
     def fit(self, X, y=None):
         return super(NewLabelEncoder, self).fit(X)
@@ -48,12 +61,12 @@ class read_benchmark_data():
         self.df.columns = [regex.sub("_", col) if any(x in str(col) for x in set(('[', ']', '<'))) else col for col
                            in
                            self.df.columns.values]
-
         self.Y = self.df[y_name]
         self.X = self.df.drop(y_name, axis=1)
         self.X = self.X.compute()
         self.Y = self.Y.compute()
-
+        self.n_list = self.X.nunique().tolist()
+        print(self.n_list)
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.X,
                                                                                 self.Y,
                                                                                 test_size=0.2,
@@ -64,6 +77,7 @@ class read_benchmark_data():
                                                                               test_size=0.25,
                                                                               random_state=seed
                                                                               )
+        self.FFM = False
         self.n = len(self.X_train)
         self.ratio = 1e-6
         self.chunks = 100
@@ -72,19 +86,28 @@ class read_benchmark_data():
 
     def set_mode(self, mode):
         if mode == 'train':
-            self.X = torch.from_numpy(self.X_train.values).float()
+            if self.FFM:
+                self.X = torch.from_numpy(self.X_train.values).long()
+            else:
+                self.X = torch.from_numpy(self.X_train.values).float()
             self.Y = torch.from_numpy(self.Y_train.values).float()
             self.bs = int(round(self.X.shape[0] * self.ratio))
         elif mode == 'val':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_val.values).float()
+            if self.FFM:
+                self.X = torch.from_numpy(self.X_val.values).long()
+            else:
+                self.X = torch.from_numpy(self.X_val.values).float()
             self.Y = torch.from_numpy(self.Y_val.values).float()
             self.X_chunks = torch.chunk(self.X, self.chunks)
             self.Y_chunks = torch.chunk(self.Y, self.chunks)
 
         elif mode == 'test':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_test.values).float()
+            if self.FFM:
+                self.X = torch.from_numpy(self.X_val.values).long()
+            else:
+                self.X = torch.from_numpy(self.X_val.values).float()
             self.Y = torch.from_numpy(self.Y_test.values).float()
             self.X_chunks = torch.chunk(self.X, self.chunks)
             self.Y_chunks = torch.chunk(self.Y, self.chunks)

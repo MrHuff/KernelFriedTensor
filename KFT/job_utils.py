@@ -5,9 +5,10 @@ import gc
 import pickle
 import os
 import warnings
-from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK
+from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
 from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,process_old_setup,concat_old_side_info,load_side_info,print_ls_gradients
 from sklearn import metrics
+import time
 # from KFT.lookahead_opt import Lookahead
 import numpy as np
 import timeit
@@ -240,7 +241,6 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
 
     lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=0,factor=0.5)
     print_garbage()
-    s = timeit.timeit()
     for p in range(sub_epoch+1):
         if warmup:
             dataloader.ratio = train_config['batch_ratio'] / 1e2
@@ -262,11 +262,10 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
         if p % train_config['patience'] == 0:
             l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
             lrs.step(-l)
+        l=0
         ERROR = train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
-    e = timeit.timeit()
-    print(e-s)
     del lrs
     return False
 
@@ -348,17 +347,13 @@ def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_con
         lr = settings['para']
         f()
         print(lr)
-        # if train_config['fp_16']:
         opt = opts[lr]
-        # else:
-        #     opt = opt_32_reinit(model,train_config,lr)
         ERROR = train_loop(model,opt, dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
         print_garbage()
         if ERROR:
             return ERROR
         print(torch.cuda.memory_cached() / 1e6)
         print(torch.cuda.memory_allocated() / 1e6)
-        # del opt
         torch.cuda.empty_cache()
     return ERROR
 
@@ -494,13 +489,16 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        for i in range(10):
-            val_loss_final, test_loss_final = self.init_and_train(parameters)
-            if not np.isinf(val_loss_final):
-                ref_met = 'R2' if self.task == 'reg' else 'auc'
-                return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+        try:
+            for i in range(10):
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    ref_met = 'R2' if self.task == 'reg' else 'auc'
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+        except Exception as e:
+            print(e)
         ref_met = 'R2' if self.task == 'reg' else 'auc'
-        return {'loss': np.inf, 'status': STATUS_OK, f'test_{ref_met}': np.inf}
+        return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
 
     def get_kernel_vals(self,desc):
         if 'matern_1'== desc:
