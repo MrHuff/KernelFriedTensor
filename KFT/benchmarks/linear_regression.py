@@ -89,6 +89,7 @@ class linear_job_class():
         loss_func = get_loss_func(params)
         for i in range(params['epoch']):
             for j in range(self.its):
+                s = time.time()
                 self.data_obj.set_mode('train')
                 X, y = self.data_obj.get_batch()
                 if self.cuda:
@@ -105,6 +106,8 @@ class linear_job_class():
                 l.backward()
                 opt.step()
                 lrs.step(l)
+                e = time.time()
+                print(e-s)
             print(f'train error: {pred_loss.data}')
 
         val = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='val')
