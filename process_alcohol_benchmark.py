@@ -20,13 +20,7 @@ if __name__ == '__main__':
         '''
         Generall preprocessing - this goes into lightgbm
         '''
-        if not os.path.isfile(PATH + 'liqour_sales.h5'):
-
-            df = pd.read_csv(PATH + 'iowa-liquor-sales.zip')
-            df.to_hdf(PATH + 'liqour_sales.h5', key='liqour_sales')
-        else:
-            df = pd.read_hdf(PATH + 'liqour_sales.h5')
-
+        df = pd.read_csv(PATH + 'iowa-liquor-sales.zip')
         print(len(df))
         df['geo_data'] = df['Store Location'].str.extract('\(([^)]+)\)')
         df['year'] = df['Date'].apply(lambda x: int(x[-4:]))
