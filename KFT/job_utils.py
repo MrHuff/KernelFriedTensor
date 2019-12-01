@@ -262,7 +262,6 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
         if p % train_config['patience'] == 0:
             l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
             lrs.step(-l)
-        l=0
         ERROR = train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
