@@ -108,12 +108,11 @@ class linear_job_class():
                 lrs.step(l)
                 e = time.time()
                 print(e-s)
-            print(f'train error: {pred_loss.data}')
+            print(f'train error: {pred_loss}')
 
         val = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='val')
         test = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='test')
-
-        return val.data,test.data
+        return val,test
 
     def __call__(self, params):
         lgb_params = self.get_lgb_params(params)

@@ -106,9 +106,9 @@ class read_benchmark_data():
         elif mode == 'test':
             self.ratio = 1.
             if self.FFM:
-                self.X = torch.from_numpy(self.X_val.values).long()
+                self.X = torch.from_numpy(self.X_test.values).long()
             else:
-                self.X = torch.from_numpy(self.X_val.values).float()
+                self.X = torch.from_numpy(self.X_test.values).float()
             self.Y = torch.from_numpy(self.Y_test.values).float()
             self.X_chunks = torch.chunk(self.X, self.chunks)
             self.Y_chunks = torch.chunk(self.Y, self.chunks)

@@ -19,7 +19,9 @@ def post_process(folder_path,metric_name):
             trials = pickle.load(open(folder_path + el, "rb"))
             best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
             metrics.append(best_trial)
-    df = pd.DataFrame(metrics).describe()
+    df = pd.DataFrame(metrics)
+    print(df)
+    df = df.describe()
     df = df.round(3)
     df.to_csv(folder_path+'results.csv')
 
@@ -83,6 +85,7 @@ def job_parser():
     parser.add_argument('--bayesian', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
+    parser.add_argument('--dual', default=False, help='dual',type=str2bool, nargs='?')
     parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=100, help='sub_epoch_V')
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
     parser.add_argument('--chunks', type=int, nargs='?', help='chunks',default=1)

@@ -114,9 +114,9 @@ class xl_FFM():
         opt = torch.optim.Adam(model.parameters(), params['lr'])
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=params['patience'], factor=0.5)
         loss_func = get_loss_func(params)
+        self.data_obj.set_mode('train')
         for i in range(params['epoch']):
             for j in range(self.its):
-                self.data_obj.set_mode('train')
                 X, y = self.data_obj.get_batch()
                 if self.cuda:
                     X = X.to(self.device)
@@ -132,8 +132,9 @@ class xl_FFM():
 
         val = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='val')
         test = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='test')
-
-        return val.data,test.data
+        print(val)
+        print(test)
+        return val,test
 
     def __call__(self, params):
         lgb_params = self.get_lgb_params(params)

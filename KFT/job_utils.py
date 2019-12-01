@@ -65,7 +65,8 @@ def run_job_func(args):
             'old_setup':args['old_setup'],
             'latent_scale':args['latent_scale'],
             'chunks':args['chunks'],
-            'primal_list': primal_dims
+            'primal_list': primal_dims,
+            'dual':args['dual']
 
         }
         j = job_object(
@@ -187,6 +188,7 @@ def calculate_loss_no_grad(model,dataloader,train_config,task='reg',mode='val'):
         if task=='reg':
             var_Y = Y.var()
             ref_metric = 1.-total_loss/var_Y
+            ref_metric = ref_metric.numpy()
         else:
             ref_metric = auc_check(y_preds,Y)
     return ref_metric
@@ -260,9 +262,11 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
         opt.step()
         lrs.step(total_loss)
         if p % 50 == 0:
-            # l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
-            l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
-            print(l)
+            l_val = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
+            l_test = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
+            print(f'val_error= {l_val}')
+            print(f'test_error= {l_test}')
+
         ERROR = train_monitor(total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
@@ -304,7 +308,6 @@ def opt_reinit(train_config,model,lr_params,warmup=False):
             model.amp_patch(amp)
         train_config['amp'] = amp
     else:
-        # amp=None
         tmp_opt_list = []
         for lr in lr_params:
             tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
@@ -368,8 +371,8 @@ def train(model, train_config, dataloader):
     test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
     del model
     del opts
-    print(val_loss_final,test_loss_final)
-    return val_loss_final,test_loss_final
+    print(val_loss_final.numpy(),test_loss_final.numpy())
+    return val_loss_final.numpy(),test_loss_final.numpy()
 
 class job_object():
     def __init__(self, side_info_dict, configs, seed):
@@ -406,7 +409,8 @@ class job_object():
         self.latent_scale = configs['latent_scale']
         self.chunks = configs['chunks']
         self.primal_dims = configs['primal_list']
-        self.lrs = [self.max_lr/10**i for i in range(3)]
+        self.lrs = [self.max_lr/10**i for i in range(2)]
+        self.dual = configs['dual']
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -416,21 +420,21 @@ class job_object():
         self.available_side_info_dims = []
         t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
         for dim,val in self.side_info.items():
-            if self.fp_16:
-                if val['temporal']:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','periodic'])
-                else:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
-            else:
-                if val['temporal']:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
-                else:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
-            self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
             self.available_side_info_dims.append(dim)
+            if self.dual:
+                if self.fp_16:
+                    if val['temporal']:
+                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf','periodic'])
+                    else:
+                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
+                else:
+                    if val['temporal']:
+                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
+                    else:
+                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
+                self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
-        self.hyperparameter_space['dual'] = hp.choice('dual', [True,False])
-        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-2,1e-1,1])
+        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-1])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
@@ -444,7 +448,7 @@ class job_object():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def init_and_train(self,parameters):
-        self.config['dual'] = parameters['dual'] if not self.old_setup else True
+        self.config['dual'] = self.dual if not self.old_setup else True
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
@@ -532,7 +536,10 @@ class job_object():
         for key,items in init_dict.items():
             component_init = init_dict[key]
             side_info_dims = component_init['ii']
-            kernel_param  = self.construct_kernel_params(side_info_dims,parameters)
+            if self.dual:
+                kernel_param  = self.construct_kernel_params(side_info_dims,parameters)
+            else:
+                kernel_param = {}
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
@@ -561,7 +568,7 @@ class job_object():
         training_params['batch_ratio'] = parameters['batch_size_ratio']
         training_params['patience'] = 50
         training_params['chunks'] = self.chunks
-        training_params['dual'] = parameters['dual']
+        training_params['dual'] = self.dual
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
 

@@ -130,7 +130,7 @@ class TT_component(torch.nn.Module):
         if self.old_setup:
             return 1.
         else:
-            T = (self.core_param ** 2)/self.numel
+            T = self.core_param ** 2
             for mode,ones in enumerate(self.n_list):
                 ones = getattr(self,f'reg_ones_{mode}')
                 T = lazy_mode_product(T, ones.t(), mode+1)
