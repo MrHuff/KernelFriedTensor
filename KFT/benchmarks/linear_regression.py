@@ -121,7 +121,7 @@ class linear_job_class():
         val_loss,test_loss = self.init_train(lgb_params)
         end = time.time()
         print(end-start)
-        return {'loss': val_loss, 'status': STATUS_OK,'test_loss': test_loss}
+        return {'loss': -val_loss, 'status': STATUS_OK,'test_loss': -test_loss}
 
     def run(self):
         self.trials = Trials()

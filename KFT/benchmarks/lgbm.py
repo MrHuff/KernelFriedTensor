@@ -79,7 +79,7 @@ class lgbm():
         val_loss = self.get_eval_score(model,nb_trees,self.X_val,self.y_val)
         test_loss = self.get_eval_score(model,nb_trees,self.X_test,self.y_test)
 
-        return {'loss': val_loss, 'status': STATUS_OK,'test_loss': test_loss}
+        return {'loss': -val_loss, 'status': STATUS_OK,'test_loss': -test_loss}
 
     def get_eval_score(self,model,nb_trees,X,y):
         preds = model.predict(X,num_iteration=nb_trees)
