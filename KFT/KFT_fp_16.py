@@ -128,7 +128,7 @@ class KFT(torch.nn.Module):
                 pred_outputs.append(pred)
             if self.config['dual']:
                 if not self.old_setup:
-                    reg_output += torch.sum(reg.float()*reg_prime.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    reg_output += torch.mean(reg.float()*reg_prime.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
                 else:
                     reg_output += torch.mean(reg.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             else:
