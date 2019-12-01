@@ -1,7 +1,5 @@
 from KFT.benchmarks.linear_regression import linear_job_class
-from run_lgbm_private import run
 if __name__ == '__main__':
-    run()
     args = dict()
     args['y_name'] = 'rating'
     args['data_path'] = 'movielens_parquet_hashed_scaled'
