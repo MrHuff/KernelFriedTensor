@@ -1,8 +1,0 @@
-pytorch
-tensorly
-hyperopt
-matplotlib
-pandas
-dask
-dask-ml
-lightgbm

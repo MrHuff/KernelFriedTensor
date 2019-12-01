@@ -47,7 +47,7 @@ def core_data_extract_df(df):
 def get_auc(Y,y_pred):
     fpr, tpr, thresholds = metrics.roc_curve(Y, y_pred, pos_label=1)
     auc = metrics.auc(fpr, tpr)
-    return auc
+    return -auc
 def get_R_square(Y,y_pred):
     mse = mean_squared_error(Y,y_pred)
     var = np.var(Y)

@@ -191,7 +191,7 @@ def calculate_loss_no_grad(model,dataloader,train_config,task='reg',mode='val'):
             ref_metric = auc_check(y_preds,Y)
     return ref_metric
 
-def train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p):
+def train_monitor(total_loss,reg,pred_loss,model,y_pred,train_config,p):
     with torch.no_grad():
         ERROR = False
         if torch.isnan(total_loss) or torch.isinf(total_loss):
@@ -211,7 +211,6 @@ def train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p):
         if p % train_config['train_loss_interval_print'] == 0:
             print(f'reg_term it {p}: {reg.data}')
             print(f'train_loss it {p}: {pred_loss.data}')
-            print(f'val error it {p}: {l}')
     return ERROR
 
 def correct_validation_loss(X,y,model,train_config):
@@ -239,7 +238,7 @@ def correct_forward_loss(X,y,model,train_config,loss_func):
 
 def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=False):
 
-    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=0,factor=0.5)
+    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=train_config['patience'],factor=0.5)
     print_garbage()
     for p in range(sub_epoch+1):
         if warmup:
@@ -259,10 +258,12 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
         else:
             total_loss.backward()
         opt.step()
-        if p % train_config['patience'] == 0:
-            l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
-            lrs.step(-l)
-        ERROR = train_monitor(l,total_loss,reg,pred_loss,model,y_pred,train_config,p)
+        lrs.step(total_loss)
+        if p % 50 == 0:
+            # l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
+            l = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
+            print(l)
+        ERROR = train_monitor(total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
     del lrs
@@ -558,7 +559,7 @@ class job_object():
         training_params['architecture'] = self.architecture
         training_params['deep_kernel'] = self.deep_kernel
         training_params['batch_ratio'] = parameters['batch_size_ratio']
-        training_params['patience'] = self.sub_epoch_V//4
+        training_params['patience'] = 50
         training_params['chunks'] = self.chunks
         training_params['dual'] = parameters['dual']
         if self.deep_kernel:
