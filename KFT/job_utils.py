@@ -242,13 +242,12 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
 
     lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=train_config['patience'],factor=0.5)
     print_garbage()
-    for p in range(sub_epoch+1):
-        if warmup:
-            dataloader.ratio = train_config['batch_ratio'] / 1e2
-        else:
-            dataloader.ratio = train_config['batch_ratio']
+    dataloader.rerandomize()
+    n = dataloader.train_chunks
+    torch.cuda.empty_cache()
+    for p in range(n):
         dataloader.set_mode('train')
-        X,y = dataloader.get_batch()
+        X,y = dataloader.get_chunk(p)
         if train_config['cuda']:
             X = X.to(train_config['device'])
             y = y.to(train_config['device'])
@@ -261,15 +260,19 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
             total_loss.backward()
         opt.step()
         lrs.step(total_loss)
-        if p % 50 == 0:
-            l_val = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
-            l_test = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
-            print(f'val_error= {l_val}')
-            print(f'test_error= {l_test}')
-
         ERROR = train_monitor(total_loss,reg,pred_loss,model,y_pred,train_config,p)
         if ERROR:
             return ERROR
+    torch.cuda.empty_cache()
+    l_val = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
+    torch.cuda.empty_cache()
+    l_test = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
+    torch.cuda.empty_cache()
+    # print(f'train_error= {l_train}')
+    print(f'val_error= {l_val}')
+    print(f'test_error= {l_test}')
+
+
     del lrs
     return False
 
@@ -371,8 +374,8 @@ def train(model, train_config, dataloader):
     test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
     del model
     del opts
-    print(val_loss_final.numpy(),test_loss_final.numpy())
-    return val_loss_final.numpy(),test_loss_final.numpy()
+    print(val_loss_final,test_loss_final)
+    return val_loss_final,test_loss_final
 
 class job_object():
     def __init__(self, side_info_dict, configs, seed):
@@ -439,7 +442,7 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(1,self.max_R//2,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
@@ -448,7 +451,7 @@ class job_object():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def init_and_train(self,parameters):
-        self.config['dual'] = self.dual if not self.old_setup else True
+        self.config['dual'] = self.dual
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
@@ -493,14 +496,14 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        try:
-            for i in range(10):
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    ref_met = 'R2' if self.task == 'reg' else 'auc'
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
-        except Exception as e:
-            print(e)
+        # try:
+        for i in range(10):
+            val_loss_final, test_loss_final = self.init_and_train(parameters)
+            if not np.isinf(val_loss_final):
+                ref_met = 'R2' if self.task == 'reg' else 'auc'
+                return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+        # except Exception as e:
+        #     print(e)
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
 

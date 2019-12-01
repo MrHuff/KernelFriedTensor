@@ -9,7 +9,7 @@ from io import BytesIO
 import subprocess
 from sklearn.preprocessing import StandardScaler
 import os
-
+import random
 def post_process(folder_path,metric_name):
     trial_files = os.listdir(folder_path)
     print(trial_files)
@@ -81,7 +81,7 @@ def job_parser():
     parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')
     parser.add_argument('--save_path', type=str, nargs='?')
     parser.add_argument('--task', type=str, nargs='?')
-    parser.add_argument('--epochs', type=int, nargs='?', default=10, help='epochs')
+    parser.add_argument('--epochs', type=int, nargs='?', default=100, help='epochs')
     parser.add_argument('--bayesian', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
@@ -199,26 +199,39 @@ class tensor_dataset(Dataset):
                                                                               self.Y_train,
                                                                               test_size=0.25,
                                                                               random_state=seed)
+        self.train_chunks = int(round(1 / self.ratio))
+        self.bs = int(round(self.X_train.shape[0] * self.ratio))
+
+        # self.X_tr = torch.from_numpy(self.X_train).long()
+        # self.Y_tr = torch.from_numpy(self.Y_train).float()
+        self.X_chunks_tr = list(torch.chunk(torch.from_numpy(self.X_train).long(), self.train_chunks))
+        self.Y_chunks_tr = list(torch.chunk(torch.from_numpy(self.Y_train).float(), self.train_chunks))
+
+        # self.X = torch.from_numpy(self.X_val).long()
+        # self.Y = torch.from_numpy(self.Y_val).float()
+        self.X_chunks_val = torch.chunk(torch.from_numpy(self.X_val).long(), self.chunks)
+        self.Y_chunks_val = torch.chunk(torch.from_numpy(self.Y_val).float(), self.chunks)
+        # self.X = torch.from_numpy(self.X_test).long()
+        # self.Y = torch.from_numpy(self.Y_test).float()
+        self.X_chunks_test = torch.chunk(torch.from_numpy(self.X_test).long(), self.chunks)
+        self.Y_chunks_test = torch.chunk(torch.from_numpy(self.Y_test).float(), self.chunks)
         self.set_mode(mode)
+
+    def rerandomize(self):
+        shuffle_seed = random.randint(0, 10000)
+        random.Random(shuffle_seed).shuffle(self.X_chunks_tr)
+        random.Random(shuffle_seed).shuffle(self.Y_chunks_tr)
 
     def set_mode(self,mode):
         if mode == 'train':
-            self.X = torch.from_numpy(self.X_train).long()
-            self.Y = torch.from_numpy(self.Y_train).float()
-            self.bs = int(round(self.X.shape[0] * self.ratio))
+            self.X_chunks = self.X_chunks_tr
+            self.Y_chunks = self.Y_chunks_tr
         elif mode == 'val':
-            self.ratio = 1.
-            self.X = torch.from_numpy(self.X_val).long()
-            self.Y = torch.from_numpy(self.Y_val).float()
-            self.X_chunks = torch.chunk(self.X,self.chunks)
-            self.Y_chunks = torch.chunk(self.Y,self.chunks)
-
+            self.X_chunks = self.X_chunks_val
+            self.Y_chunks = self.Y_chunks_val
         elif mode == 'test':
-            self.ratio = 1.
-            self.X = torch.from_numpy(self.X_test).long()
-            self.Y = torch.from_numpy(self.Y_test).float()
-            self.X_chunks = torch.chunk(self.X,self.chunks)
-            self.Y_chunks = torch.chunk(self.Y,self.chunks)
+            self.X_chunks = self.X_chunks_test
+            self.Y_chunks = self.Y_chunks_test
 
     def get_batch(self):
         if self.ratio==1.:
@@ -230,6 +243,7 @@ class tensor_dataset(Dataset):
 
     def get_chunk(self,i):
         return self.X_chunks[i],self.Y_chunks[i]
+
     def __len__(self):
         return self.X.shape[0]
 
