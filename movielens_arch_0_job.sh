@@ -5,7 +5,7 @@ do
     --batch_size_b 0.15 \
     --max_lr 1e-1 \
     --max_R 10 \
-    --PATH ./public_data/ \
+    --PATH ./public_movielens_data/ \
     --reg_para_a 0 \
     --reg_para_b 5 \
     --fp_16 False \
