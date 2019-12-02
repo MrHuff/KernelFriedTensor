@@ -411,7 +411,7 @@ class job_object():
         self.bayesian = configs['bayesian']
         self.data_path = configs['data_path']
         self.cuda = configs['cuda']
-        self.device = configs['device']
+        self.device = configs['device'] if self.cuda else 'cpu'
         self.train_loss_interval_print  = configs['train_loss_interval_print']
         self.sub_epoch_V = configs['sub_epoch_V']
         self.config = configs['config']
@@ -448,7 +448,7 @@ class job_object():
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
-        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-1])
+        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-2])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
@@ -469,41 +469,27 @@ class job_object():
         print(parameters)
         if self.bayesian:
             if self.latent_scale:
-                if self.cuda:
-                    model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=parameters['reg_para'],
-                                            cuda=self.device, config=self.config, old_setup=self.old_setup).to(
-                        self.device)
-                else:
-                    model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=parameters['reg_para'], cuda='cpu',
-                                            config=self.config, old_setup=self.old_setup)
+                model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                                            cuda=self.device, config=self.config, old_setup=self.old_setup)
             else:
-                if self.cuda:
-                    model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'],
-                                            cuda=self.device, config=self.config, old_setup=self.old_setup).to(self.device)
-                else:
-                    model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'], cuda='cpu',
-                                            config=self.config, old_setup=self.old_setup)
+                model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                                            cuda=self.device, config=self.config, old_setup=self.old_setup)
         else:
             if self.latent_scale:
-                if self.cuda:
-                    model = KFT_scale(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
-                                config=self.config, old_setup=self.old_setup).to(self.device)
-                else:
-                    model = KFT_scale(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
-                                config=self.config, old_setup=self.old_setup)
+                model = KFT_scale(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                            config=self.config, old_setup=self.old_setup)
             else:
-                if self.cuda:
-                    model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
-                                config=self.config, old_setup=self.old_setup).to(self.device)
-                else:
-                    model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda='cpu',
-                                config=self.config, old_setup=self.old_setup)
-        print(model)
+                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                            config=self.config, old_setup=self.old_setup)
+        if self.cuda:
+            model = model.to(self.device)
+
         dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
         dataloader.chunks = train_config['chunks']
         val_loss_final, test_loss_final = train(model=model, train_config=train_config,
                                                 dataloader=dataloader)
+        torch.cuda.empty_cache()
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):

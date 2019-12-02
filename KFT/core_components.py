@@ -64,7 +64,7 @@ class RFF(torch.nn.Module):
         super(RFF, self).__init__()
         torch.random.manual_seed(rand_seed)
         self.n_input_feat = X.shape[1] # dimension of the original input
-        self.n_feat = int(round(math.log(X.shape[0])))#Michaels paper!
+        self.n_feat = int(round(100*math.log(X.shape[0])))#Michaels paper!
 
         print(f'I= {self.n_feat}')
         self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
