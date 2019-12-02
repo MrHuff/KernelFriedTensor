@@ -199,24 +199,30 @@ class tensor_dataset(Dataset):
                                                                               self.Y_train,
                                                                               test_size=0.25,
                                                                               random_state=seed)
+        self.X_tr = torch.from_numpy(self.X_train).long()
+        self.Y_tr = torch.from_numpy(self.Y_train).float()
+        self.X_v = torch.from_numpy(self.X_val).long()
+        self.Y_v = torch.from_numpy(self.Y_val).float()
+        self.X_te = torch.from_numpy(self.X_test).long()
+        self.Y_te = torch.from_numpy(self.Y_test).float()
         self.set_mode(mode)
 
     def set_mode(self,mode):
         if mode == 'train':
-            self.X = torch.from_numpy(self.X_train).long()
-            self.Y = torch.from_numpy(self.Y_train).float()
+            self.X = self.X_tr
+            self.Y = self.Y_tr
             self.bs = int(round(self.X.shape[0] * self.ratio))
         elif mode == 'val':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_val).long()
-            self.Y = torch.from_numpy(self.Y_val).float()
+            self.X = self.X_v
+            self.Y = self.Y_v
             self.X_chunks = torch.chunk(self.X,self.chunks)
             self.Y_chunks = torch.chunk(self.Y,self.chunks)
 
         elif mode == 'test':
             self.ratio = 1.
-            self.X = torch.from_numpy(self.X_test).long()
-            self.Y = torch.from_numpy(self.Y_test).float()
+            self.X = self.X_te
+            self.Y = self.Y_te
             self.X_chunks = torch.chunk(self.X,self.chunks)
             self.Y_chunks = torch.chunk(self.Y,self.chunks)
 
@@ -224,9 +230,8 @@ class tensor_dataset(Dataset):
         if self.ratio==1.:
             return self.X,self.Y
         else:
-            batch_msk = np.random.choice(self.X.shape[0],self.bs,
-                                         replace=False)
-            return self.X[batch_msk, :], self.Y[batch_msk]
+            i_s = np.random.randint(0,self.X.shape[0]-1-self.bs)
+            return self.X[i_s:i_s+self.bs, :], self.Y[i_s:i_s+self.bs]
 
     def get_chunk(self,i):
         return self.X_chunks[i],self.Y_chunks[i]

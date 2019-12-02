@@ -242,6 +242,7 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
 
     lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=train_config['patience'],factor=0.5)
     print_garbage()
+    torch.cuda.empty_cache()
     for p in range(sub_epoch+1):
         if warmup:
             dataloader.ratio = train_config['batch_ratio'] / 1e2
@@ -261,9 +262,12 @@ def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=F
             total_loss.backward()
         opt.step()
         lrs.step(total_loss)
-        if p % 50 == 0:
+        if p % (sub_epoch//2) == 0:
+            torch.cuda.empty_cache()
             l_val = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
+            torch.cuda.empty_cache()
             l_test = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
+            torch.cuda.empty_cache()
             print(f'val_error= {l_val}')
             print(f'test_error= {l_test}')
 
@@ -342,6 +346,15 @@ def setup_runs(model,train_config,warmup):
     model, opts = opt_reinit(train_config, model, lrs, warmup=warmup)
     return model,opts,loss_func,ERROR,train_list,train_dict
 
+def joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False):
+    torch.cuda.empty_cache()
+    model.turn_on_all()
+    ERROR = train_loop(model, opts['V_lr'], dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
+    if ERROR:
+        return ERROR
+    torch.cuda.empty_cache()
+    return ERROR
+
 def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False):
     for i in train_list:
         print_garbage()
@@ -364,15 +377,16 @@ def train(model, train_config, dataloader):
     train_config['reset'] = 1.0
     model,opts,loss_func,ERROR,train_list,train_dict = setup_runs(model,train_config,warmup=False)
     for i in range(train_config['epochs']+1):
-        ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
+        ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
+        # ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
         if ERROR:
             return -np.inf, -np.inf
     val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
     test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
     del model
     del opts
-    print(val_loss_final.numpy(),test_loss_final.numpy())
-    return val_loss_final.numpy(),test_loss_final.numpy()
+    print(val_loss_final,test_loss_final)
+    return val_loss_final,test_loss_final
 
 class job_object():
     def __init__(self, side_info_dict, configs, seed):
@@ -439,7 +453,7 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(1,self.max_R//2,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence

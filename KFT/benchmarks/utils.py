@@ -11,6 +11,7 @@ from sklearn.compose import ColumnTransformer
 import pandas as pd
 import argparse
 from ..util import str2bool
+
 def job_parser_FMM_and_linear():
     parser = argparse.ArgumentParser()
     parser.add_argument('--chunk', type=int, nargs='?', default=50, help='chunk')
@@ -94,7 +95,6 @@ class read_benchmark_data():
             self.Y = torch.from_numpy(self.Y_train.values).float()
             self.bs = int(round(self.X.shape[0] * self.ratio))
         elif mode == 'val':
-            self.ratio = 1.
             if self.FFM:
                 self.X = torch.from_numpy(self.X_val.values).long()
             else:
@@ -104,7 +104,6 @@ class read_benchmark_data():
             self.Y_chunks = torch.chunk(self.Y, self.chunks)
 
         elif mode == 'test':
-            self.ratio = 1.
             if self.FFM:
                 self.X = torch.from_numpy(self.X_test.values).long()
             else:
@@ -117,9 +116,8 @@ class read_benchmark_data():
         if self.ratio == 1.:
             return self.X, self.Y
         else:
-            batch_msk = np.random.choice(self.X.shape[0], self.bs,
-                                         replace=False)
-            return self.X[batch_msk, :], self.Y[batch_msk]
+            i_s = np.random.randint(0, self.X.shape[0] - 1 - self.bs)
+            return self.X[i_s:i_s + self.bs, :], self.Y[i_s:i_s + self.bs]
 
     def get_chunk(self, i):
         return self.X_chunks[i], self.Y_chunks[i]

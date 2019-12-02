@@ -36,6 +36,11 @@ class KFT(torch.nn.Module):
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
+    def turn_on_all(self):
+        for i, v in self.ii.items():
+            self.TT_cores[str(i)].turn_on()
+            self.TT_cores_prime[str(i)].turn_on()
+
     def turn_on_V(self):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:

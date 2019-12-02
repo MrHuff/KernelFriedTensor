@@ -87,7 +87,7 @@ class TT_component(torch.nn.Module):
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
-        self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=not self.old_setup)
+        self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
         self.init_scale = init_scale
         self.numel = self.core_param.numel()
         for i, n in enumerate(n_list):
