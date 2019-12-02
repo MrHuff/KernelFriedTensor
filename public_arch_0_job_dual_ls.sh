@@ -16,8 +16,8 @@ do
     --architecture 0 \
     --side_info_order 1 0 2 \
     --temporal_tag 2 \
-    --latent_scale False \
-    --dual False \
+    --latent_scale True \
+    --dual True \
     --task reg > public_job_$i.out &
   sleep 10
 done

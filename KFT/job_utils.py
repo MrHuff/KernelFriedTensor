@@ -423,7 +423,7 @@ class job_object():
         self.latent_scale = configs['latent_scale']
         self.chunks = configs['chunks']
         self.primal_dims = configs['primal_list']
-        self.lrs = [self.max_lr/10**i for i in range(2)]
+        self.lrs = [self.max_lr/10**i for i in range(3)]
         self.dual = configs['dual']
         self.seed = seed
         self.trials = Trials()
@@ -448,12 +448,12 @@ class job_object():
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
-        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-2])
+        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-2,1e-1,1.])
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
-            self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(1,self.max_R//2,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R,self.max_R+1,dtype=int))
+            self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
@@ -501,6 +501,7 @@ class job_object():
                     return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
         except Exception as e:
             print(e)
+            torch.cuda.empty_cache()
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
 
