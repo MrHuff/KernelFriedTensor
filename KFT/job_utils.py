@@ -377,8 +377,8 @@ def train(model, train_config, dataloader):
     train_config['reset'] = 1.0
     model,opts,loss_func,ERROR,train_list,train_dict = setup_runs(model,train_config,warmup=False)
     for i in range(train_config['epochs']+1):
-        ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
-        # ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
+        # ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
+        ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
         if ERROR:
             return -np.inf, -np.inf
     val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
