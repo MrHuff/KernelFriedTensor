@@ -10,7 +10,7 @@ do
     --reg_para_b 5 \
     --fp_16 False \
     --fused True \
-    --save_path public_job \
+    --save_path public_job_arch_0_ls \
     --seed $i \
     --tensor_name all_data.pt \
     --architecture 0 \
