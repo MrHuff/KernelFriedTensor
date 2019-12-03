@@ -517,17 +517,17 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        try:
-            for i in range(10):
+        for i in range(10):
+            try:
                 torch.cuda.empty_cache()
                 val_loss_final, test_loss_final = self.init_and_train(parameters)
                 if not np.isinf(val_loss_final):
                     ref_met = 'R2' if self.task == 'reg' else 'auc'
                     torch.cuda.empty_cache()
                     return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
-        except Exception as e:
-            print(e)
-            torch.cuda.empty_cache()
+            except Exception as e:
+                print(e)
+                torch.cuda.empty_cache()
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
 
