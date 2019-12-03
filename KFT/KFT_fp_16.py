@@ -24,7 +24,10 @@ class KFT(torch.nn.Module):
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
-                tmp_dict_prime[str(i)] = TT_component_deep(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                if config['deep']:
+                    tmp_dict_prime[str(i)] = TT_component_deep(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                else:
+                    tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'] if config['dual'] else v['primal_list'],

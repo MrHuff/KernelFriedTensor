@@ -73,7 +73,6 @@ def run_job_func(args):
             'config': {
                        'full_grad': args['full_grad'],
                        'deep_kernel':args['deep_kernel'],
-                       'L':args['L'],
                        'deep':args['deep'],
                        'non_lin': get_non_lin(args['non_lin'])
                        },
@@ -87,6 +86,7 @@ def run_job_func(args):
             'primal_list': primal_dims,
             'dual':args['dual'],
             'init_max':args['init_max'],
+            'L': args['L'],
         }
         j = job_object(
             side_info_dict=side_info,
@@ -444,6 +444,7 @@ class job_object():
         self.primal_dims = configs['primal_list']
         self.lrs = [self.max_lr/10**i for i in range(3)]
         self.dual = configs['dual']
+        self.max_L = configs['L']
         self.init_range = [configs['init_max']/10**i for i in range(1)]
         self.seed = seed
         self.trials = Trials()
@@ -468,6 +469,8 @@ class job_object():
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
+        if self.config['deep']:
+            self.hyperparameter_space['L'] = hp.choice('L', np.arange(1,self.max_L,dtype=int))
         self.hyperparameter_space['init_scale'] = hp.choice('init_scale',self.init_range )
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
@@ -483,6 +486,8 @@ class job_object():
 
     def init_and_train(self,parameters):
         self.config['dual'] = self.dual if not self.old_setup else True
+        if self.config['deep']:
+            self.config['L'] = parameters['L']
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
