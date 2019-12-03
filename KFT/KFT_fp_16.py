@@ -24,10 +24,7 @@ class KFT(torch.nn.Module):
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
-                if self.config['deep']:
-                    tmp_dict_prime[str(i)] = TT_component_deep(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
-                else:
-                    tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                tmp_dict_prime[str(i)] = TT_component_deep(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'] if config['dual'] else v['primal_list'],
@@ -130,8 +127,8 @@ class KFT(torch.nn.Module):
                 tt_prime = self.TT_cores_prime[str(i)]
                 prime_pred,reg_prime = tt_prime(ix)
                 pred, reg = tt(ix)
-                if self.config['deep']:
-                    pred_outputs.append(tt_prime.nn_forward(pred * prime_pred))
+                if self.config['deep'] and self.config['dual']:
+                    pred_outputs.append(tt_prime.nn_forward(pred)*prime_pred)
                 else:
                     pred_outputs.append(pred * prime_pred)
             else:
@@ -144,7 +141,10 @@ class KFT(torch.nn.Module):
                     reg_output += torch.mean(reg.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             else:
                 if not self.old_setup:
-                    reg_output += torch.mean(reg)+torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    if self.config['deep']:
+                        reg_output += torch.mean(reg)+torch.mean(reg_prime)+tt_prime.nn_reg() #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    else:
+                        reg_output += torch.mean(reg)+torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
                 else:
                     reg_output += torch.mean(reg) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
         return pred_outputs,reg_output*self.lambda_reg

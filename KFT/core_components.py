@@ -155,7 +155,7 @@ class TT_component_deep(TT_component):
         if self.r_1==self.r_2:
             self.apply_index = 2
         for i in range(self.L):
-            setattr(self,f'deep_layer_{i}',torch.nn.Parameter(torch.randn(r,1),requires_grad=True))
+            setattr(self,f'deep_layer_{i}',torch.nn.Parameter(torch.eye(int(r)),requires_grad=True))
 
     def turn_off(self):
         for n,p in self.named_parameters():
@@ -163,13 +163,18 @@ class TT_component_deep(TT_component):
                 p.requires_grad = False
         self.V_mode = False
 
+    def nn_reg(self):
+        p = 0
+        for i in range(self.L):
+            p+=torch.mean(getattr(self,f'deep_layer_{i}')**2)
+        return p
 
     def nn_forward(self,X):
         for i in range(self.L-1):
             p = getattr(self,f'deep_layer_{i}')
-            X = self.non_lin(lazy_mode_hadamard(X,p,self.apply_index))
+            X = self.non_lin(lazy_mode_product(X,p,self.apply_index))
         p = getattr(self,f'deep_layer_{self.L-1}')
-        X = lazy_mode_hadamard(X, p, self.apply_index) #output layer lol
+        X = lazy_mode_product(X, p, self.apply_index) #output layer lol
         return X
 
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
