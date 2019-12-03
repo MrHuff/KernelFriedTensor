@@ -7,6 +7,7 @@ from tensorly.tenalg import multi_mode_dot,mode_dot
 from KFT.FLOWS.flows import IAF_no_h
 import math
 import timeit
+import numpy as np
 PI  = math.pi
 torch.set_printoptions(profile="full")
 
@@ -76,6 +77,8 @@ class RFF(torch.nn.Module):
 class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
         super(TT_component, self).__init__()
+        self.r_1 = r_1
+        self.r_2 = r_2
         self.n_list = n_list
         self.amp = None
         self.V_mode = True
@@ -136,6 +139,38 @@ class TT_component(torch.nn.Module):
                 T = lazy_mode_product(T, ones.t(), mode+1)
                 T = lazy_mode_product(T, ones, mode+1)
             return T
+
+class TT_component_deep(TT_component):
+    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0):
+        super(TT_component_deep, self).__init__(r_1,n_list,r_2,cuda,config,init_scale)
+        self.L = config['L']
+        self.non_lin = config['non_lin']
+        self.init_index_logic()
+
+    def init_index_logic(self):
+        l = [self.r_1,self.r_2]
+        i = np.argmax(l)
+        r  = l[i]
+        self.apply_index = 1 if i==0 else 2
+        if self.r_1==self.r_2:
+            self.apply_index = 2
+        for i in range(self.L):
+            setattr(self,f'deep_layer_{i}',torch.nn.Parameter(torch.randn(r,1),requires_grad=True))
+
+    def turn_off(self):
+        for n,p in self.named_parameters():
+            if 'deep_layer' not in n:
+                p.requires_grad = False
+        self.V_mode = False
+
+
+    def nn_forward(self,X):
+        for i in range(self.L-1):
+            p = getattr(self,f'deep_layer_{i}')
+            X = self.non_lin(lazy_mode_hadamard(X,p,self.apply_index))
+        p = getattr(self,f'deep_layer_{self.L-1}')
+        X = lazy_mode_hadamard(X, p, self.apply_index) #output layer lol
+        return X
 
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0):

@@ -18,6 +18,7 @@ do
     --temporal_tag 2 \
     --latent_scale False \
     --dual True \
+    --init_max 0.1 \
     --task reg > public_job_$i.out &
   sleep 10
 done

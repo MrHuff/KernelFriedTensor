@@ -12,6 +12,19 @@ import time
 # from KFT.lookahead_opt import Lookahead
 import numpy as np
 import timeit
+
+def get_non_lin(non_lin_name):
+    if non_lin_name=='relu':
+        return torch.nn.ReLU()
+    elif non_lin_name=='tanh':
+        return torch.nn.Tanh()
+    elif non_lin_name=='leaky':
+        return torch.nn.LeakyReLU()
+    elif non_lin_name=='sig':
+        return torch.nn.Sigmoid()
+    elif non_lin_name=='linear':
+        return lambda x: x
+
 def run_job_func(args):
     print(args)
     with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
@@ -57,7 +70,13 @@ def run_job_func(args):
             'device': f'cuda:{gpu_choice}',
             'train_loss_interval_print': args['sub_epoch_V'] // 2,
             'sub_epoch_V': args['sub_epoch_V'],
-            'config': {'full_grad': args['full_grad'],'deep_kernel':args['deep_kernel']},
+            'config': {
+                       'full_grad': args['full_grad'],
+                       'deep_kernel':args['deep_kernel'],
+                       'L':args['L'],
+                       'deep':args['deep'],
+                       'non_lin': get_non_lin(args['non_lin'])
+                       },
             'shape':shape,
             'architecture': args['architecture'],
             'max_R': args['max_R'],
@@ -66,8 +85,8 @@ def run_job_func(args):
             'latent_scale':args['latent_scale'],
             'chunks':args['chunks'],
             'primal_list': primal_dims,
-            'dual':args['dual']
-
+            'dual':args['dual'],
+            'init_max':args['init_max'],
         }
         j = job_object(
             side_info_dict=side_info,
@@ -425,6 +444,7 @@ class job_object():
         self.primal_dims = configs['primal_list']
         self.lrs = [self.max_lr/10**i for i in range(3)]
         self.dual = configs['dual']
+        self.init_range = [configs['init_max']/10**i for i in range(1)]
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -448,12 +468,12 @@ class job_object():
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
-        self.hyperparameter_space['init_scale'] = hp.choice('init_scale', [1e-2,1e-1,1.])
+        self.hyperparameter_space['init_scale'] = hp.choice('init_scale',self.init_range )
         self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange(self.max_R//2,self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.75)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
@@ -483,7 +503,7 @@ class job_object():
                             config=self.config, old_setup=self.old_setup)
         if self.cuda:
             model = model.to(self.device)
-
+        print(model)
         dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
         dataloader.chunks = train_config['chunks']
@@ -493,14 +513,14 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        try:
-            for i in range(10):
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    ref_met = 'R2' if self.task == 'reg' else 'auc'
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
-        except Exception as e:
-            print(e)
+        # try:
+        for i in range(10):
+            val_loss_final, test_loss_final = self.init_and_train(parameters)
+            if not np.isinf(val_loss_final):
+                ref_met = 'R2' if self.task == 'reg' else 'auc'
+                return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+        # except Exception as e:
+        #     print(e)
             torch.cuda.empty_cache()
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}

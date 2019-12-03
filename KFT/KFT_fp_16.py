@@ -3,7 +3,7 @@ import tensorly
 tensorly.set_backend('pytorch')
 import math
 import timeit
-from KFT.core_components import TT_component,TT_kernel_component,lazy_mode_product,lazy_mode_hadamard,row_outer_prod,edge_mode_product
+from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product,TT_component_deep
 from KFT.core_VI_components import univariate_variational_kernel_TT,multivariate_variational_kernel_TT,variational_TT_component
 PI  = math.pi
 torch.set_printoptions(profile="full")
@@ -24,7 +24,10 @@ class KFT(torch.nn.Module):
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
-                tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                if self.config['deep']:
+                    tmp_dict_prime[str(i)] = TT_component_deep(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
+                else:
+                    tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'] if config['dual'] else v['primal_list'],
@@ -127,7 +130,10 @@ class KFT(torch.nn.Module):
                 tt_prime = self.TT_cores_prime[str(i)]
                 prime_pred,reg_prime = tt_prime(ix)
                 pred, reg = tt(ix)
-                pred_outputs.append(pred*prime_pred)
+                if self.config['deep']:
+                    pred_outputs.append(tt_prime.nn_forward(pred * prime_pred))
+                else:
+                    pred_outputs.append(pred * prime_pred)
             else:
                 pred, reg = tt(ix)
                 pred_outputs.append(pred)
@@ -183,6 +189,8 @@ class KFT(torch.nn.Module):
                 reg_output += torch.mean(reg.float()) + torch.mean(reg_prime.float())  # numerical issue with fp 16 how fix,
 
         return pred_outputs, reg_output * self.lambda_reg
+
+
 
 class KFT_scale(torch.nn.Module):
     def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}

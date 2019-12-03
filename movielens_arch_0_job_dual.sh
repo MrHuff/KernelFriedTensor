@@ -4,22 +4,22 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.15 \
     --max_lr 1e-1 \
-    --max_R 30 \
-    --PATH ./public_data/ \
+    --max_R 10 \
+    --PATH ./public_movielens_data/ \
     --reg_para_a 0 \
     --reg_para_b 5 \
     --fp_16 False \
     --fused True \
-    --save_path public_job_arch_0_dual_ls \
+    --save_path movielens_job_arch_0 \
     --seed $i \
     --tensor_name all_data.pt \
-    --architecture 0 \
-    --side_info_order 1 0 2 \
+    --architecture 8 \
+    --side_info_order 1 2 \
     --temporal_tag 2 \
-    --latent_scale True \
+    --latent_scale False \
     --dual True \
-    --init_max 0.1 \
-    --task reg > public_job_$i.out &
+    --init_max 1e0 \
+    --task reg > movielens_job_$i.out &
   sleep 10
 done
 

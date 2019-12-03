@@ -18,6 +18,7 @@ do
     --temporal_tag 2 \
     --latent_scale False \
     --dual False \
+    --init_max 1e-1 \
     --task reg > movielens_job_$i.out &
   sleep 10
 done
