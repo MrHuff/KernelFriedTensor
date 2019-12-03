@@ -514,15 +514,16 @@ class job_object():
         dataloader.chunks = train_config['chunks']
         val_loss_final, test_loss_final = train(model=model, train_config=train_config,
                                                 dataloader=dataloader)
-        torch.cuda.empty_cache()
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
         try:
             for i in range(10):
+                torch.cuda.empty_cache()
                 val_loss_final, test_loss_final = self.init_and_train(parameters)
                 if not np.isinf(val_loss_final):
                     ref_met = 'R2' if self.task == 'reg' else 'auc'
+                    torch.cuda.empty_cache()
                     return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
         except Exception as e:
             print(e)
