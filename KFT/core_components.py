@@ -75,8 +75,9 @@ class RFF(torch.nn.Module):
         return torch.transpose(math.sqrt(2./float(self.n_feat))*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
 
 class TT_component(torch.nn.Module):
-    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
+    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0):
         super(TT_component, self).__init__()
+        self.register_buffer('reg_para',torch.tensor(reg_para))
         self.r_1 = r_1
         self.r_2 = r_2
         self.n_list = n_list

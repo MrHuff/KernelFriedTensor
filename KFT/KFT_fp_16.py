@@ -9,14 +9,13 @@ PI  = math.pi
 torch.set_printoptions(profile="full")
 
 class KFT(torch.nn.Module):
-    def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self, initialization_data, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT, self).__init__()
         self.kernel_class_name = ['TT_kernel_component']
         self.cuda = cuda
         self.amp = None
         self.config = config
         self.old_setup = old_setup
-        self.register_buffer('lambda_reg',torch.tensor(lambda_reg))
         tmp_dict = {}
         tmp_dict_prime = {}
         self.full_grad = config['full_grad']
@@ -150,7 +149,7 @@ class KFT(torch.nn.Module):
                         reg_output += torch.mean(reg)+torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
                 else:
                     reg_output += torch.mean(reg) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
-        return pred_outputs,reg_output*self.lambda_reg
+        return pred_outputs,reg_output
 
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
@@ -196,14 +195,13 @@ class KFT(torch.nn.Module):
 
 
 class KFT_scale(torch.nn.Module):
-    def __init__(self, initialization_data, lambda_reg=1e-6, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self, initialization_data,  cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT_scale, self).__init__()
         self.kernel_class_name = ['TT_kernel_component']
         self.cuda = cuda
         self.config = config
         self.amp = None
         self.old_setup = old_setup
-        self.register_buffer('lambda_reg',torch.tensor(lambda_reg))
         tmp_dict = {}
         tmp_dict_s = {}
         tmp_dict_b = {}
@@ -343,9 +341,9 @@ class KFT_scale(torch.nn.Module):
 
         pred = s*r+b
         if self.full_grad:
-            return pred[torch.unbind(indices, dim=1)], reg_output * self.lambda_reg
+            return pred[torch.unbind(indices, dim=1)], reg_output
         else:
-            return pred,reg_output * self.lambda_reg
+            return pred,reg_output
 
     def forward(self,indices):
         pred, reg = self.collect_core_outputs(indices)

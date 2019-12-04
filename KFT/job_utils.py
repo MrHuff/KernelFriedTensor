@@ -9,7 +9,6 @@ from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
 from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,process_old_setup,concat_old_side_info,load_side_info,print_ls_gradients
 from sklearn import metrics
 import time
-# from KFT.lookahead_opt import Lookahead
 import numpy as np
 import timeit
 
@@ -454,6 +453,9 @@ class job_object():
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
         t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
+        self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
+
+
         for dim,val in self.side_info.items():
             self.available_side_info_dims.append(dim)
             if self.dual:
@@ -472,7 +474,6 @@ class job_object():
         if self.config['deep']:
             self.hyperparameter_space['L'] = hp.choice('L', np.arange(1,self.max_L,dtype=int))
         self.hyperparameter_space['init_scale'] = hp.choice('init_scale',self.init_range )
-        self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
@@ -501,10 +502,10 @@ class job_object():
                                             cuda=self.device, config=self.config, old_setup=self.old_setup)
         else:
             if self.latent_scale:
-                model = KFT_scale(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                model = KFT_scale(initialization_data=init_dict, cuda=self.device,
                             config=self.config, old_setup=self.old_setup)
             else:
-                model = KFT(initialization_data=init_dict, lambda_reg=parameters['reg_para'], cuda=self.device,
+                model = KFT(initialization_data=init_dict, cuda=self.device,
                             config=self.config, old_setup=self.old_setup)
         if self.cuda:
             model = model.to(self.device)
