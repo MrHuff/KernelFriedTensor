@@ -453,8 +453,16 @@ class job_object():
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
         t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
-        self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
 
+        if self.bayesian:
+            self.hyperparameter_space[f'reg_para'] = hp.uniform(f'reg_para', self.a, self.b)
+        else:
+            for i in range(len(t_act)):
+                if self.old_setup:
+                    self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
+                else:
+                    self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
+                    self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
         for dim,val in self.side_info.items():
             self.available_side_info_dims.append(dim)
@@ -490,15 +498,16 @@ class job_object():
         if self.config['deep']:
             self.config['L'] = parameters['L']
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
+        lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
         print(parameters)
         if self.bayesian:
             if self.latent_scale:
-                model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=lambdas['KL'],
                                             cuda=self.device, config=self.config, old_setup=self.old_setup)
             else:
-                model = variational_KFT(initialization_data=init_dict, KL_weight=parameters['reg_para'],
+                model = variational_KFT(initialization_data=init_dict, KL_weight=lambdas['KL'],
                                             cuda=self.device, config=self.config, old_setup=self.old_setup)
         else:
             if self.latent_scale:
@@ -506,7 +515,7 @@ class job_object():
                             config=self.config, old_setup=self.old_setup)
             else:
                 model = KFT(initialization_data=init_dict, cuda=self.device,
-                            config=self.config, old_setup=self.old_setup)
+                            config=self.config, old_setup=self.old_setup,lambdas=lambdas)
         if self.cuda:
             model = model.to(self.device)
         print(model)
@@ -541,6 +550,16 @@ class job_object():
             return 'matern',2.5
         else:
             return desc,None
+
+    def extract_reg_terms(self, parameters):
+        reg_params = dict()
+        if self.bayesian:
+            reg_params['KL'] = parameters['reg_para']
+        else:
+            for i in range(len(self.tensor_architecture)):
+                reg_params[f'reg_para_{i}'] = parameters[f'reg_para_{i}']
+                reg_params[f'reg_para_prime_{i}'] = parameters[f'reg_para_prime_{i}']
+        return reg_params
 
     def construct_kernel_params(self,side_info_dims,parameters):
         kernel_param = {}
@@ -599,7 +618,6 @@ class job_object():
         training_params['dual'] = self.dual
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
-
         return training_params
 
     def run_hyperparam_opt(self):
