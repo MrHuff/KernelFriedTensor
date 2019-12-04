@@ -10,6 +10,25 @@ import subprocess
 from sklearn.preprocessing import StandardScaler
 import os
 
+def get_test_errors(folder_path,metric_name,data_path):
+    trial_files = os.listdir(folder_path)
+    print(trial_files)
+    metrics = []
+    for i in range(1,6):
+        dataloader = get_dataloader_tensor(data_path, seed=i, mode='test',
+                                           bs_ratio=1.0)
+        var_Y_test = dataloader.Y_te.var().numpy()
+        for el in trial_files:
+            if 'results' not in el and str(i) in el:
+                trials = pickle.load(open(folder_path + el, "rb"))
+                test_error = (1+sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0][metric_name])*var_Y_test
+                metrics.append([test_error,var_Y_test])
+    df = pd.DataFrame(metrics)
+    df = df.describe()
+    df = df.round(3)
+    df.to_csv(folder_path+'test_error_ref.csv')
+
+
 def post_process(folder_path,metric_name):
     trial_files = os.listdir(folder_path)
     print(trial_files)
