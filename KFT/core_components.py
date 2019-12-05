@@ -94,8 +94,6 @@ class TT_component(torch.nn.Module):
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         if self.prime:
             self.core_param = sub_factorization(self.shape_list,R=sub_R)
-            with torch.no_grad():
-                p = self.core_param()
         else:
             self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
 

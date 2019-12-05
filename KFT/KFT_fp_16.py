@@ -39,7 +39,8 @@ class KFT(torch.nn.Module):
                                                           config=config,
                                                           init_scale=v['init_scale'],
                                                           reg_para=lambdas[f'reg_para_prime_{i}'],
-                                                          prime=False,sub_R=config['sub_R'])
+                                                          prime=v['prime'],sub_R=config['sub_R'])
+                    #TODO: "Mixed prime factorizations..."
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
                                                        n_list=v['n_list'] if config['dual'] else v['primal_list'],

@@ -40,7 +40,6 @@ def run_job_func(args):
         if args['temporal_tag'] is not None:
             for i in args['temporal_tag']:
                 side_info[i]['temporal'] = True
-
         if args['delete_side_info'] is not None:
             for i in args['delete_side_info']:
                 del side_info[i]
@@ -151,7 +150,6 @@ def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component 
             2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
                 'r_2_latent': 1},
         },
-
     }
     return TENSOR_ARCHITECTURES[i]
 
@@ -446,7 +444,7 @@ class job_object():
         self.latent_scale = configs['latent_scale']
         self.chunks = configs['chunks']
         self.primal_dims = configs['primal_list']
-        self.lrs = [self.max_lr/10**i for i in range(3)]
+        self.lrs = [self.max_lr/10**i for i in range(2)]
         self.dual = configs['dual']
         self.max_L = configs['L']
         self.sub_R = configs['sub_R']
@@ -470,8 +468,7 @@ class job_object():
                     self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a_prime, self.b_prime)
                 if not self.old_setup and not self.dual:
                     self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a_prime, self.b_prime)
-        
-        
+                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [True,False])
 
 
         for dim,val in self.side_info.items():
@@ -511,6 +508,9 @@ class job_object():
             self.config['L'] = parameters['L']
         self.config['sub_R'] = parameters['sub_R']
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
+        for key,component in self.tensor_architecture.items():
+            component['prime'] = parameters[f'prime_{key}']
+
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
