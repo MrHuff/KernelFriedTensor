@@ -19,7 +19,7 @@ def get_test_errors(folder_path,metric_name,data_path):
                                            bs_ratio=1.0)
         var_Y_test = dataloader.Y_te.var().numpy()
         for el in trial_files:
-            if 'results' not in el and str(i) in el:
+            if ('results' not in el and 'test_error_ref' not in el) and str(i) in el:
                 trials = pickle.load(open(folder_path + el, "rb"))
                 test_error = (1+sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0][metric_name])*var_Y_test
                 metrics.append([test_error,var_Y_test])
@@ -34,7 +34,7 @@ def post_process(folder_path,metric_name):
     print(trial_files)
     metrics = []
     for el in trial_files:
-        if 'results' not in el:
+        if 'results' not in el and 'test_error_ref' not in el:
             trials = pickle.load(open(folder_path + el, "rb"))
             best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
             metrics.append(best_trial)
@@ -87,8 +87,11 @@ def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--PATH', type=str, nargs='?')
     parser.add_argument('--max_R', type=int, nargs='?', default=10, help='max_R')
+    parser.add_argument('--sub_R', type=int, nargs='?', default=10, help='max_R')
     parser.add_argument('--reg_para_a', type=float, nargs='?', default=0., help='reg_para_a')
     parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
+    parser.add_argument('--reg_para_a_prime', type=float, nargs='?', default=0., help='reg_para_a_prime')
+    parser.add_argument('--reg_para_b_prime', type=float, nargs='?', default=1., help='reg_para_b_prime')
     parser.add_argument('--batch_size_a', type=float, nargs='?', default=0., help='batch_size_a')
     parser.add_argument('--batch_size_b', type=float, nargs='?', default=1., help='batch_size_b')
     parser.add_argument('--init_max', type=float, nargs='?', default=1e-1, help='batch_size_b')

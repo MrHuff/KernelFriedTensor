@@ -55,6 +55,8 @@ def run_job_func(args):
         other_configs = {
             'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
             'reg_para_b': args['reg_para_b'],
+            'reg_para_a_prime': args['reg_para_a_prime'],  # Regularization term! Need to choose wisely
+            'reg_para_b_prime': args['reg_para_b_prime'],
             'batch_size_a': 1.0 if args['full_grad'] else args['batch_size_a'],
             'batch_size_b': 1.0 if args['full_grad'] else args['batch_size_b'],
             'fp_16': args['fp_16'],  # Wanna use fp_16? Initialize smartly!
@@ -86,6 +88,7 @@ def run_job_func(args):
             'dual':args['dual'],
             'init_max':args['init_max'],
             'L': args['L'],
+            'sub_R':args['sub_R']
         }
         j = job_object(
             side_info_dict=side_info,
@@ -416,6 +419,8 @@ class job_object():
         self.hyper_parameters = {}
         self.a = configs['reg_para_a']
         self.b = configs['reg_para_b']
+        self.a_prime = configs['reg_para_a_prime']
+        self.b_prime = configs['reg_para_b_prime']
         self.a_ = configs['batch_size_a']
         self.b_ = configs['batch_size_b'] #1.0 max
         self.fp_16 = configs['fp_16']
@@ -444,6 +449,7 @@ class job_object():
         self.lrs = [self.max_lr/10**i for i in range(3)]
         self.dual = configs['dual']
         self.max_L = configs['L']
+        self.sub_R = configs['sub_R']
         self.init_range = [configs['init_max']/10**i for i in range(1)]
         self.seed = seed
         self.trials = Trials()
@@ -458,11 +464,15 @@ class job_object():
             self.hyperparameter_space[f'reg_para'] = hp.uniform(f'reg_para', self.a, self.b)
         else:
             for i in range(len(t_act)):
-                if self.old_setup:
-                    self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
-                else:
-                    self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
-                    self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
+                self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
+                if self.latent_scale:
+                    self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a_prime, self.b_prime)
+                    self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a_prime, self.b_prime)
+                if not self.old_setup and not self.dual:
+                    self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a_prime, self.b_prime)
+        
+        
+
 
         for dim,val in self.side_info.items():
             self.available_side_info_dims.append(dim)
@@ -485,10 +495,12 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.75)),self.max_R+1,dtype=int))
+        if not self.old_setup:
+            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.sub_R, self.sub_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', self.lrs ) #Very important for convergence
+        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', np.divide(self.lrs, 10.) ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
@@ -497,6 +509,7 @@ class job_object():
         self.config['dual'] = self.dual if not self.old_setup else True
         if self.config['deep']:
             self.config['L'] = parameters['L']
+        self.config['sub_R'] = parameters['sub_R']
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
@@ -512,7 +525,7 @@ class job_object():
         else:
             if self.latent_scale:
                 model = KFT_scale(initialization_data=init_dict, cuda=self.device,
-                            config=self.config, old_setup=self.old_setup)
+                            config=self.config, old_setup=self.old_setup,lambdas=lambdas)
             else:
                 model = KFT(initialization_data=init_dict, cuda=self.device,
                             config=self.config, old_setup=self.old_setup,lambdas=lambdas)
@@ -528,16 +541,16 @@ class job_object():
 
     def __call__(self, parameters):
         for i in range(10):
-            try:
+            # try:
+            torch.cuda.empty_cache()
+            val_loss_final, test_loss_final = self.init_and_train(parameters)
+            if not np.isinf(val_loss_final):
+                ref_met = 'R2' if self.task == 'reg' else 'auc'
                 torch.cuda.empty_cache()
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    ref_met = 'R2' if self.task == 'reg' else 'auc'
-                    torch.cuda.empty_cache()
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
-            except Exception as e:
-                print(e)
-                torch.cuda.empty_cache()
+                return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+            # except Exception as e:
+            #     print(e)
+            #     torch.cuda.empty_cache()
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
 
@@ -558,7 +571,14 @@ class job_object():
         else:
             for i in range(len(self.tensor_architecture)):
                 reg_params[f'reg_para_{i}'] = parameters[f'reg_para_{i}']
-                reg_params[f'reg_para_prime_{i}'] = parameters[f'reg_para_prime_{i}']
+                if self.latent_scale:
+                    reg_params[f'reg_para_s_{i}'] = parameters[f'reg_para_s_{i}']
+                    reg_params[f'reg_para_b_{i}'] = parameters[f'reg_para_b_{i}']
+                if not self.old_setup and not self.dual:
+                    reg_params[f'reg_para_prime_{i}'] = parameters[f'reg_para_prime_{i}']
+                else:
+                    reg_params[f'reg_para_prime_{i}'] = 1.0
+        print(reg_params)
         return reg_params
 
     def construct_kernel_params(self,side_info_dims,parameters):

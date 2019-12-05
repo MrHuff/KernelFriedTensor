@@ -75,9 +75,10 @@ class RFF(torch.nn.Module):
         return torch.transpose(math.sqrt(2./float(self.n_feat))*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
 
 class TT_component(torch.nn.Module):
-    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0):
+    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0,prime=False,sub_R=2):
         super(TT_component, self).__init__()
         self.register_buffer('reg_para',torch.tensor(reg_para))
+        self.prime = prime
         self.r_1 = r_1
         self.r_2 = r_2
         self.n_list = n_list
@@ -91,9 +92,14 @@ class TT_component(torch.nn.Module):
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
-        self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
+        if self.prime:
+            self.core_param = sub_factorization(self.shape_list,R=sub_R)
+            with torch.no_grad():
+                p = self.core_param()
+        else:
+            self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
+
         self.init_scale = init_scale
-        self.numel = self.core_param.numel()
         for i, n in enumerate(n_list):
             self.register_buffer(f'reg_ones_{i}',torch.ones((n,1)))
 
@@ -111,16 +117,20 @@ class TT_component(torch.nn.Module):
         self.V_mode=True
 
     def forward(self,indices):
+        if self.prime:
+            p = self.core_param()
+        else:
+            p = self.core_param
         if self.dual and not self.old_setup:
             reg = self.get_aux_reg_term()
         else:
-            reg = self.core_param**2
+            reg = p**2
         if self.full_grad:
-            return self.core_param, reg
+            return p, reg
         else:
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
-            return self.core_param.permute(self.permutation_list)[indices], reg
+            return p.permute(self.permutation_list)[indices], reg
 
     def forward_scale(self,indices):
         if self.full_grad:
@@ -134,7 +144,11 @@ class TT_component(torch.nn.Module):
         if self.old_setup:
             return 1.
         else:
-            T = self.core_param ** 2
+            if self.prime:
+                p = self.core_param()
+            else:
+                p = self.core_param
+            T = p ** 2
             for mode,ones in enumerate(self.n_list):
                 ones = getattr(self,f'reg_ones_{mode}')
                 T = lazy_mode_product(T, ones.t(), mode+1)
@@ -328,3 +342,22 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices], reg  #return both to calculate regularization when doing frequentist
+
+class sub_factorization(torch.nn.Module):
+    def __init__(self,tensor_shape,R=2):
+        super(sub_factorization, self).__init__()
+        self.tensor_shape = tensor_shape
+        for i,n in enumerate(tensor_shape):
+            if i==0:
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(1/R*torch.ones(*(1,n,R) ),requires_grad=True))
+            elif i==len(tensor_shape)-1:
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(1/R*torch.ones(*(R,n,1) ),requires_grad=True))
+            else:
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(1/R*torch.ones(*(R,n,R) ),requires_grad=True))
+    def forward(self):
+        preds = getattr(self,f'latent_component_0')
+        for i in range(1,len(self.tensor_shape)):
+            m = getattr(self,f'latent_component_{i}')
+            preds = edge_mode_product(preds, m, len(preds.shape) - 1, 0)  # General mode product!
+        return preds.squeeze(0).squeeze(-1)
+
