@@ -466,9 +466,10 @@ class job_object():
                 if self.latent_scale:
                     self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a_prime, self.b_prime)
                     self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a_prime, self.b_prime)
-                if not self.old_setup and not self.dual:
-                    self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a_prime, self.b_prime)
+                if not self.old_setup:
                     self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [True,False])
+                    if not self.dual:
+                        self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a_prime, self.b_prime)
 
 
         for dim,val in self.side_info.items():
@@ -495,22 +496,23 @@ class job_object():
         if not self.old_setup:
             self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.sub_R, self.sub_R+1,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
-        self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
+        # self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
-        self.hyperparameter_space['lr_3'] = hp.choice('lr_3', np.divide(self.lrs, 10.) ) #Very important for convergence
+        # self.hyperparameter_space['lr_3'] = hp.choice('lr_3', np.divide(self.lrs, 10.) ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def init_and_train(self,parameters):
         self.config['dual'] = self.dual if not self.old_setup else True
+        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
+        if not self.old_setup:
+            if not self.latent_scale:
+                self.config['sub_R'] = parameters['sub_R']
+                for key, component in self.tensor_architecture.items():
+                    component['prime'] = parameters[f'prime_{key}']
         if self.config['deep']:
             self.config['L'] = parameters['L']
-        self.config['sub_R'] = parameters['sub_R']
-        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
-        for key,component in self.tensor_architecture.items():
-            component['prime'] = parameters[f'prime_{key}']
-
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         train_config = self.extract_training_params(parameters)
@@ -621,9 +623,9 @@ class job_object():
         training_params['fused'] = self.fused
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
-        training_params['prime_lr'] = parameters['lr_3']
+        training_params['prime_lr'] = parameters['lr_2']/100.
         training_params['V_lr'] = parameters['lr_2']
-        training_params['ls_lr'] = parameters['lr_1']
+        training_params['ls_lr'] = parameters['lr_2']/100.
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda
         training_params['train_loss_interval_print']=self.train_loss_interval_print
