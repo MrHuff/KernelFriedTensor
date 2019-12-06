@@ -87,7 +87,6 @@ def run_job_func(args):
             'dual':args['dual'],
             'init_max':args['init_max'],
             'L': args['L'],
-            'sub_R':args['sub_R']
         }
         j = job_object(
             side_info_dict=side_info,
@@ -447,7 +446,7 @@ class job_object():
         self.lrs = [self.max_lr/10**i for i in range(2)]
         self.dual = configs['dual']
         self.max_L = configs['L']
-        self.sub_R = configs['sub_R']
+        # self.sub_R = configs['sub_R']
         self.init_range = [configs['init_max']/10**i for i in range(1)]
         self.seed = seed
         self.trials = Trials()
@@ -457,7 +456,6 @@ class job_object():
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
         t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
-
         if self.bayesian:
             self.hyperparameter_space[f'reg_para'] = hp.uniform(f'reg_para', self.a, self.b)
         else:
@@ -470,7 +468,6 @@ class job_object():
                     self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [True,False])
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a_prime, self.b_prime)
-
 
         for dim,val in self.side_info.items():
             self.available_side_info_dims.append(dim)
@@ -494,11 +491,9 @@ class job_object():
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
         if not self.old_setup:
-            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.sub_R, self.sub_R+1,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
-        # self.hyperparameter_space['lr_1'] = hp.choice('lr_1', np.divide(self.lrs, 10.)) #Very important for convergence
+            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.max_R//10, self.max_R//2,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.7)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
-        # self.hyperparameter_space['lr_3'] = hp.choice('lr_3', np.divide(self.lrs, 10.) ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
                 self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
@@ -543,16 +538,16 @@ class job_object():
 
     def __call__(self, parameters):
         for i in range(10):
-            # try:
-            torch.cuda.empty_cache()
-            val_loss_final, test_loss_final = self.init_and_train(parameters)
-            if not np.isinf(val_loss_final):
-                ref_met = 'R2' if self.task == 'reg' else 'auc'
+            try:
                 torch.cuda.empty_cache()
-                return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
-            # except Exception as e:
-            #     print(e)
-            #     torch.cuda.empty_cache()
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    ref_met = 'R2' if self.task == 'reg' else 'auc'
+                    torch.cuda.empty_cache()
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+            except Exception as e:
+                print(e)
+                torch.cuda.empty_cache()
         ref_met = 'R2' if self.task == 'reg' else 'auc'
         return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
 
