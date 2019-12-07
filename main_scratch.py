@@ -41,19 +41,17 @@
 #     # b = torch.tensor(1e-6).half().cuda()
 #     # print(a+b)
 
-from KFT.benchmarks.lgbm import lgbm
+import torch
+from sklearn.preprocessing import StandardScaler
+from KFT.util import process_old_setup,concat_old_side_info
 
 if __name__ == '__main__':
-    params= dict()
-    params['its'] = 1000
-    params['hyperopts'] = 20
-    params['regression'] = True
-    SAVE_PATH = './lgbm_test'
-    seed = 1
-    y_name = 'total_sales'
-    data_path = 'benchmark_data_lgbm'
-    l = lgbm(seed=seed,y_name=y_name,data_path=data_path,save_path=SAVE_PATH,params=params)
-    l.run()
-
-
-
+    n,m,t = torch.load('./tensor_data/side_info.pt')
+    print(t)
+    # for name in ['location','article','time']:
+    #     location = torch.load(f'./tensor_data/{name}_tensor_400000.pt').numpy()
+    #     scaler_location = StandardScaler()
+    #     location_scaled = torch.tensor(scaler_location.fit_transform(location))
+    #     torch.save(location_scaled, f'./tensor_data/{name}_tensor_400000_scaled.pt')
+    # process_old_setup('./tensor_data/','data_tensor_400000.pt')
+    # concat_old_side_info('./tensor_data/',['location_tensor_400000_scaled.pt','article_tensor_400000_scaled.pt','time_tensor_400000_scaled.pt'])

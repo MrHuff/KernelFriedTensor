@@ -54,8 +54,6 @@ def run_job_func(args):
         other_configs = {
             'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
             'reg_para_b': args['reg_para_b'],
-            'reg_para_a_prime': args['reg_para_a_prime'],  # Regularization term! Need to choose wisely
-            'reg_para_b_prime': args['reg_para_b_prime'],
             'batch_size_a': 1.0 if args['full_grad'] else args['batch_size_a'],
             'batch_size_b': 1.0 if args['full_grad'] else args['batch_size_b'],
             'fp_16': args['fp_16'],  # Wanna use fp_16? Initialize smartly!
@@ -416,8 +414,6 @@ class job_object():
         self.hyper_parameters = {}
         self.a = configs['reg_para_a']
         self.b = configs['reg_para_b']
-        self.a_prime = configs['reg_para_a_prime']
-        self.b_prime = configs['reg_para_b_prime']
         self.a_ = configs['batch_size_a']
         self.b_ = configs['batch_size_b'] #1.0 max
         self.fp_16 = configs['fp_16']
@@ -446,7 +442,6 @@ class job_object():
         self.lrs = [self.max_lr/10**i for i in range(2)]
         self.dual = configs['dual']
         self.max_L = configs['L']
-        # self.sub_R = configs['sub_R']
         self.init_range = [configs['init_max']/10**i for i in range(1)]
         self.seed = seed
         self.trials = Trials()
@@ -462,12 +457,12 @@ class job_object():
             for i in range(len(t_act)):
                 self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
                 if self.latent_scale:
-                    self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a_prime, self.b_prime)
-                    self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a_prime, self.b_prime)
+                    self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a, self.b)
+                    self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a, self.b)
                 if not self.old_setup:
-                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [True,False])
+                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [False,True])
                     if not self.dual:
-                        self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a_prime, self.b_prime)
+                        self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
         for dim,val in self.side_info.items():
             self.available_side_info_dims.append(dim)
@@ -491,7 +486,7 @@ class job_object():
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
         if not self.old_setup:
-            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.max_R//10, self.max_R//2,dtype=int))
+            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.max_R//5, self.max_R//2,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.7)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         if self.bayesian:

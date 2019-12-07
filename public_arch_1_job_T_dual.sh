@@ -8,8 +8,6 @@ do
     --PATH ./public_data/ \
     --reg_para_a 0 \
     --reg_para_b 1e-3 \
-    --reg_para_a_prime 0 \
-    --reg_para_a_prime 1e-3 \
     --fp_16 False \
     --fused True \
     --save_path public_job_arch_1_dual \

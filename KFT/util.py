@@ -89,8 +89,6 @@ def job_parser():
     parser.add_argument('--max_R', type=int, nargs='?', default=10, help='max_R')
     parser.add_argument('--reg_para_a', type=float, nargs='?', default=0., help='reg_para_a')
     parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
-    parser.add_argument('--reg_para_a_prime', type=float, nargs='?', default=0., help='reg_para_a_prime')
-    parser.add_argument('--reg_para_b_prime', type=float, nargs='?', default=1., help='reg_para_b_prime')
     parser.add_argument('--batch_size_a', type=float, nargs='?', default=0., help='batch_size_a')
     parser.add_argument('--batch_size_b', type=float, nargs='?', default=1., help='batch_size_b')
     parser.add_argument('--init_max', type=float, nargs='?', default=1e-1, help='batch_size_b')
