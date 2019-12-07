@@ -44,14 +44,16 @@
 import torch
 from sklearn.preprocessing import StandardScaler
 from KFT.util import process_old_setup,concat_old_side_info
+from KFT.util import post_process
 
 if __name__ == '__main__':
-    n,m,t = torch.load('./tensor_data/side_info.pt')
-    print(t)
+    # post_process('./private_job_arch_0/','test_R2')
+    # n,m,t = torch.load('./tensor_data/side_info.pt')
+    # print(t)
     # for name in ['location','article','time']:
     #     location = torch.load(f'./tensor_data/{name}_tensor_400000.pt').numpy()
     #     scaler_location = StandardScaler()
     #     location_scaled = torch.tensor(scaler_location.fit_transform(location))
     #     torch.save(location_scaled, f'./tensor_data/{name}_tensor_400000_scaled.pt')
     # process_old_setup('./tensor_data/','data_tensor_400000.pt')
-    # concat_old_side_info('./tensor_data/',['location_tensor_400000_scaled.pt','article_tensor_400000_scaled.pt','time_tensor_400000_scaled.pt'])
+    concat_old_side_info('./tensor_data/',['location_tensor_400000_scaled.pt','article_tensor_400000_scaled.pt','time_tensor_400000.pt'])
