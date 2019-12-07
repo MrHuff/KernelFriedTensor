@@ -460,7 +460,7 @@ class job_object():
                     self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a, self.b)
                     self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a, self.b)
                 if not self.old_setup:
-                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [False,True])
+                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [True])
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
@@ -474,7 +474,7 @@ class job_object():
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
                 else:
                     if val['temporal']:
-                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'periodic','rbf'])
+                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', ])
                     else:
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
@@ -486,7 +486,7 @@ class job_object():
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
         if not self.old_setup:
-            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.max_R//5, self.max_R//2,dtype=int))
+            self.hyperparameter_space['sub_R'] = hp.choice('sub_R', np.arange(self.max_R//4, self.max_R//2,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.7)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         if self.bayesian:

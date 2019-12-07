@@ -93,7 +93,7 @@ class TT_component(torch.nn.Module):
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
         if self.prime:
-            self.core_param = sub_factorization(self.shape_list,R=sub_R)
+            self.core_param = sub_factorization(self.shape_list,R=sub_R,init_scale=init_scale)
         else:
             self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
 
@@ -342,20 +342,23 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             return T.permute(self.permutation_list)[indices], reg  #return both to calculate regularization when doing frequentist
 
 class sub_factorization(torch.nn.Module):
-    def __init__(self,tensor_shape,R=2):
+    def __init__(self,tensor_shape,R=2,init_scale=1):
         super(sub_factorization, self).__init__()
         self.tensor_shape = tensor_shape
+        self.factor  = R**(len(tensor_shape)-1)
+        self.init_scale = init_scale
         for i,n in enumerate(tensor_shape):
             if i==0:
-                setattr(self,f'latent_component_{i}',torch.nn.Parameter(1/R*torch.ones(*(1,n,R) ),requires_grad=True))
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(1,n,R) ),requires_grad=True))
             elif i==len(tensor_shape)-1:
-                setattr(self,f'latent_component_{i}',torch.nn.Parameter(1/R*torch.ones(*(R,n,1) ),requires_grad=True))
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(R,n,1) ),requires_grad=True))
             else:
-                setattr(self,f'latent_component_{i}',torch.nn.Parameter(1/R*torch.ones(*(R,n,R) ),requires_grad=True))
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(R,n,R) ),requires_grad=True))
     def forward(self):
         preds = getattr(self,f'latent_component_0')
         for i in range(1,len(self.tensor_shape)):
             m = getattr(self,f'latent_component_{i}')
             preds = edge_mode_product(preds, m, len(preds.shape) - 1, 0)  # General mode product!
-        return preds.squeeze(0).squeeze(-1)
+        # print(preds.squeeze()/self.factor)
+        return self.init_scale *preds.squeeze(0).squeeze(-1)/self.factor
 
