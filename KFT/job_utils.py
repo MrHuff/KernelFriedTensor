@@ -460,7 +460,7 @@ class job_object():
                     self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a, self.b)
                     self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a, self.b)
                 if not self.old_setup:
-                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [True])
+                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [False,True])
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
@@ -474,7 +474,7 @@ class job_object():
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
                 else:
                     if val['temporal']:
-                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', ])
+                        self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1','matern_2', 'matern_3', 'rbf','periodic'])
                     else:
                         self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
