@@ -11,6 +11,7 @@ from sklearn import metrics
 import time
 import numpy as np
 import timeit
+from ipyexperiments.utils.ipython import *
 
 def get_non_lin(non_lin_name):
     if non_lin_name=='relu':
@@ -26,74 +27,72 @@ def get_non_lin(non_lin_name):
 
 def run_job_func(args):
     print(args)
-    with warnings.catch_warnings():  # There are some autograd issues fyi, might wanna fix it sooner or later
-        warnings.simplefilter("ignore")
-        gpu = get_free_gpu(8)
-        gpu_choice = gpu[0]
-        torch.cuda.set_device(int(gpu_choice))
-        PATH = args['PATH']
-        if not os.path.exists(PATH + 'all_data.pt'):
-            process_old_setup(PATH, tensor_name=args['tensor_name'])
-            concat_old_side_info(PATH, args['side_info_name'])
-        side_info = load_side_info(side_info_path=PATH, indices=args['side_info_order'])
-        shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
-        if args['temporal_tag'] is not None:
-            for i in args['temporal_tag']:
-                side_info[i]['temporal'] = True
-        if args['delete_side_info'] is not None:
-            for i in args['delete_side_info']:
-                del side_info[i]
-        primal_dims = list(shape)
-        for key,val in side_info.items():
-            print(key)
-            print(val['data'].shape[1])
-            primal_dims[key] = val['data'].shape[1]
-        print(primal_dims)
-        print(f'USING GPU:{gpu_choice}')
-        print(shape)
-        other_configs = {
-            'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
-            'reg_para_b': args['reg_para_b'],
-            'batch_size_a': 1.0 if args['full_grad'] else args['batch_size_a'],
-            'batch_size_b': 1.0 if args['full_grad'] else args['batch_size_b'],
-            'fp_16': args['fp_16'],  # Wanna use fp_16? Initialize smartly!
-            'fused': args['fused'],
-            'hyperits': args['hyperits'],
-            'save_path': args['save_path'],
-            'task': args['task'],
-            'epochs': args['epochs'],
-            'bayesian': args['bayesian'],  # Mean field does not converge to something meaningful?!
-            'data_path': PATH + 'all_data.pt',
-            'cuda': args['cuda'],
-            'device': f'cuda:{gpu_choice}',
-            'train_loss_interval_print': args['sub_epoch_V'] // 2,
-            'sub_epoch_V': args['sub_epoch_V'],
-            'config': {
-                       'full_grad': args['full_grad'],
-                       'deep_kernel':args['deep_kernel'],
-                       'deep':args['deep'],
-                       'non_lin': get_non_lin(args['non_lin'])
-                       },
-            'shape':shape,
-            'architecture': args['architecture'],
-            'max_R': args['max_R'],
-            'max_lr':args['max_lr'],
-            'old_setup':args['old_setup'],
-            'latent_scale':args['latent_scale'],
-            'chunks':args['chunks'],
-            'primal_list': primal_dims,
-            'dual':args['dual'],
-            'init_max':args['init_max'],
-            'L': args['L'],
-        }
-        j = job_object(
-            side_info_dict=side_info,
-            configs=other_configs,
-            seed=args['seed']
-        )
-        j.run_hyperparam_opt()
-        del j
-        torch.cuda.empty_cache()
+    gpu = get_free_gpu(8)
+    gpu_choice = gpu[0]
+    torch.cuda.set_device(int(gpu_choice))
+    PATH = args['PATH']
+    if not os.path.exists(PATH + 'all_data.pt'):
+        process_old_setup(PATH, tensor_name=args['tensor_name'])
+        concat_old_side_info(PATH, args['side_info_name'])
+    side_info = load_side_info(side_info_path=PATH, indices=args['side_info_order'])
+    shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
+    if args['temporal_tag'] is not None:
+        for i in args['temporal_tag']:
+            side_info[i]['temporal'] = True
+    if args['delete_side_info'] is not None:
+        for i in args['delete_side_info']:
+            del side_info[i]
+    primal_dims = list(shape)
+    for key,val in side_info.items():
+        print(key)
+        print(val['data'].shape[1])
+        primal_dims[key] = val['data'].shape[1]
+    print(primal_dims)
+    print(f'USING GPU:{gpu_choice}')
+    print(shape)
+    other_configs = {
+        'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
+        'reg_para_b': args['reg_para_b'],
+        'batch_size_a': 1.0 if args['full_grad'] else args['batch_size_a'],
+        'batch_size_b': 1.0 if args['full_grad'] else args['batch_size_b'],
+        'fp_16': args['fp_16'],  # Wanna use fp_16? Initialize smartly!
+        'fused': args['fused'],
+        'hyperits': args['hyperits'],
+        'save_path': args['save_path'],
+        'task': args['task'],
+        'epochs': args['epochs'],
+        'bayesian': args['bayesian'],  # Mean field does not converge to something meaningful?!
+        'data_path': PATH + 'all_data.pt',
+        'cuda': args['cuda'],
+        'device': f'cuda:{gpu_choice}',
+        'train_loss_interval_print': args['sub_epoch_V'] // 2,
+        'sub_epoch_V': args['sub_epoch_V'],
+        'config': {
+                   'full_grad': args['full_grad'],
+                   'deep_kernel':args['deep_kernel'],
+                   'deep':args['deep'],
+                   'non_lin': get_non_lin(args['non_lin'])
+                   },
+        'shape':shape,
+        'architecture': args['architecture'],
+        'max_R': args['max_R'],
+        'max_lr':args['max_lr'],
+        'old_setup':args['old_setup'],
+        'latent_scale':args['latent_scale'],
+        'chunks':args['chunks'],
+        'primal_list': primal_dims,
+        'dual':args['dual'],
+        'init_max':args['init_max'],
+        'L': args['L'],
+    }
+    j = job_object(
+        side_info_dict=side_info,
+        configs=other_configs,
+        seed=args['seed']
+    )
+    j.run_hyperparam_opt()
+    del j
+    torch.cuda.empty_cache()
 
 def get_loss_func(train_config):
     if train_config['task']=='reg':
@@ -536,15 +535,16 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        get_free_gpu(10) #should be 0 between calls..
         for i in range(10):
             try:
-                torch.cuda.empty_cache()
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    ref_met = 'R2' if self.task == 'reg' else 'auc'
+                with ipython_tb_clear_frames_ctx():
                     torch.cuda.empty_cache()
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+                    get_free_gpu(10)  # should be 0 between calls..
+                    val_loss_final, test_loss_final = self.init_and_train(parameters)
+                    if not np.isinf(val_loss_final):
+                        ref_met = 'R2' if self.task == 'reg' else 'auc'
+                        torch.cuda.empty_cache()
+                        return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
             except Exception as e:
                 print(e)
                 torch.cuda.empty_cache()
