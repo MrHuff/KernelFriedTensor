@@ -92,6 +92,8 @@ def run_job_func(args):
             seed=args['seed']
         )
         j.run_hyperparam_opt()
+        del j
+        torch.cuda.empty_cache()
 
 def get_loss_func(train_config):
     if train_config['task']=='reg':
