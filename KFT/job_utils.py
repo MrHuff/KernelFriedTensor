@@ -392,7 +392,7 @@ def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_con
 def train(model, train_config, dataloader):
     train_config['reset'] = 1.0
     model,opts,loss_func,ERROR,train_list,train_dict = setup_runs(model,train_config,warmup=False)
-    for i in range(train_config['epochs']+1):
+    for i in range(train_config['epochs']):
         # ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
         ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
         if ERROR:
