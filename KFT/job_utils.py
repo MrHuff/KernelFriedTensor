@@ -532,7 +532,7 @@ class job_object():
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
-        get_free_gpu(10) #should be 0 between calls.. 
+        get_free_gpu(10) #should be 0 between calls..
         for i in range(10):
             try:
                 torch.cuda.empty_cache()
