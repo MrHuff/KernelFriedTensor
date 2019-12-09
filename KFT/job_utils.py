@@ -529,6 +529,8 @@ class job_object():
         dataloader.chunks = train_config['chunks']
         val_loss_final, test_loss_final = train(model=model, train_config=train_config,
                                                 dataloader=dataloader)
+        del model
+        del dataloader
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
