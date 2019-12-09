@@ -11,7 +11,6 @@ from sklearn import metrics
 import time
 import numpy as np
 import timeit
-from ipyexperiments.utils.ipython import *
 
 def get_non_lin(non_lin_name):
     if non_lin_name=='relu':
@@ -25,7 +24,7 @@ def get_non_lin(non_lin_name):
     elif non_lin_name=='linear':
         return lambda x: x
 
-def run_job_func(args):
+def parse_args(args):
     print(args)
     gpu = get_free_gpu(8)
     gpu_choice = gpu[0]
@@ -43,7 +42,7 @@ def run_job_func(args):
         for i in args['delete_side_info']:
             del side_info[i]
     primal_dims = list(shape)
-    for key,val in side_info.items():
+    for key, val in side_info.items():
         print(key)
         print(val['data'].shape[1])
         primal_dims[key] = val['data'].shape[1]
@@ -68,23 +67,28 @@ def run_job_func(args):
         'train_loss_interval_print': args['sub_epoch_V'] // 2,
         'sub_epoch_V': args['sub_epoch_V'],
         'config': {
-                   'full_grad': args['full_grad'],
-                   'deep_kernel':args['deep_kernel'],
-                   'deep':args['deep'],
-                   'non_lin': get_non_lin(args['non_lin'])
-                   },
-        'shape':shape,
+            'full_grad': args['full_grad'],
+            'deep_kernel': args['deep_kernel'],
+            'deep': args['deep'],
+            'non_lin': get_non_lin(args['non_lin'])
+        },
+        'shape': shape,
         'architecture': args['architecture'],
         'max_R': args['max_R'],
-        'max_lr':args['max_lr'],
-        'old_setup':args['old_setup'],
-        'latent_scale':args['latent_scale'],
-        'chunks':args['chunks'],
+        'max_lr': args['max_lr'],
+        'old_setup': args['old_setup'],
+        'latent_scale': args['latent_scale'],
+        'chunks': args['chunks'],
         'primal_list': primal_dims,
-        'dual':args['dual'],
-        'init_max':args['init_max'],
+        'dual': args['dual'],
+        'init_max': args['init_max'],
         'L': args['L'],
     }
+    return side_info,other_configs
+
+def run_job_func(args):
+    side_info,other_configs = parse_args(args)
+    torch.cuda.empty_cache()
     j = job_object(
         side_info_dict=side_info,
         configs=other_configs,
@@ -93,6 +97,7 @@ def run_job_func(args):
     j.run_hyperparam_opt()
     del j
     torch.cuda.empty_cache()
+    return 0
 
 def get_loss_func(train_config):
     if train_config['task']=='reg':
@@ -184,116 +189,6 @@ def auc_check(y_pred,Y):
         auc =  metrics.auc(fpr, tpr)
         return auc
 
-def calculate_loss_no_grad(model,dataloader,train_config,task='reg',mode='val'):
-    loss_list = []
-    y_s = []
-    _y_preds = []
-    dataloader.set_mode(mode)
-    with torch.no_grad():
-        for i in range(dataloader.chunks):
-            X, y = dataloader.get_chunk(i)
-            if train_config['cuda']:
-                X = X.to(train_config['device'])
-                y = y.to(train_config['device'])
-            loss,y_pred = correct_validation_loss(X, y, model, train_config)
-            loss_list.append(loss)
-            y_s.append(y)
-            _y_preds.append(y_pred)
-        total_loss = torch.tensor(loss_list).mean().data
-        Y = torch.cat(y_s,dim=0)
-        y_preds = torch.cat(_y_preds)
-        if task=='reg':
-            var_Y = Y.var()
-            ref_metric = 1.-total_loss/var_Y
-            ref_metric = ref_metric.numpy()
-        else:
-            ref_metric = auc_check(y_preds,Y)
-    return ref_metric
-
-def train_monitor(total_loss,reg,pred_loss,model,y_pred,train_config,p):
-    with torch.no_grad():
-        ERROR = False
-        if torch.isnan(total_loss) or torch.isinf(total_loss):
-            print('FOUND INF/NAN RIP, RESTARTING')
-            print(reg)
-            print(pred_loss)
-            print(y_pred.mean())
-            ERROR = True
-        if (y_pred == 0).all():
-            fac = train_config['reset']
-            print(f'dead model_reinit factor: {fac}')
-            for n, param in model.named_parameters():
-                if 'core_param' in n:
-                    param.normal_(0, train_config['reset'])
-            train_config['reset'] = train_config['reset'] * 1.1
-
-        if p % train_config['train_loss_interval_print'] == 0:
-            print(f'reg_term it {p}: {reg.data}')
-            print(f'train_loss it {p}: {pred_loss.data}')
-    return ERROR
-
-def correct_validation_loss(X,y,model,train_config):
-    if train_config['task'] == 'reg':
-        loss_func = torch.nn.MSELoss()
-        if train_config['bayesian']:
-            y_pred, _,_ = model(X)
-        else:
-            y_pred, _ = model(X)
-        pred_loss = loss_func(y_pred,y.squeeze())
-    else:
-        loss_func = torch.nn.BCELoss()
-        y_pred, reg = model(X)
-        pred_loss = loss_func(y_pred, y.squeeze())
-    return pred_loss,y_pred
-
-def correct_forward_loss(X,y,model,train_config,loss_func):
-    if train_config['task']=='reg' and train_config['bayesian']:
-            y_pred,last_term, reg = model(X)
-            pred_loss = loss_func(y.squeeze(),y_pred,last_term)
-    else:
-        y_pred, reg = model(X)
-        pred_loss = loss_func(y_pred, y.squeeze())
-    return pred_loss+reg,reg,pred_loss,y_pred
-
-def train_loop(model,opt, dataloader, loss_func, train_config,sub_epoch,warmup=False):
-
-    lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt,patience=train_config['patience'],factor=0.5)
-    print_garbage()
-    torch.cuda.empty_cache()
-    for p in range(sub_epoch+1):
-        if warmup:
-            dataloader.ratio = train_config['batch_ratio'] / 1e2
-        else:
-            dataloader.ratio = train_config['batch_ratio']
-        dataloader.set_mode('train')
-        X,y = dataloader.get_batch()
-        if train_config['cuda']:
-            X = X.to(train_config['device'])
-            y = y.to(train_config['device'])
-        total_loss,reg,pred_loss,y_pred = correct_forward_loss(X,y,model,train_config,loss_func)
-        opt.zero_grad()
-        if train_config['fp_16'] and not warmup:
-            with train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
-                loss_scaled.backward()
-        else:
-            total_loss.backward()
-        opt.step()
-        lrs.step(total_loss)
-        if p % (sub_epoch//2) == 0:
-            torch.cuda.empty_cache()
-            l_val = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='val')
-            torch.cuda.empty_cache()
-            l_test = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
-            torch.cuda.empty_cache()
-            print(f'val_error= {l_val}')
-            print(f'test_error= {l_test}')
-
-        ERROR = train_monitor(total_loss,reg,pred_loss,model,y_pred,train_config,p)
-        if ERROR:
-            return ERROR
-    del lrs
-    return False
-
 def print_garbage():
     obj_list = []
     for obj in gc.get_objects():
@@ -305,105 +200,9 @@ def print_garbage():
             pass
     print(len(obj_list))
 
-def opt_reinit(train_config,model,lr_params,warmup=False):
-    if train_config['fp_16'] and not warmup:
-        import apex
-        from apex import amp
-        amp.register_float_function(torch, 'bmm')#TODO: HALLELUJA
-        if train_config['fused']:
-            tmp_opt_list = []
-            for lr in lr_params:
-                tmp_opt_list.append(apex.optimizers.FusedAdam(model.parameters(), lr=train_config[lr])) #Calling this again makes the model completely in FP16 wtf
-            [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
-            opts  = {x:y for x,y in zip(lr_params,tmp_opt_list)}
-            model.amp = amp
-            model.amp_patch(amp)
-        else:
-            tmp_opt_list = []
-            for lr in lr_params:
-                tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
-            [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
-            opts  = {x:y for x,y in zip(lr_params,tmp_opt_list)}
-            [model], tmp_opt_list = amp.initialize([model],tmp_opt_list, opt_level='O1',num_losses=1)
-            model.amp = amp
-            model.amp_patch(amp)
-        train_config['amp'] = amp
-    else:
-        tmp_opt_list = []
-        for lr in lr_params:
-            tmp_opt_list.append(torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False))
-        opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
-    return model,opts
-
 def opt_32_reinit(model,train_config,lr):
     opt = torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False)
     return opt
-
-def setup_runs(model,train_config,warmup):
-    loss_func = get_loss_func(train_config)
-    ERROR = False
-    kernel, deep_kernel = model.has_kernel_component()
-    train_dict = {0: {'para': 'V_lr', 'call': model.turn_on_V}}
-    train_list = [0]
-    if not train_config['old_setup']:
-        train_dict[1] = {'para': 'prime_lr', 'call': model.turn_on_prime}
-        train_list.append(1)
-    if train_config['dual']:
-        if kernel:
-            train_dict[2] = {'para': 'ls_lr', 'call': model.turn_on_kernel_mode}
-            train_list.insert(-1, 2)
-        if deep_kernel:
-            train_dict[3] = {'para': 'deep_lr', 'call': model.turn_on_deep_kernel}
-            train_list.insert(-2, 3)
-    if warmup:
-        train_list = [0]
-        if not train_config['old_setup']:
-            train_list.append(1)
-    lrs = [v['para'] for v in train_dict.values()]
-    model, opts = opt_reinit(train_config, model, lrs, warmup=warmup)
-    return model,opts,loss_func,ERROR,train_list,train_dict
-
-def joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False):
-    torch.cuda.empty_cache()
-    model.turn_on_all()
-    ERROR = train_loop(model, opts['V_lr'], dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
-    if ERROR:
-        return ERROR
-    torch.cuda.empty_cache()
-    return ERROR
-
-def outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False):
-    for i in train_list:
-        print_garbage()
-        settings = train_dict[i]
-        f = settings['call']
-        lr = settings['para']
-        f()
-        print(lr)
-        opt = opts[lr]
-        ERROR = train_loop(model,opt, dataloader, loss_func, train_config, train_config['sub_epoch_V'], warmup=warmup)
-        print_garbage()
-        if ERROR:
-            return ERROR
-        print(torch.cuda.memory_cached() / 1e6)
-        print(torch.cuda.memory_allocated() / 1e6)
-        torch.cuda.empty_cache()
-    return ERROR
-
-def train(model, train_config, dataloader):
-    train_config['reset'] = 1.0
-    model,opts,loss_func,ERROR,train_list,train_dict = setup_runs(model,train_config,warmup=False)
-    for i in range(train_config['epochs']):
-        # ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
-        ERROR = outer_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
-        if ERROR:
-            return -np.inf, -np.inf
-    val_loss_final = calculate_loss_no_grad(model,dataloader=dataloader, train_config=train_config,mode='val')
-    test_loss_final = calculate_loss_no_grad(model,dataloader=dataloader,train_config=train_config,mode='test')
-    del model
-    del opts
-    print(val_loss_final,test_loss_final)
-    return val_loss_final,test_loss_final
 
 class job_object():
     def __init__(self, side_info_dict, configs, seed):
@@ -447,6 +246,205 @@ class job_object():
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
+
+    def calculate_loss_no_grad(self, task='reg', mode='val'):
+        with torch.no_grad():
+            loss_list = []
+            y_s = []
+            _y_preds = []
+            self.dataloader.set_mode(mode)
+            for i in range(self.dataloader.chunks):
+                X, y = self.dataloader.get_chunk(i)
+                if self.train_config['cuda']:
+                    X = X.to(self.train_config['device'])
+                    y = y.to(self.train_config['device'])
+                loss, y_pred = self.correct_validation_loss(X, y)
+                loss_list.append(loss)
+                y_s.append(y)
+                _y_preds.append(y_pred)
+            total_loss = torch.tensor(loss_list).mean().data
+            Y = torch.cat(y_s, dim=0)
+            y_preds = torch.cat(_y_preds)
+            if task == 'reg':
+                var_Y = Y.var()
+                ref_metric = 1. - total_loss / var_Y
+                ref_metric = ref_metric.numpy()
+            else:
+                ref_metric = auc_check(y_preds, Y)
+        return ref_metric
+
+    def train_monitor(self,total_loss, reg, pred_loss, y_pred, p):
+        with torch.no_grad():
+            ERROR = False
+            if torch.isnan(total_loss) or torch.isinf(total_loss):
+                print('FOUND INF/NAN RIP, RESTARTING')
+                print(reg)
+                print(pred_loss)
+                print(y_pred.mean())
+                ERROR = True
+            if (y_pred == 0).all():
+                fac = self.train_config['reset']
+                print(f'dead model_reinit factor: {fac}')
+                for n, param in self.model.named_parameters():
+                    if 'core_param' in n:
+                        param.normal_(0, self.train_config['reset'])
+                self.train_config['reset'] = self.train_config['reset'] * 1.1
+
+            if p % self.train_config['train_loss_interval_print'] == 0:
+                print(f'reg_term it {p}: {reg.data}')
+                print(f'train_loss it {p}: {pred_loss.data}')
+        return ERROR
+
+    def correct_validation_loss(self,X, y, ):
+        with torch.no_grad():
+            if self.train_config['task'] == 'reg':
+                loss_func = torch.nn.MSELoss()
+                if self.train_config['bayesian']:
+                    y_pred, _, _ = self.model(X)
+                else:
+                    y_pred, _ = self.model(X)
+                pred_loss = loss_func(y_pred, y.squeeze())
+            else:
+                loss_func = torch.nn.BCELoss()
+                y_pred, reg = self.model(X)
+                pred_loss = loss_func(y_pred, y.squeeze())
+            return pred_loss, y_pred
+
+    def correct_forward_loss(self,X, y, loss_func):
+        if self.train_config['task'] == 'reg' and self.train_config['bayesian']:
+            y_pred, last_term, reg = self.model(X)
+            pred_loss = loss_func(y.squeeze(), y_pred, last_term)
+        else:
+            y_pred, reg = self.model(X)
+            pred_loss = loss_func(y_pred, y.squeeze())
+        return pred_loss + reg, reg, pred_loss, y_pred
+
+
+    def train_loop(self, opt, loss_func, warmup=False):
+        sub_epoch = self.train_config['sub_epoch_V']
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.train_config['patience'], factor=0.5)
+        print_garbage()
+        torch.cuda.empty_cache()
+        for p in range(sub_epoch + 1):
+            if warmup:
+                self.dataloader.ratio = self.train_config['batch_ratio'] / 1e2
+            else:
+                self.dataloader.ratio = self.train_config['batch_ratio']
+            self.dataloader.set_mode('train')
+            X, y = self.dataloader.get_batch()
+            if self.train_config['cuda']:
+                X = X.to(self.train_config['device'])
+                y = y.to(self.train_config['device'])
+            total_loss, reg, pred_loss, y_pred = self.correct_forward_loss(X, y,loss_func)
+            opt.zero_grad()
+            if self.train_config['fp_16'] and not warmup:
+                with self.train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
+                    loss_scaled.backward()
+            else:
+                total_loss.backward()
+            opt.step()
+            lrs.step(total_loss)
+            if p % (sub_epoch // 2) == 0:
+                torch.cuda.empty_cache()
+                l_val = self.calculate_loss_no_grad(mode='val')
+                torch.cuda.empty_cache()
+                l_test = self.calculate_loss_no_grad(mode='test')
+                torch.cuda.empty_cache()
+                print(f'val_error= {l_val}')
+                print(f'test_error= {l_test}')
+
+            ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
+            if ERROR:
+                return ERROR
+        del lrs
+        return False
+
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False):
+        for i in train_list:
+            print_garbage()
+            settings = train_dict[i]
+            f = settings['call']
+            lr = settings['para']
+            f()
+            print(lr)
+            opt = opts[lr]
+            ERROR = self.train_loop(opt, loss_func, warmup=warmup)
+            print_garbage()
+            if ERROR:
+                return ERROR
+            print(torch.cuda.memory_cached() / 1e6)
+            print(torch.cuda.memory_allocated() / 1e6)
+            torch.cuda.empty_cache()
+        return ERROR
+
+    def opt_reinit(self, lr_params, warmup=False):
+        if self.train_config['fp_16'] and not warmup:
+            import apex
+            from apex import amp
+            amp.register_float_function(torch, 'bmm')  # TODO: HALLELUJA
+            if self.train_config['fused']:
+                tmp_opt_list = []
+                for lr in lr_params:
+                    tmp_opt_list.append(apex.optimizers.FusedAdam(self.model.parameters(), lr=self.train_config[
+                        lr]))  # Calling this again makes the model completely in FP16 wtf
+                [self.model], tmp_opt_list = amp.initialize([self.model], tmp_opt_list, opt_level='O1', num_losses=1)
+                opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
+                self.model.amp = amp
+                self.model.amp_patch(amp)
+            else:
+                tmp_opt_list = []
+                for lr in lr_params:
+                    tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
+                [self.model], tmp_opt_list = amp.initialize([self.model], tmp_opt_list, opt_level='O1', num_losses=1)
+                opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
+                [self.model], tmp_opt_list = amp.initialize([self.model], tmp_opt_list, opt_level='O1', num_losses=1)
+                self.model.amp = amp
+                self.model.amp_patch(amp)
+            self.train_config['amp'] = amp
+        else:
+            tmp_opt_list = []
+            for lr in lr_params:
+                tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
+            opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
+        return opts
+
+    def setup_runs(self, warmup):
+        loss_func = get_loss_func(self.train_config)
+        ERROR = False
+        kernel, deep_kernel = self.model.has_kernel_component()
+        train_dict = {0: {'para': 'V_lr', 'call': self.model.turn_on_V}}
+        train_list = [0]
+        if not self.train_config['old_setup']:
+            train_dict[1] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
+            train_list.append(1)
+        if self.train_config['dual']:
+            if kernel:
+                train_dict[2] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
+                train_list.insert(-1, 2)
+            if deep_kernel:
+                train_dict[3] = {'para': 'deep_lr', 'call': self.model.turn_on_deep_kernel}
+                train_list.insert(-2, 3)
+        if warmup:
+            train_list = [0]
+            if not self.train_config['old_setup']:
+                train_list.append(1)
+        lrs = [v['para'] for v in train_dict.values()]
+        opts = self.opt_reinit( lrs, warmup=warmup)
+        return  opts, loss_func, ERROR, train_list, train_dict
+
+    def train(self):
+        self.train_config['reset'] = 1.0
+        opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
+        for i in range(self.train_config['epochs']):
+            # ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
+            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False)
+            if ERROR:
+                return -np.inf, -np.inf
+        val_loss_final = self.calculate_loss_no_grad(mode='val')
+        test_loss_final = self.calculate_loss_no_grad(mode='test')
+        del opts
+        print(val_loss_final,test_loss_final)
+        return val_loss_final,test_loss_final
 
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
@@ -506,45 +504,44 @@ class job_object():
             self.config['L'] = parameters['L']
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
-        train_config = self.extract_training_params(parameters)
+        self.train_config = self.extract_training_params(parameters)
         print(parameters)
         if self.bayesian:
             if self.latent_scale:
-                model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=lambdas['KL'],
+                self.model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=lambdas['KL'],
                                             cuda=self.device, config=self.config, old_setup=self.old_setup)
             else:
-                model = variational_KFT(initialization_data=init_dict, KL_weight=lambdas['KL'],
+                self.model = variational_KFT(initialization_data=init_dict, KL_weight=lambdas['KL'],
                                             cuda=self.device, config=self.config, old_setup=self.old_setup)
         else:
             if self.latent_scale:
-                model = KFT_scale(initialization_data=init_dict, cuda=self.device,
+                self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,
                             config=self.config, old_setup=self.old_setup,lambdas=lambdas)
             else:
-                model = KFT(initialization_data=init_dict, cuda=self.device,
+                self.model = KFT(initialization_data=init_dict, cuda=self.device,
                             config=self.config, old_setup=self.old_setup,lambdas=lambdas)
         if self.cuda:
-            model = model.to(self.device)
-        print(model)
-        dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
+            self.model = self.model.to(self.device)
+        print(self.model)
+        self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
-        dataloader.chunks = train_config['chunks']
-        val_loss_final, test_loss_final = train(model=model, train_config=train_config,
-                                                dataloader=dataloader)
-        del model
-        del dataloader
+        self.dataloader.chunks = self.train_config['chunks']
+        val_loss_final, test_loss_final = self.train()
+        del self.model
+        del self.dataloader
+        torch.cuda.empty_cache()
         return val_loss_final, test_loss_final
 
     def __call__(self, parameters):
         for i in range(10):
             try:
-                with ipython_tb_clear_frames_ctx():
+                torch.cuda.empty_cache()
+                get_free_gpu(10)  # should be 0 between calls..
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    ref_met = 'R2' if self.task == 'reg' else 'auc'
                     torch.cuda.empty_cache()
-                    get_free_gpu(10)  # should be 0 between calls..
-                    val_loss_final, test_loss_final = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        ref_met = 'R2' if self.task == 'reg' else 'auc'
-                        torch.cuda.empty_cache()
-                        return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
             except Exception as e:
                 print(e)
                 torch.cuda.empty_cache()
