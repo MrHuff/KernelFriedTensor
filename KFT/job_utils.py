@@ -526,6 +526,7 @@ class job_object():
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
         self.dataloader.chunks = self.train_config['chunks']
+        torch.cuda.empty_cache()
         val_loss_final, test_loss_final = self.train()
         del self.model
         del self.dataloader
