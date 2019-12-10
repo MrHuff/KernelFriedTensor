@@ -2,7 +2,7 @@ for i in {1..5}
 do
   nohup taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
-    --batch_size_b 0.15 \
+    --batch_size_b 0.10 \
     --max_lr 1e-1 \
     --max_R 25 \
     --PATH ./public_data/ \

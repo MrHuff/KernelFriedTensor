@@ -66,6 +66,7 @@ def parse_args(args):
         'device': f'cuda:{gpu_choice}',
         'train_loss_interval_print': args['sub_epoch_V'] // 2,
         'sub_epoch_V': args['sub_epoch_V'],
+        'factorize_latent': args['factorize_latent'],
         'config': {
             'full_grad': args['full_grad'],
             'deep_kernel': args['deep_kernel'],
@@ -242,7 +243,9 @@ class job_object():
         self.lrs = [self.max_lr/10**i for i in range(2)]
         self.dual = configs['dual']
         self.max_L = configs['L']
-        self.init_range = [configs['init_max']/10**i for i in range(1)]
+        self.init_range = configs['init_max']
+        self.factorize_latent = configs['factorize_latent']
+
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -459,7 +462,8 @@ class job_object():
                     self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a, self.b)
                     self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a, self.b)
                 if not self.old_setup:
-                    self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [False,True])
+                    if self.factorize_latent:
+                        self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [False,True])
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
@@ -480,7 +484,6 @@ class job_object():
 
         if self.config['deep']:
             self.hyperparameter_space['L'] = hp.choice('L', np.arange(1,self.max_L,dtype=int))
-        self.hyperparameter_space['init_scale'] = hp.choice('init_scale',self.init_range )
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
@@ -499,7 +502,10 @@ class job_object():
             if not self.latent_scale:
                 self.config['sub_R'] = parameters['sub_R']
                 for key, component in self.tensor_architecture.items():
-                    component['prime'] = parameters[f'prime_{key}']
+                    if self.factorize_latent:
+                        component['prime'] = parameters[f'prime_{key}']
+                    else:
+                        component['prime'] = False
         if self.config['deep']:
             self.config['L'] = parameters['L']
         lambdas = self.extract_reg_terms(parameters)
@@ -605,7 +611,7 @@ class job_object():
             side_param = self.construct_side_info_params(side_info_dims)
             component_init['kernel_para'] = kernel_param
             component_init['side_info'] = side_param
-            component_init['init_scale'] = parameters['init_scale']
+            component_init['init_scale'] = self.init_range
             if self.bayesian:
                 component_init['multivariate'] = parameters[f'multivariate_{key}']
         return init_dict

@@ -20,6 +20,7 @@ do
     --dual False \
     --init_max 0.1 \
     --delete_side_info 1 0 \
+    --factorize_latent True \
     --task reg > public_job_$i.out &
   sleep 10
 done

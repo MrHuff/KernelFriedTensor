@@ -98,6 +98,7 @@ def job_parser():
     parser.add_argument('--deep_kernel', default=False, help='deep_kernel',type=str2bool, nargs='?')
     parser.add_argument('--fp_16', default=False, help='fp_16',type=str2bool, nargs='?')
     parser.add_argument('--fused', default=False, help='fused',type=str2bool, nargs='?')
+    parser.add_argument('--factorize_latent', default=False, help='fused',type=str2bool, nargs='?')
     parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')
     parser.add_argument('--save_path', type=str, nargs='?')
     parser.add_argument('--non_lin', type=str,default=None, nargs='?')
