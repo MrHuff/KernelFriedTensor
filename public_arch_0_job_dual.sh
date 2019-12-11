@@ -4,7 +4,7 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.10 \
     --max_lr 1e-1 \
-    --max_R 25 \
+    --max_R 30 \
     --PATH ./public_data/ \
     --reg_para_a 0 \
     --reg_para_b 5 \
