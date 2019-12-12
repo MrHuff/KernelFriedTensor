@@ -41,6 +41,8 @@ def parse_args(args):
     if args['delete_side_info'] is not None:
         for i in args['delete_side_info']:
             del side_info[i]
+    if args['kernels'] is None:
+        args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']
     primal_dims = list(shape)
     for key, val in side_info.items():
         print(key)
@@ -84,6 +86,7 @@ def parse_args(args):
         'dual': args['dual'],
         'init_max': args['init_max'],
         'L': args['L'],
+        'kernels':args['kernels']
     }
     return side_info,other_configs
 
@@ -245,7 +248,7 @@ class job_object():
         self.max_L = configs['L']
         self.init_range = configs['init_max']
         self.factorize_latent = configs['factorize_latent']
-
+        self.kernels = configs['kernels']
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -473,7 +476,7 @@ class job_object():
                 if self.fp_16:
                     self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
                 else:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['matern_1', 'matern_2', 'matern_3', 'rbf'])
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', self.kernels)
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
         if self.config['deep']:

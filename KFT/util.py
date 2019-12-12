@@ -119,7 +119,7 @@ def job_parser():
     parser.add_argument('--tensor_name', type=str,default='', nargs='?')
     parser.add_argument('--side_info_name', type=str,nargs='+')
     parser.add_argument('--delete_side_info', type=int,nargs='+')
-
+    parser.add_argument('--kernels', type=str,nargs='+')
     return parser
 
 def print_ls_gradients(model):
