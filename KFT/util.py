@@ -35,9 +35,9 @@ def post_process(folder_path,metric_name):
     metrics = []
     best_config = []
     for el in trial_files:
-        if 'results' not in el and 'test_error_ref' not in el:
+        if 'results' not in el and 'test_error_ref' not in el and 'config' not in el:
             trials = pickle.load(open(folder_path + el, "rb"))
-            best_res = sorted(trials.trials, key=lambda x: x['result'][metric_name], reverse=False)[0]['misc']['idxs']
+            best_res = sorted(trials.trials, key=lambda x: x['result'][metric_name], reverse=False)[0]['misc']['vals']
             best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
             metrics.append(best_trial)
             best_config.append(best_res)
