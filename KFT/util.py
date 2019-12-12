@@ -33,17 +33,22 @@ def post_process(folder_path,metric_name):
     trial_files = os.listdir(folder_path)
     print(trial_files)
     metrics = []
+    best_config = []
     for el in trial_files:
         if 'results' not in el and 'test_error_ref' not in el:
             trials = pickle.load(open(folder_path + el, "rb"))
+            best_res = sorted(trials.trials, key=lambda x: x['result'][metric_name], reverse=False)[0]['misc']['idxs']
             best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
             metrics.append(best_trial)
+            best_config.append(best_res)
     df = pd.DataFrame(metrics)
+    df_config = pd.DataFrame(best_config)
     print(df)
+    print(df_config)
     df = df.describe()
     df = df.round(3)
     df.to_csv(folder_path+'results.csv')
-
+    df_config.to_csv(folder_path+'config.csv')
 def generate_timestamp_side_info(sorted_timestamp_data):
     t = np.unique(sorted_timestamp_data)
     scaler_location = StandardScaler()
