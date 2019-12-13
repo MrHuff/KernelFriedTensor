@@ -503,6 +503,7 @@ class job_object():
                         component['prime'] = parameters[f'prime_{key}']
                         self.config['sub_R'] = parameters['sub_R']
                     else:
+                        self.config['sub_R'] = 1
                         component['prime'] = False
         if self.config['deep']:
             self.config['L'] = parameters['L']
