@@ -498,10 +498,10 @@ class job_object():
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         if not self.old_setup:
             if not self.latent_scale:
-                self.config['sub_R'] = parameters['sub_R']
                 for key, component in self.tensor_architecture.items():
                     if self.factorize_latent:
                         component['prime'] = parameters[f'prime_{key}']
+                        self.config['sub_R'] = parameters['sub_R']
                     else:
                         component['prime'] = False
         if self.config['deep']:
