@@ -24,20 +24,24 @@ class lgbm():
         self.train_objective = 'mse' if params['regression'] else 'cross_entropy'
         self.eval_objective = get_R_square if params['regression'] else get_auc
         self.name = f'{self.task}_lgbm_{seed}'
+        self.gpu = params['gpu']
         self.its = params['its']
         self.num_threads=params['num_threads']
         self.space = {
             'num_leaves': hp.quniform('num_leaves', 1, 200, 1),
             'min_data_in_leaf': hp.quniform('min_data_in_leaf', 10, 30, 1),
-            'feature_fraction': hp.uniform('feature_fraction', 0.75, 1.0),
-            'bagging_fraction': hp.uniform('bagging_fraction', 0.75, 1.0),
             'learning_rate': hp.loguniform('learning_rate', -5.0, -2.3),
             'min_sum_hessian_in_leaf': hp.loguniform('min_sum_hessian_in_leaf', 0, 2.3),
-            'max_bin': hp.quniform('max_bin', 128, 512, 1),
             'bagging_freq': hp.quniform('bagging_freq', 1, 5, 1),
             'lambda_l1': hp.uniform('lambda_l1', 0, 10),
             'lambda_l2': hp.uniform('lambda_l2', 0, 10),
         }
+        self.space['feature_fraction'] = hp.uniform('feature_fraction', 0.75, 1.0)
+        self.space['bagging_fraction'] = hp.uniform('bagging_fraction', 0.75, 1.0)
+        if not self.gpu:
+            self.space['max_bin'] =hp.quniform('max_bin', 128, 512, 1)
+        else:
+            self.space['max_bin'] =hp.quniform('max_bin', 12, 63, 1)
 
     def get_lgb_params(self,space):
         lgb_params = dict()
@@ -53,18 +57,28 @@ class lgbm():
         lgb_params['max_depth'] = -1
         lgb_params['lambda_l1'] = space['lambda_l1'] if 'lambda_l1' in space else 0.0
         lgb_params['lambda_l2'] = space['lambda_l2'] if 'lambda_l2' in space else 0.0
+        lgb_params['bagging_freq'] = int(space['bagging_freq']) if 'bagging_freq' in space else 1
         lgb_params['max_bin'] = int(space['max_bin']) if 'max_bin' in space else 256
         lgb_params['feature_fraction'] = space['feature_fraction']
         lgb_params['bagging_fraction'] = space['bagging_fraction']
-        lgb_params['bagging_freq'] = int(space['bagging_freq']) if 'bagging_freq' in space else 1
+        if self.gpu:
+            lgb_params['device_type'] = 'gpu'
+            lgb_params['sparse_threshold']=1.0
+            lgb_params['gpu_platform_id']= 0
+            lgb_params['gpu_device_id']= 0
 
         return lgb_params
 
     def __call__(self, params):
         lgb_params = self.get_lgb_params(params)
         start = time.time()
-        self.D_train = lightgbm.Dataset(self.X_train, self.y_train, categorical_feature='auto')
-        self.D_val = lightgbm.Dataset(self.X_val, self.y_val, categorical_feature='auto')
+        if not self.gpu:
+            self.D_train = lightgbm.Dataset(self.X_train, self.y_train, categorical_feature='auto')
+            self.D_val = lightgbm.Dataset(self.X_val, self.y_val, categorical_feature= 'auto')
+        else:
+            self.D_train = lightgbm.Dataset(self.X_train.values, self.y_train.values)
+            self.D_val = lightgbm.Dataset(self.X_val.values, self.y_val.values)
+
         model = lightgbm.train(lgb_params,
                                self.D_train,
                                num_boost_round=self.its,

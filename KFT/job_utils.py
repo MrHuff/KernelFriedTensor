@@ -487,7 +487,7 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.7)),self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.8)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
         if self.bayesian:
             for i in t_act.keys():
