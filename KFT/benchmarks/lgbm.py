@@ -41,7 +41,7 @@ class lgbm():
         if not self.gpu:
             self.space['max_bin'] =hp.quniform('max_bin', 128, 512, 1)
         else:
-            self.space['max_bin'] =hp.quniform('max_bin', 12, 63, 1)
+            self.space['max_bin'] =hp.quniform('max_bin', 12, 256, 1)
 
     def get_lgb_params(self,space):
         lgb_params = dict()
