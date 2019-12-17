@@ -11,6 +11,54 @@ from sklearn import metrics
 import time
 import numpy as np
 import timeit
+import multiprocessing as mp
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns; sns.set()
+
+def plot_VI(save_path,model_name,sup_title):
+    predictions = pd.read_hdf(save_path+'VI_predictions.h5')
+
+    predictions['calibrated_5'] = (predictions['true_sale']>predictions['mu_perc_5']) & (predictions['true_sale']<predictions['mu_perc_95'])
+    predictions['calibrated_10'] = (predictions['true_sale']>predictions['mu_perc_10']) & (predictions['true_sale']<predictions['mu_perc_90'])
+    predictions['calibrated_15'] = (predictions['true_sale']>predictions['mu_perc_15']) & (predictions['true_sale']<predictions['mu_perc_85'])
+    predictions['calibrated_20'] = (predictions['true_sale']>predictions['mu_perc_20']) & (predictions['true_sale']<predictions['mu_perc_80'])
+    predictions['calibrated_25'] = (predictions['true_sale']>predictions['mu_perc_25']) & (predictions['true_sale']<predictions['mu_perc_75'])
+
+    df = predictions.groupby(['store','time']).agg(['sum','count'])
+    cal_list = [5,10,15,20,25]
+    fig, ax = plt.subplots(1, len(cal_list)+1,figsize=(30,20),gridspec_kw={'width_ratios':[1,1,1,1,1,0.05]})
+    fig.suptitle(sup_title, fontsize=50) #"Alcohol sales test data calibration ratios"
+    ax[0].get_shared_y_axes().join(*ax[1:5])
+
+    for i in range(len(cal_list)):
+        rate = cal_list[i]
+        calibration_rate = 'calibrated_{}'.format(rate)
+        plot_df = df[calibration_rate]
+        plot_df['ratio'] = plot_df['sum']/plot_df['count']
+        plot_df = plot_df.reset_index()
+        result = plot_df.pivot(index='store', columns='time', values='ratio')
+        if i==len(cal_list)-1:
+            sns.heatmap(result,cmap="RdYlGn",ax=ax[i],cbar=True,cbar_ax = ax[i+1],vmin=0, vmax=1)
+            ax[i].collections[0].colorbar.set_label('Calibration rate')
+        else:
+            sns.heatmap(result,cmap="RdYlGn",ax=ax[i],cbar=False)
+        if i==0:
+            ax[i].set(xlabel='Month', ylabel='Store')
+        else:
+            ax[i].set_xlabel('Month')
+            ax[i].set_ylabel('')
+            ax[i].set_yticks([])
+        ax[i].set_title(r'$\alpha$ = {}%'.format(rate))
+        for item in ([ax[i].title, ax[i].xaxis.label, ax[i].yaxis.label]):
+            item.set_fontsize(40)
+
+    for item in ([ax[-1].title, ax[-1].xaxis.label, ax[-1].yaxis.label]+ax[-1].get_yticklabels()):
+        item.set_fontsize(40)
+    plt.subplots_adjust(wspace=0.05, hspace=0)
+
+    plt.savefig("{}{}_big.png".format(save_path,model_name.strip('.')), bbox_inches = 'tight',
+        pad_inches = 0)
 
 def get_non_lin(non_lin_name):
     if non_lin_name=='relu':
@@ -112,6 +160,7 @@ def get_loss_func(train_config):
     else:
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     return loss_func
+
 def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component tends to overfit?! Really weird!
     TENSOR_ARCHITECTURES = {
         0:{
@@ -208,6 +257,59 @@ def opt_32_reinit(model,train_config,lr):
     opt = torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False)
     return opt
 
+def para_func(df):
+    df.sort(axis=1)
+    percentiles_list = [5,10,15,20,25,50,75,80,85,90,95]
+    data = []
+    for p in percentiles_list:
+        tmp = np.percentile(df,p,axis=1)
+        data.append(tmp.reshape(-1,1))
+    data = np.concatenate(data,axis=1)
+    return data
+
+def calculate_calibration_objective(predictions,indices):
+    predictions['calibrated_5'] = (predictions['true_sale'] > predictions['mu_perc_5']) & (
+            predictions['true_sale'] < predictions['mu_perc_95'])
+    predictions['calibrated_10'] = (predictions['true_sale'] > predictions['mu_perc_10']) & (
+            predictions['true_sale'] < predictions['mu_perc_90'])
+    predictions['calibrated_15'] = (predictions['true_sale'] > predictions['mu_perc_15']) & (
+            predictions['true_sale'] < predictions['mu_perc_85'])
+    predictions['calibrated_20'] = (predictions['true_sale'] > predictions['mu_perc_20']) & (
+            predictions['true_sale'] < predictions['mu_perc_80'])
+    predictions['calibrated_25'] = (predictions['true_sale'] > predictions['mu_perc_25']) & (
+            predictions['true_sale'] < predictions['mu_perc_75'])
+    for i in range(indices.shape[1]):
+        predictions[f'idx_{i}'] = indices[:,i].numpy()
+    cal_5 = predictions['calibrated_5'].sum() / len(predictions)
+    cal_10 = predictions['calibrated_10'].sum() / len(predictions)
+    cal_15 = predictions['calibrated_15'].sum() / len(predictions)
+    cal_20 = predictions['calibrated_20'].sum() / len(predictions)
+    cal_25 = predictions['calibrated_25'].sum() / len(predictions)
+    cal_5_err = abs(0.9 - cal_5)
+    cal_10_err = abs(0.8 - cal_10)
+    cal_15_err = abs(0.7 - cal_15)
+    cal_20_err = abs(0.6 - cal_20)
+    cal_25_err = abs(0.5 - cal_25)
+    cal_list = [cal_5_err, cal_10_err, cal_15_err, cal_20_err, cal_25_err]
+    total_cal_error = sum(cal_list)
+    cal_dict = {i: j for i, j in zip([5, 10, 15, 20, 25], [cal_5_err, cal_10_err, cal_15_err, cal_20_err, cal_25_err])}
+
+    return total_cal_error,cal_dict ,predictions
+
+
+def para_summary(df):
+    mean = df.mean(axis=1)
+    std = df.std(axis=1)
+    inputs = np.array_split(df,10)
+    p = mp.Pool(-1)
+    results = np.concatenate(p.map(para_func,inputs),axis=0)
+    data = np.concatenate([mean.reshape(-1, 1), std.reshape(-1, 1),results], axis=1)
+    dataframe = pd.DataFrame(data,columns=["mean", "std", "5%", "10%", "15%", "20%", "25%", "50%", "75%", "80%", "85%",
+                                            "90%", "95%"])
+    p.close()
+    return dataframe
+
+
 class job_object():
     def __init__(self, side_info_dict, configs, seed):
         """
@@ -252,7 +354,8 @@ class job_object():
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
-
+        if self.bayesian:
+            self.best = np.inf
     def calculate_loss_no_grad(self, task='reg', mode='val'):
         with torch.no_grad():
             loss_list = []
@@ -266,8 +369,8 @@ class job_object():
                     y = y.to(self.train_config['device'])
                 loss, y_pred = self.correct_validation_loss(X, y)
                 loss_list.append(loss)
-                y_s.append(y)
-                _y_preds.append(y_pred)
+                y_s.append(y.cpu())
+                _y_preds.append(y_pred.cpu())
             total_loss = torch.tensor(loss_list).mean().data
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
@@ -352,9 +455,9 @@ class job_object():
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
                 torch.cuda.empty_cache()
-                l_val = self.calculate_loss_no_grad(mode='val')
+                l_val = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
                 torch.cuda.empty_cache()
-                l_test = self.calculate_loss_no_grad(mode='test')
+                l_test = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
@@ -446,11 +549,16 @@ class job_object():
             ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False)
             if ERROR:
                 return -np.inf, -np.inf
-        val_loss_final = self.calculate_loss_no_grad(mode='val')
-        test_loss_final = self.calculate_loss_no_grad(mode='test')
+        val_loss_final = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
+        test_loss_final = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
         del opts
-        print(val_loss_final,test_loss_final)
-        return val_loss_final,test_loss_final
+        if self.bayesian:
+            total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
+            total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
+            print(val_loss_final,test_loss_final)
+            return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
+        else:
+            return val_loss_final,test_loss_final
 
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
@@ -532,27 +640,71 @@ class job_object():
                                                  bs_ratio=parameters['batch_size_ratio'])
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
-        val_loss_final, test_loss_final = self.train()
-        del self.model
-        del self.dataloader
-        torch.cuda.empty_cache()
-        return val_loss_final, test_loss_final
+        if self.bayesian:
+            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train()
+            del self.model
+            del self.dataloader
+            torch.cuda.empty_cache()
+            return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
 
+        else:
+            val_loss_final, test_loss_final = self.train()
+            del self.model
+            del self.dataloader
+            torch.cuda.empty_cache()
+            return val_loss_final, test_loss_final
+
+    def calculate_calibration(self,mode='val',task='reg',samples=100):
+        self.dataloader.set_mode(mode)
+        with torch.no_grad():
+            all_samples = []
+            for i in range(samples):
+                _y_preds = []
+                for i in range(self.dataloader.chunks):
+                    X, y = self.dataloader.get_chunk(i)
+                    if self.train_config['cuda']:
+                        X = X.to(self.train_config['device'])
+                    _y_pred_sample = self.model.sample(X)
+                    if not task=='reg':
+                        _y_pred_sample = torch.sigmoid(_y_pred_sample)
+                    _y_preds.append(_y_pred_sample.cpu().numpy())
+                y_sample = np.concatenate(_y_preds,axis=0)
+                print(y_sample.shape)
+                all_samples.append(y_sample)
+            Y_preds = np.concatenate(all_samples,axis=1)
+            print(Y_preds.shape)
+            df = para_summary(Y_preds)
+            df['y_true'] = self.dataloader.Y.numpy()
+            total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)
+            return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(10):
             try:
                 torch.cuda.empty_cache()
                 get_free_gpu(10)  # should be 0 between calls..
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    ref_met = 'R2' if self.task == 'reg' else 'auc'
-                    torch.cuda.empty_cache()
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, f'test_{ref_met}': -test_loss_final}
+                if self.bayesian:
+                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                    if not np.isinf(val_loss_final):
+                        torch.cuda.empty_cache()
+                        if total_cal_error_test < self.best:
+                            self.best = total_cal_error_test
+                            predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
+                        return {'loss': total_cal_error_val,
+                                'status': STATUS_OK,
+                                'test_loss': total_cal_error_test,
+                                'val_cal_dict':val_cal_dict,
+                                'test_cal_dict':test_cal_dict,
+                                'val_loss_final':val_loss_final,
+                                'test_loss_final':test_loss_final}
+                else:
+                    val_loss_final, test_loss_final = self.init_and_train(parameters)
+                    if not np.isinf(val_loss_final):
+                        torch.cuda.empty_cache()
+                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
             except Exception as e:
                 print(e)
                 torch.cuda.empty_cache()
-        ref_met = 'R2' if self.task == 'reg' else 'auc'
-        return {'loss': np.inf, 'status': STATUS_FAIL, f'test_{ref_met}': np.inf}
+        return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
     def get_kernel_vals(self,desc):
         if 'matern_1'== desc:

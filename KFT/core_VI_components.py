@@ -9,26 +9,40 @@ PI  = math.pi
 torch.set_printoptions(profile="full")
 
 class variational_TT_component(TT_component):
-    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False):
-        super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup)
+    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,prime=True,sub_R=1):
+        super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,prime=prime,sub_R=sub_R)
         self.variance_parameters = torch.nn.Parameter(-init_scale*torch.ones(*self.shape_list),requires_grad=True)
 
     def calculate_KL(self,mean,sig):
         KL = torch.mean(0.5*(sig.exp()+mean**2-sig-1))
         return KL
 
+    def sample(self,indices):
+        if self.full_grad:
+            mean = self.core_param
+            sig = self.variance_parameters
+            T = mean + (0.5*sig).exp()*torch.randn_like(mean)
+            return T
+        else:
+            if len(indices.shape)>1:
+                indices = indices.unbind(1)
+            mean = self.core_param.permute(self.permutation_list)[indices]
+            sig = self.variance_parameters.permute(self.permutation_list)[indices]
+            z = mean + torch.randn_like(mean)*(0.5*sig).exp()
+            return z
+
     def forward_reparametrization(self,indices):
         if self.full_grad:
             mean = self.core_param
             sig = self.variance_parameters
-            T = mean + sig.exp()*torch.randn_like(mean)
+            T = mean + (0.5*sig).exp()*torch.randn_like(mean)
             return T,  self.calculate_KL(mean,sig)
         else:
             if len(indices.shape)>1:
                 indices = indices.unbind(1)
             mean = self.core_param.permute(self.permutation_list)[indices]
             sig = self.variance_parameters.permute(self.permutation_list)[indices]
-            z = mean + torch.randn_like(mean)*sig.exp()
+            z = mean + torch.randn_like(mean)*(sig*0.5).exp()
             return z, self.calculate_KL(mean,sig)
 
     def mean_forward(self,indices):
@@ -99,6 +113,18 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     T = lazy_mode_product(T, val * val, key)
         return T
+
+    def sample(self,indices):
+        mean = self.core_param
+        T = mean + (0.5 * self.variance_parameters).exp() * torch.randn_like(mean)
+        T = self.apply_kernels(T)
+        if self.full_grad:
+            return T
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[
+                       indices]
 
     def forward(self,indices):
         T = self.apply_kernels(self.core_param)
@@ -314,6 +340,21 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             if len(indices.shape) > 1:
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices], KL
+
+    def sample(self,indices):
+        noise = torch.randn_like(self.core_param)
+        noise_2 = torch.randn(*self.noise_shape).to(self.device)
+        for key, val in self.n_dict.items():  # Sample from multivariate
+            noise = lazy_mode_hadamard(noise, getattr(self, f'D_{key}'), key)
+            noise_2 = lazy_mode_product(noise_2, getattr(self, f'B_{key}'), key)
+        T = self.core_param + noise_2 + noise
+        T = self.apply_kernels(T)
+        if self.full_grad:
+            return T
+        else:
+            if len(indices.shape) > 1:
+                indices = indices.unbind(1)
+            return T.permute(self.permutation_list)[indices]
 
     def forward(self,indices):
         T = self.apply_kernels(self.core_param)

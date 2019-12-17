@@ -393,7 +393,7 @@ class KFT_scale(torch.nn.Module):
 
 class variational_KFT(KFT):
     def __init__(self,initialization_data,KL_weight,cuda=None,config=None,old_setup=False):
-        super(variational_KFT, self).__init__(initialization_data, lambda_reg=KL_weight, cuda=cuda, config=config, old_setup=old_setup)
+        super(variational_KFT, self).__init__(initialization_data, cuda=cuda, config=config, old_setup=old_setup,lambdas=None)
         tmp_dict = {}
         tmp_dict_prime = {}
         self.kernel_class_name = ['multivariate_variational_kernel_TT','univariate_variational_kernel_TT']
@@ -407,7 +407,9 @@ class variational_KFT(KFT):
                                                               r_2=v['r_2'],
                                                               cuda=cuda,
                                                               config=config,
-                                                              init_scale=v['init_scale'])
+                                                              init_scale=v['init_scale'],
+                                                              prime=v['prime'],
+                                                              sub_R=config['sub_R'])
             if v['has_side_info']:
                 if v['multivariate'] and config['dual']:
                     tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
@@ -487,11 +489,22 @@ class variational_KFT(KFT):
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred,KL_prime = tt_prime(ix)
-            pred, KL = tt(ix)
+            prime_pred,KL_prime = tt_prime.forward_reparametrization(ix)
+            pred, KL = tt.forward_reparametrization(ix)
             pred_outputs.append(pred*prime_pred)
             total_KL += KL.abs() + KL_prime.abs()
         return pred_outputs,total_KL*self.KL_weight
+
+    def collect_core_outputs_sample(self, indices):
+        pred_outputs = []
+        for i,v in self.ii.items():
+            ix = indices[:,v]
+            tt = self.TT_cores[str(i)]
+            tt_prime = self.TT_cores_prime[str(i)]
+            prime_pred = tt_prime.sample(ix)
+            pred= tt.sample(ix)
+            pred_outputs.append(pred*prime_pred)
+        return pred_outputs
 
     def forward_reparametrization(self, indices):
         preds_list, regularization = self.collect_core_outputs_reparametrization(indices)
@@ -501,6 +514,15 @@ class variational_KFT(KFT):
         else:
             preds = self.bmm_collate(preds_list)
             return preds, regularization
+
+    def sample(self, indices):
+        preds_list = self.collect_core_outputs_sample(indices)
+        if self.full_grad:
+            preds = self.edge_mode_collate(preds_list)
+            return preds[torch.unbind(indices, dim=1)]
+        else:
+            preds = self.bmm_collate(preds_list)
+            return preds
 
     def forward(self, indices):
         middle,third, regularization = self.collect_core_outputs(indices)
@@ -567,6 +589,40 @@ class varitional_KFT_scale(KFT_scale):
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
         self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
+
+    def collect_core_sample(self,indices):
+        scale = []
+        bias = []
+        core = []
+        for i, v in self.ii.items():
+            ix = indices[:, v]
+            tt = self.TT_cores[str(i)]
+            tt_s = self.TT_cores_s[str(i)]
+            tt_b = self.TT_cores_b[str(i)]
+            V_s = tt_s.sample(ix)
+            V_b = tt_b.sample(ix)
+            base = tt.sample(ix)
+            scale.append(V_s)
+            bias.append(V_b)
+            core.append(base)
+
+        if self.full_grad:
+            group_func = self.edge_mode_collate
+        else:
+            group_func = self.bmm_collate
+        scale_forward = group_func(scale)
+        bias_forward = group_func(bias)
+        core_forward = group_func(core)
+
+        if self.full_grad:
+            T = scale_forward*core_forward+bias_forward
+            return T[torch.unbind(indices, dim=1)]
+        else:
+            return scale_forward*core_forward+bias_forward
+
+    def sample(self,indices):
+        T = self.collect_core_sample(indices)
+        return T
 
     def collect_core_outputs(self, indices):
         scale = []
