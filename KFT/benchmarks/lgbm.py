@@ -28,7 +28,7 @@ class lgbm():
         self.its = params['its']
         self.num_threads=params['num_threads']
         self.space = {
-            'num_leaves': hp.quniform('num_leaves', 1, 200, 1),
+            'num_leaves': hp.quniform('num_leaves', 7, 4095, 1),
             'min_data_in_leaf': hp.quniform('min_data_in_leaf', 10, 30, 1),
             'learning_rate': hp.loguniform('learning_rate', -5.0, -2.3),
             'min_sum_hessian_in_leaf': hp.loguniform('min_sum_hessian_in_leaf', 0, 2.3),
@@ -38,10 +38,7 @@ class lgbm():
         }
         self.space['feature_fraction'] = hp.uniform('feature_fraction', 0.75, 1.0)
         self.space['bagging_fraction'] = hp.uniform('bagging_fraction', 0.75, 1.0)
-        if not self.gpu:
-            self.space['max_bin'] =hp.quniform('max_bin', 128, 512, 1)
-        else:
-            self.space['max_bin'] =hp.quniform('max_bin', 12, 256, 1)
+        self.space['max_bin'] =hp.quniform('max_bin', 12, 256, 1)
 
     def get_lgb_params(self,space):
         lgb_params = dict()
