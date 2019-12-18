@@ -392,8 +392,8 @@ class KFT_scale(torch.nn.Module):
         return pred,reg
 
 class variational_KFT(KFT):
-    def __init__(self,initialization_data,KL_weight,cuda=None,config=None,old_setup=False):
-        super(variational_KFT, self).__init__(initialization_data, cuda=cuda, config=config, old_setup=old_setup,lambdas=None)
+    def __init__(self,initialization_data,KL_weight,cuda=None,config=None,old_setup=False,lambdas=None):
+        super(variational_KFT, self).__init__(initialization_data, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
         tmp_dict = {}
         tmp_dict_prime = {}
         self.kernel_class_name = ['multivariate_variational_kernel_TT','univariate_variational_kernel_TT']

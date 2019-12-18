@@ -622,10 +622,10 @@ class job_object():
         if self.bayesian:
             if self.latent_scale:
                 self.model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=lambdas['KL'],
-                                            cuda=self.device, config=self.config, old_setup=self.old_setup)
+                                            cuda=self.device, config=self.config, old_setup=self.old_setup,lambdas=lambdas)
             else:
                 self.model = variational_KFT(initialization_data=init_dict, KL_weight=lambdas['KL'],
-                                            cuda=self.device, config=self.config, old_setup=self.old_setup)
+                                            cuda=self.device, config=self.config, old_setup=self.old_setup,lambdas=lambdas)
         else:
             if self.latent_scale:
                 self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,
@@ -679,31 +679,31 @@ class job_object():
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(10):
-            try:
-                torch.cuda.empty_cache()
-                get_free_gpu(10)  # should be 0 between calls..
-                if self.bayesian:
-                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        if total_cal_error_test < self.best:
-                            self.best = total_cal_error_test
-                            predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
-                        return {'loss': total_cal_error_val,
-                                'status': STATUS_OK,
-                                'test_loss': total_cal_error_test,
-                                'val_cal_dict':val_cal_dict,
-                                'test_cal_dict':test_cal_dict,
-                                'val_loss_final':val_loss_final,
-                                'test_loss_final':test_loss_final}
-                else:
-                    val_loss_final, test_loss_final = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            except Exception as e:
-                print(e)
-                torch.cuda.empty_cache()
+            #try:
+            torch.cuda.empty_cache()
+            get_free_gpu(10)  # should be 0 between calls..
+            if self.bayesian:
+                total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    if total_cal_error_test < self.best:
+                        self.best = total_cal_error_test
+                        predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
+                    return {'loss': total_cal_error_val,
+                            'status': STATUS_OK,
+                            'test_loss': total_cal_error_test,
+                            'val_cal_dict':val_cal_dict,
+                            'test_cal_dict':test_cal_dict,
+                            'val_loss_final':val_loss_final,
+                            'test_loss_final':test_loss_final}
+            else:
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
+            #except Exception as e:
+            #    print(e)
+            #    torch.cuda.empty_cache()
         return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
     def get_kernel_vals(self,desc):
@@ -720,6 +720,11 @@ class job_object():
         reg_params = dict()
         if self.bayesian:
             reg_params['KL'] = parameters['reg_para']
+            for i in range(len(self.tensor_architecture)):
+                reg_params[f'reg_para_prime_{i}'] = 1.0
+                reg_params[f'reg_para_{i}'] = 1.0
+                reg_params[f'reg_para_s_{i}'] = 1.0
+                reg_params[f'reg_para_b_{i}'] = 1.0
         else:
             for i in range(len(self.tensor_architecture)):
                 reg_params[f'reg_para_{i}'] = parameters[f'reg_para_{i}']
