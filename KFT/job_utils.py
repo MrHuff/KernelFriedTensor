@@ -19,11 +19,11 @@ import seaborn as sns; sns.set()
 def plot_VI(save_path,model_name,sup_title):
     predictions = pd.read_hdf(save_path+'VI_predictions.h5')
 
-    predictions['calibrated_5'] = (predictions['true_sale']>predictions['mu_perc_5']) & (predictions['true_sale']<predictions['mu_perc_95'])
-    predictions['calibrated_10'] = (predictions['true_sale']>predictions['mu_perc_10']) & (predictions['true_sale']<predictions['mu_perc_90'])
-    predictions['calibrated_15'] = (predictions['true_sale']>predictions['mu_perc_15']) & (predictions['true_sale']<predictions['mu_perc_85'])
-    predictions['calibrated_20'] = (predictions['true_sale']>predictions['mu_perc_20']) & (predictions['true_sale']<predictions['mu_perc_80'])
-    predictions['calibrated_25'] = (predictions['true_sale']>predictions['mu_perc_25']) & (predictions['true_sale']<predictions['mu_perc_75'])
+    predictions['calibrated_5'] = (predictions['y_true']>predictions['mu_perc_5']) & (predictions['y_true']<predictions['mu_perc_95'])
+    predictions['calibrated_10'] = (predictions['y_true']>predictions['mu_perc_10']) & (predictions['y_true']<predictions['mu_perc_90'])
+    predictions['calibrated_15'] = (predictions['y_true']>predictions['mu_perc_15']) & (predictions['y_true']<predictions['mu_perc_85'])
+    predictions['calibrated_20'] = (predictions['y_true']>predictions['mu_perc_20']) & (predictions['y_true']<predictions['mu_perc_80'])
+    predictions['calibrated_25'] = (predictions['y_true']>predictions['mu_perc_25']) & (predictions['y_true']<predictions['mu_perc_75'])
 
     df = predictions.groupby(['store','time']).agg(['sum','count'])
     cal_list = [5,10,15,20,25]
@@ -268,16 +268,16 @@ def para_func(df):
     return data
 
 def calculate_calibration_objective(predictions,indices):
-    predictions['calibrated_5'] = (predictions['true_sale'] > predictions['mu_perc_5']) & (
-            predictions['true_sale'] < predictions['mu_perc_95'])
-    predictions['calibrated_10'] = (predictions['true_sale'] > predictions['mu_perc_10']) & (
-            predictions['true_sale'] < predictions['mu_perc_90'])
-    predictions['calibrated_15'] = (predictions['true_sale'] > predictions['mu_perc_15']) & (
-            predictions['true_sale'] < predictions['mu_perc_85'])
-    predictions['calibrated_20'] = (predictions['true_sale'] > predictions['mu_perc_20']) & (
-            predictions['true_sale'] < predictions['mu_perc_80'])
-    predictions['calibrated_25'] = (predictions['true_sale'] > predictions['mu_perc_25']) & (
-            predictions['true_sale'] < predictions['mu_perc_75'])
+    predictions['calibrated_5'] = (predictions['y_true'] > predictions["5%"]) & (
+            predictions['y_true'] < predictions["95%"])
+    predictions['calibrated_10'] = (predictions['y_true'] > predictions["10%"]) & (
+            predictions['y_true'] < predictions["90%"])
+    predictions['calibrated_15'] = (predictions['y_true'] > predictions["15%"]) & (
+            predictions['y_true'] < predictions["85%"])
+    predictions['calibrated_20'] = (predictions['y_true'] > predictions["20%"]) & (
+            predictions['y_true'] < predictions["80%"])
+    predictions['calibrated_25'] = (predictions['y_true'] > predictions["25%"]) & (
+            predictions['y_true'] < predictions["75%"])
     for i in range(indices.shape[1]):
         predictions[f'idx_{i}'] = indices[:,i].numpy()
     cal_5 = predictions['calibrated_5'].sum() / len(predictions)
@@ -301,7 +301,7 @@ def para_summary(df):
     mean = df.mean(axis=1)
     std = df.std(axis=1)
     inputs = np.array_split(df,10)
-    p = mp.Pool(-1)
+    p = mp.Pool(2)
     results = np.concatenate(p.map(para_func,inputs),axis=0)
     data = np.concatenate([mean.reshape(-1, 1), std.reshape(-1, 1),results], axis=1)
     dataframe = pd.DataFrame(data,columns=["mean", "std", "5%", "10%", "15%", "20%", "25%", "50%", "75%", "80%", "85%",
@@ -669,9 +669,8 @@ class job_object():
                         _y_pred_sample = torch.sigmoid(_y_pred_sample)
                     _y_preds.append(_y_pred_sample.cpu().numpy())
                 y_sample = np.concatenate(_y_preds,axis=0)
-                print(y_sample.shape)
                 all_samples.append(y_sample)
-            Y_preds = np.concatenate(all_samples,axis=1)
+            Y_preds = np.stack(all_samples,axis=1)
             print(Y_preds.shape)
             df = para_summary(Y_preds)
             df['y_true'] = self.dataloader.Y.numpy()
@@ -679,31 +678,31 @@ class job_object():
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(10):
-            #try:
-            torch.cuda.empty_cache()
-            get_free_gpu(10)  # should be 0 between calls..
-            if self.bayesian:
-                total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    torch.cuda.empty_cache()
-                    if total_cal_error_test < self.best:
-                        self.best = total_cal_error_test
-                        predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
-                    return {'loss': total_cal_error_val,
-                            'status': STATUS_OK,
-                            'test_loss': total_cal_error_test,
-                            'val_cal_dict':val_cal_dict,
-                            'test_cal_dict':test_cal_dict,
-                            'val_loss_final':val_loss_final,
-                            'test_loss_final':test_loss_final}
-            else:
-                val_loss_final, test_loss_final = self.init_and_train(parameters)
-                if not np.isinf(val_loss_final):
-                    torch.cuda.empty_cache()
-                    return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            #except Exception as e:
-            #    print(e)
-            #    torch.cuda.empty_cache()
+            try:
+                torch.cuda.empty_cache()
+                get_free_gpu(10)  # should be 0 between calls..
+                if self.bayesian:
+                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                    if not np.isinf(val_loss_final):
+                        torch.cuda.empty_cache()
+                        if total_cal_error_test < self.best:
+                            self.best = total_cal_error_test
+                            predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
+                        return {'loss': total_cal_error_val,
+                                'status': STATUS_OK,
+                                'test_loss': total_cal_error_test,
+                                'val_cal_dict':val_cal_dict,
+                                'test_cal_dict':test_cal_dict,
+                                'val_loss_final':val_loss_final,
+                                'test_loss_final':test_loss_final}
+                else:
+                    val_loss_final, test_loss_final = self.init_and_train(parameters)
+                    if not np.isinf(val_loss_final):
+                        torch.cuda.empty_cache()
+                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
+            except Exception as e:
+                print(e)
+                torch.cuda.empty_cache()
         return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
     def get_kernel_vals(self,desc):
