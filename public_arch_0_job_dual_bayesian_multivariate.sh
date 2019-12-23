@@ -7,7 +7,7 @@ do
     --max_R 30 \
     --PATH ./public_data/ \
     --reg_para_a 1e-5 \
-    --reg_para_b 1 \
+    --reg_para_b 1e-2 \
     --fp_16 False \
     --fused True \
     --save_path public_job_arch_0_dual_bayesian_multivariate \

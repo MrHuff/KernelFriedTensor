@@ -9,6 +9,42 @@ from io import BytesIO
 import subprocess
 from sklearn.preprocessing import StandardScaler
 import os
+import matplotlib.pyplot as plt
+import seaborn as sns; sns.set()
+
+def plot_VI(save_path,idx_list):
+    predictions = pd.read_hdf(save_path+'VI_predictions.h5')
+    df = predictions.groupby(idx_list).agg(['sum','count'])
+    cal_list = [5,10,15,20,25]
+    fig, ax = plt.subplots(1, len(cal_list)+1,figsize=(30,20),gridspec_kw={'width_ratios':[1,1,1,1,1,0.05]})
+    ax[0].get_shared_y_axes().join(*ax[1:5])
+
+    for i in range(len(cal_list)):
+        rate = cal_list[i]
+        calibration_rate = 'calibrated_{}'.format(rate)
+        plot_df = df[calibration_rate]
+        plot_df['ratio'] = plot_df['sum']/plot_df['count']
+        plot_df = plot_df.reset_index()
+        result = plot_df.pivot(index=idx_list[0], columns=idx_list[1], values='ratio')
+        if i==len(cal_list)-1:
+            sns.heatmap(result,cmap="RdYlGn",ax=ax[i],cbar=True,cbar_ax = ax[i+1],vmin=0, vmax=1)
+            ax[i].collections[0].colorbar.set_label('Calibration rate')
+        else:
+            sns.heatmap(result,cmap="RdYlGn",ax=ax[i],cbar=False)
+        ax[i].set_xlabel('')
+        ax[i].set_ylabel('')
+        ax[i].set_yticks([])
+        ax[i].set_xticks([])
+        ax[i].set_title(r'$\alpha$ = {}%'.format(rate))
+#        for item in ([ax[i].title, ax[i].xaxis.label, ax[i].yaxis.label]):
+ #           item.set_fontsize(40)
+
+    for item in ([ax[-1].title, ax[-1].xaxis.label, ax[-1].yaxis.label]+ax[-1].get_yticklabels()):
+        item.set_fontsize(40)
+    plt.subplots_adjust(wspace=0.05, hspace=0)
+
+    plt.savefig(save_path + 'VI_plot.png', bbox_inches = 'tight',
+        pad_inches = 0)
 
 def get_test_errors(folder_path,metric_name,data_path):
     trial_files = os.listdir(folder_path)
@@ -35,19 +71,21 @@ def post_process(folder_path,metric_name):
     metrics = []
     best_config = []
     for el in trial_files:
-        if 'results' not in el and 'test_error_ref' not in el and 'config' not in el:
+        if '.p'==el[-2:]:
+            print(el)
             trials = pickle.load(open(folder_path + el, "rb"))
             best_res = sorted(trials.trials, key=lambda x: x['result'][metric_name], reverse=False)[0]['misc']['vals']
             best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
             metrics.append(best_trial)
             best_config.append(best_res)
     df = pd.DataFrame(metrics)
+    df.to_csv(folder_path+'results.csv')
     df_config = pd.DataFrame(best_config)
     print(df)
     print(df_config)
     df = df.describe()
     df = df.round(3)
-    df.to_csv(folder_path+'results.csv')
+    df.to_csv(folder_path+'summary.csv')
     df_config.to_csv(folder_path+'config.csv')
 def generate_timestamp_side_info(sorted_timestamp_data):
     t = np.unique(sorted_timestamp_data)

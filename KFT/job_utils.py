@@ -13,52 +13,7 @@ import numpy as np
 import timeit
 import multiprocessing as mp
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns; sns.set()
 
-def plot_VI(save_path,model_name,sup_title):
-    predictions = pd.read_hdf(save_path+'VI_predictions.h5')
-
-    predictions['calibrated_5'] = (predictions['y_true']>predictions['mu_perc_5']) & (predictions['y_true']<predictions['mu_perc_95'])
-    predictions['calibrated_10'] = (predictions['y_true']>predictions['mu_perc_10']) & (predictions['y_true']<predictions['mu_perc_90'])
-    predictions['calibrated_15'] = (predictions['y_true']>predictions['mu_perc_15']) & (predictions['y_true']<predictions['mu_perc_85'])
-    predictions['calibrated_20'] = (predictions['y_true']>predictions['mu_perc_20']) & (predictions['y_true']<predictions['mu_perc_80'])
-    predictions['calibrated_25'] = (predictions['y_true']>predictions['mu_perc_25']) & (predictions['y_true']<predictions['mu_perc_75'])
-
-    df = predictions.groupby(['store','time']).agg(['sum','count'])
-    cal_list = [5,10,15,20,25]
-    fig, ax = plt.subplots(1, len(cal_list)+1,figsize=(30,20),gridspec_kw={'width_ratios':[1,1,1,1,1,0.05]})
-    fig.suptitle(sup_title, fontsize=50) #"Alcohol sales test data calibration ratios"
-    ax[0].get_shared_y_axes().join(*ax[1:5])
-
-    for i in range(len(cal_list)):
-        rate = cal_list[i]
-        calibration_rate = 'calibrated_{}'.format(rate)
-        plot_df = df[calibration_rate]
-        plot_df['ratio'] = plot_df['sum']/plot_df['count']
-        plot_df = plot_df.reset_index()
-        result = plot_df.pivot(index='store', columns='time', values='ratio')
-        if i==len(cal_list)-1:
-            sns.heatmap(result,cmap="RdYlGn",ax=ax[i],cbar=True,cbar_ax = ax[i+1],vmin=0, vmax=1)
-            ax[i].collections[0].colorbar.set_label('Calibration rate')
-        else:
-            sns.heatmap(result,cmap="RdYlGn",ax=ax[i],cbar=False)
-        if i==0:
-            ax[i].set(xlabel='Month', ylabel='Store')
-        else:
-            ax[i].set_xlabel('Month')
-            ax[i].set_ylabel('')
-            ax[i].set_yticks([])
-        ax[i].set_title(r'$\alpha$ = {}%'.format(rate))
-        for item in ([ax[i].title, ax[i].xaxis.label, ax[i].yaxis.label]):
-            item.set_fontsize(40)
-
-    for item in ([ax[-1].title, ax[-1].xaxis.label, ax[-1].yaxis.label]+ax[-1].get_yticklabels()):
-        item.set_fontsize(40)
-    plt.subplots_adjust(wspace=0.05, hspace=0)
-
-    plt.savefig("{}{}_big.png".format(save_path,model_name.strip('.')), bbox_inches = 'tight',
-        pad_inches = 0)
 
 def get_non_lin(non_lin_name):
     if non_lin_name=='relu':
