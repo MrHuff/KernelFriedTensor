@@ -134,7 +134,8 @@ def parse_args(args):
         'dual': args['dual'],
         'init_max': args['init_max'],
         'L': args['L'],
-        'kernels':args['kernels']
+        'kernels':args['kernels'],
+        'multivariate':args['multivariate'],
     }
     return side_info,other_configs
 
@@ -351,6 +352,7 @@ class job_object():
         self.init_range = configs['init_max']
         self.factorize_latent = configs['factorize_latent']
         self.kernels = configs['kernels']
+        self.multivariate = configs['multivariate']
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -597,9 +599,6 @@ class job_object():
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.8)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
-        if self.bayesian:
-            for i in t_act.keys():
-                self.hyperparameter_space[f'multivariate_{i}'] = hp.choice(f'multivariate_{i}',[True,False])
 
     def init_and_train(self,parameters):
         self.config['dual'] = self.dual if not self.old_setup else True
@@ -768,7 +767,7 @@ class job_object():
             component_init['side_info'] = side_param
             component_init['init_scale'] = self.init_range
             if self.bayesian:
-                component_init['multivariate'] = parameters[f'multivariate_{key}']
+                component_init['multivariate'] = self.multivariate
         return init_dict
 
     def extract_training_params(self,parameters):

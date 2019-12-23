@@ -113,6 +113,7 @@ def job_parser():
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
     parser.add_argument('--dual', default=False, help='dual',type=str2bool, nargs='?')
+    parser.add_argument('--multivariate', default=False, help='dual',type=str2bool, nargs='?')
     parser.add_argument('--deep', default=False, help='deep',type=str2bool, nargs='?')
     parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=100, help='sub_epoch_V')
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
