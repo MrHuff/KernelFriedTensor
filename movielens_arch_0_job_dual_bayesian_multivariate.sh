@@ -4,7 +4,7 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
     --max_lr 1e-1 \
-    --max_R 12 \
+    --max_R 10 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 1e-5 \
     --reg_para_b 1e-2 \

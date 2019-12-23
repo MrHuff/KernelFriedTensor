@@ -3,8 +3,8 @@ do
   nohup taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
-    --max_lr 1e-1 \
-    --max_R 12 \
+    --max_lr 1e0 \
+    --max_R 8 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 1 \
     --reg_para_b 5 \
