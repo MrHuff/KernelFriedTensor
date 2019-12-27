@@ -376,7 +376,6 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key, val in self.n_dict.items():
             if val is not None:
                 D = getattr(self, f'D_{key}') ** 2
-                T_D = lazy_mode_hadamard(T_D,D,key)
                 if not self.V_mode:
                     X = getattr(self, f'kernel_data_{key}')
                     if self.deep_mode:
@@ -388,9 +387,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     else:
                         val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
+                    T_D = lazy_mode_hadamard(T_D, D * torch.diag(val), key)
                     cov,_,_ = self.build_cov(key)
                     T = lazy_mode_product(T, val*cov, key)
                 else:
+                    cov_diag = torch.sum(val*2,dim=1)
+                    T_D = lazy_mode_hadamard(T_D, D *cov_diag , key)
                     B = getattr(self, f'B_{key}')
                     val = row_outer_prod(B,val)
                     T = lazy_mode_product(T,val.t(), key)
