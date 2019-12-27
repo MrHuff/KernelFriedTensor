@@ -556,7 +556,7 @@ class job_object():
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
 
     def init_and_train(self,parameters):
-        self.config['dual'] = self.dual if not self.old_setup else True
+        self.config['dual'] = self.dual
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         if not self.old_setup:
             if not self.latent_scale:
