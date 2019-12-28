@@ -453,10 +453,10 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
         return pred_outputs
 
+    #TODO: prior hyper para/opt scheme
     def collect_core_outputs(self,indices):
         first_term = []
         second_term = []
-        third_term = []
         total_KL = 0
         for i, v in self.ii.items():
             ix = indices[:, v]
@@ -465,18 +465,14 @@ class variational_KFT(KFT):
             V_prime, var_prime, KL_prime = tt_prime(ix)
             base, extra, KL = tt(ix)
             first_term.append(V_prime*base)
-            second_term.append((extra+base*base)*var_prime)
-            third_term.append((V_prime*V_prime)*extra)
+            second_term.append((extra+base**2)*var_prime+(V_prime**2)*extra)
             total_KL += KL.abs() + KL_prime
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
             group_func = self.bmm_collate
         middle = group_func(first_term)
-        last_term = middle**2
-        for i,preds_list in enumerate([second_term,third_term]):
-            tmp = group_func(preds_list)
-            last_term +=  tmp
+        last_term = middle**2 + group_func(second_term)
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
             last_term = last_term[torch.unbind(indices, dim=1)]

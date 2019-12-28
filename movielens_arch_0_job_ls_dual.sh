@@ -10,14 +10,14 @@ do
     --reg_para_b 2 \
     --fp_16 False \
     --fused True \
-    --save_path movielens_job_arch_0_ls \
+    --save_path movielens_job_arch_0_ls_dual \
     --seed $i \
     --tensor_name all_data.pt \
     --architecture 0 \
     --side_info_order 1 2 \
     --temporal_tag 2 \
     --latent_scale True \
-    --dual False \
+    --dual True \
     --init_max 1e-1 \
     --task reg > movielens_job_$i.out &
   sleep 10
