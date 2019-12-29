@@ -14,7 +14,6 @@ import timeit
 import multiprocessing as mp
 import pandas as pd
 
-
 def get_non_lin(non_lin_name):
     if non_lin_name=='relu':
         return torch.nn.ReLU()
@@ -387,8 +386,8 @@ class job_object():
     def correct_forward_loss(self,X, y, loss_func):
         if self.train_config['task'] == 'reg' and self.train_config['bayesian']:
             y_pred, last_term, reg = self.model(X)
-            pred_loss = loss_func(y.squeeze(), y_pred, last_term)*self.train_config['sigma_y']
-            total_loss = pred_loss + reg
+            pred_loss = loss_func(y.squeeze(), y_pred, last_term)
+            total_loss = pred_loss*self.train_config['sigma_y'] + reg
         else:
             y_pred, reg = self.model(X)
             pred_loss = loss_func(y_pred, y.squeeze())
@@ -396,7 +395,7 @@ class job_object():
         return total_loss, reg, pred_loss, y_pred
 
 
-    def train_loop(self, opt, loss_func, warmup=False, bayesian_mode_train = None):
+    def train_loop(self, opt, loss_func, warmup=False):
         sub_epoch = self.train_config['sub_epoch_V']
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.train_config['patience'], factor=0.5)
         print_garbage()
@@ -417,13 +416,7 @@ class job_object():
                 with self.train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
                     loss_scaled.backward()
             else:
-                if self.bayesian:
-                    if bayesian_mode_train:
-                        pred_loss.backward()
-                    else:
-                        total_loss.backward()
-                else:
-                    total_loss.backward()
+                total_loss.backward()
             opt.step()
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
@@ -434,14 +427,13 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-
             ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
             if ERROR:
                 return ERROR
         del lrs
         return False
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False,bayesian_mode_train=None):
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False,):
         for i in train_list:
             print_garbage()
             settings = train_dict[i]
@@ -450,7 +442,7 @@ class job_object():
             f()
             print(lr)
             opt = opts[lr]
-            ERROR = self.train_loop(opt, loss_func, warmup=warmup,bayesian_mode_train=bayesian_mode_train)
+            ERROR = self.train_loop(opt, loss_func, warmup=warmup)
             print_garbage()
             if ERROR:
                 return ERROR
@@ -518,17 +510,12 @@ class job_object():
         self.train_config['reset'] = 1.0
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
-            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,bayesian_mode_train=self.bayesian)
+            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False)
             if ERROR:
-                return -np.inf, -np.inf
-        if self.bayesian:
-            self.model.turn_off_mean()
-            for i in range(self.train_config['epochs']):
-                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False,
-                                              bayesian_mode_train=False)
-                if ERROR:
+                if self.bayesian:
+                    return -np.inf, -np.inf,-np.inf, -np.inf,-np.inf, -np.inf,-np.inf
+                else:
                     return -np.inf, -np.inf
-
         val_loss_final = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
         test_loss_final = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
         del opts
@@ -665,31 +652,31 @@ class job_object():
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(10):
-            try:
-                torch.cuda.empty_cache()
-                get_free_gpu(10)  # should be 0 between calls..
-                if self.bayesian:
-                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        if total_cal_error_test < self.best:
-                            self.best = total_cal_error_test
-                            predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
-                        return {'loss': total_cal_error_val,
-                                'status': STATUS_OK,
-                                'test_loss': total_cal_error_test,
-                                'val_cal_dict':val_cal_dict,
-                                'test_cal_dict':test_cal_dict,
-                                'val_loss_final':val_loss_final,
-                                'test_loss_final':test_loss_final}
-                else:
-                    val_loss_final, test_loss_final = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            except Exception as e:
-                print(e)
-                torch.cuda.empty_cache()
+            #try:
+            torch.cuda.empty_cache()
+            get_free_gpu(10)  # should be 0 between calls..
+            if self.bayesian:
+                total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    if total_cal_error_test < self.best:
+                        self.best = total_cal_error_test
+                        predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
+                    return {'loss': total_cal_error_val,
+                            'status': STATUS_OK,
+                            'test_loss': total_cal_error_test,
+                            'val_cal_dict':val_cal_dict,
+                            'test_cal_dict':test_cal_dict,
+                            'val_loss_final':val_loss_final,
+                            'test_loss_final':test_loss_final}
+            else:
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
+            # except Exception as e:
+            #     print(e)
+            #     torch.cuda.empty_cache()
         return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
     def get_kernel_vals(self,desc):

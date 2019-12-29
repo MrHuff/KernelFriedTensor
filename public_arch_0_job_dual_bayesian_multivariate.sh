@@ -1,13 +1,13 @@
 for i in {1..5}
 do
-  nohup taskset -c $i python run_job_script.py \
+  taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
     --max_lr 1e-1 \
     --max_R 25 \
     --PATH ./public_data/ \
-    --reg_para_a 1e-5 \
-    --reg_para_b 1e-2 \
+    --reg_para_a 1 \
+    --reg_para_b 100 \
     --fp_16 False \
     --fused True \
     --save_path public_job_arch_0_dual_bayesian_multivariate \
@@ -21,6 +21,10 @@ do
     --dual True \
     --multivariate True \
     --init_max 1.0 \
+    --mu_a 0 \
+    --mu_b 1e-2 \
+    --sigma_a 0.5 \
+    --sigma_b 3 \
     --task reg > public_job_$i.out &
   sleep 10
 done

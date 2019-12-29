@@ -1,6 +1,6 @@
 for i in {1..5}
 do
-  nohup taskset -c $i python run_job_script.py \
+  taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
     --batch_size_b 0.15 \
     --max_lr 1e-1 \
@@ -22,4 +22,4 @@ do
     --task reg > public_job_$i.out &
   sleep 10
 done
-
+wait

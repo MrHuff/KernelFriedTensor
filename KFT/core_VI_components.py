@@ -16,7 +16,7 @@ class variational_TT_component(TT_component):
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
 
     def calculate_KL(self,mean,sig):
-        KL = 0.5*((mean-self.mu_prior)**2 + sig.exp()/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).squeeze().sum(dim=1).mean()
+        KL = 0.5*((mean-self.mu_prior)**2 + sig.exp()/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).mean().squeeze()
         return KL
 
     def sample(self,indices):
@@ -77,7 +77,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         self.register_buffer('sigma_prior', torch.tensor(sigma_prior))
 
     def calculate_KL(self,mean,sig):
-        KL = 0.5*((mean-self.mu_prior)**2 + sig.exp()/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).squeeze().sum(dim=1).mean()
+        KL = 0.5*((mean-self.mu_prior)**2 + sig.exp()/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).mean().squeeze()
         return KL
 
     def forward_reparametrization(self, indices):
@@ -252,6 +252,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     prior_log_det = -(gpytorch.log_det(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
+            setattr(self, f'B_{key}', torch.nn.Parameter(-5*torch.ones(self.shape_list[key], R), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
             self.register_buffer(f'reg_diag_cholesky_{key}',torch.eye(val.shape[0],device=self.device)*1e-3)
@@ -262,10 +263,11 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 prior_log_det = -gpytorch.log_det(mat)
             setattr(self, f'D_{key}', torch.nn.Parameter(1e-3*torch.ones(mat.shape[0], 1), requires_grad=True))
             self.register_buffer(f'priors_inv_{key}', mat)
+            setattr(self, f'B_{key}', torch.nn.Parameter(torch.zeros(self.shape_list[key], R), requires_grad=True))
+
         self.noise_shape.append(R)
         self.register_buffer(f'prior_log_det_{key}',prior_log_det)
         self.register_buffer(f'n_const_{key}',torch.tensor(self.shape_list[key]).float())
-        setattr(self,f'B_{key}',torch.nn.Parameter(torch.zeros(self.shape_list[key],R),requires_grad=True))
 
     def fast_log_det(self,L):
         return torch.log(torch.prod(L.diag()).abs()+1e-5)*2
@@ -273,7 +275,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
     def get_trace_term_KL(self,key):
         if self.RFF_dict[key]:
             D = getattr(self,f'D_{key}')**2
-            B = getattr(self, f'B_{key}')
+            B = getattr(self, f'B_{key}').exp()
             sig_p_2 = getattr(self,f'sig_p_2_{key}')
             cov = B.t()@B
             B_times_B_sum = torch.sum(B*B)
@@ -301,7 +303,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
 
     def calculate_KL(self):
         tr_term = 1.
-        T = self.ones*self.mu_prior - self. self.core_param
+        T = self.ones*self.mu_prior - self.core_param
         log_term_1 = 0
         log_term_2 = 0
         for key in self.n_dict.keys():
@@ -391,18 +393,17 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     else:
                         val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
-                    T_D = lazy_mode_hadamard(T_D, D * torch.diag(val), key)
+                    T_D = lazy_mode_hadamard(T_D, D * torch.diag(val).unsqueeze(-1), key)
                     cov,_,_ = self.build_cov(key)
                     T = lazy_mode_product(T, val*cov, key)
                 else:
-                    cov_diag = torch.sum(val*2,dim=1)
+                    cov_diag = torch.sum(val*2,dim=1,keepdim=True)
                     T_D = lazy_mode_hadamard(T_D, D *cov_diag , key)
-                    B = getattr(self, f'B_{key}')
+                    B = getattr(self, f'B_{key}').exp()
                     val = row_outer_prod(B,val)
                     T = lazy_mode_product(T,val.t(), key)
                     T = lazy_mode_product(T, val, key)
         return T+T_D
-
 
     def mean_forward(self,indices):
         """Do tensor ops"""
