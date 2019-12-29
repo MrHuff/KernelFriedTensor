@@ -91,6 +91,10 @@ def parse_args(args):
         'L': args['L'],
         'kernels':args['kernels'],
         'multivariate':args['multivariate'],
+        'mu_a': args['mu_a'],
+        'mu_b': args['mu_b'],
+        'sigma_a': args['sigma_a'],
+        'sigma_b': args['sigma_b'],
     }
     return side_info,other_configs
 
@@ -308,6 +312,10 @@ class job_object():
         self.factorize_latent = configs['factorize_latent']
         self.kernels = configs['kernels']
         self.multivariate = configs['multivariate']
+        self.mu_a = configs['mu_a']
+        self.sigma_a = configs['sigma_a']
+        self.mu_b = configs['mu_b']
+        self.sigma_b = configs['sigma_b']
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -379,14 +387,16 @@ class job_object():
     def correct_forward_loss(self,X, y, loss_func):
         if self.train_config['task'] == 'reg' and self.train_config['bayesian']:
             y_pred, last_term, reg = self.model(X)
-            pred_loss = loss_func(y.squeeze(), y_pred, last_term)
+            pred_loss = loss_func(y.squeeze(), y_pred, last_term)*self.train_config['sigma_y']
+            total_loss = pred_loss + reg
         else:
             y_pred, reg = self.model(X)
             pred_loss = loss_func(y_pred, y.squeeze())
-        return pred_loss + reg, reg, pred_loss, y_pred
+            total_loss = pred_loss + reg
+        return total_loss, reg, pred_loss, y_pred
 
 
-    def train_loop(self, opt, loss_func, warmup=False):
+    def train_loop(self, opt, loss_func, warmup=False, bayesian_mode_train = None):
         sub_epoch = self.train_config['sub_epoch_V']
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.train_config['patience'], factor=0.5)
         print_garbage()
@@ -407,7 +417,13 @@ class job_object():
                 with self.train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
                     loss_scaled.backward()
             else:
-                total_loss.backward()
+                if self.bayesian:
+                    if bayesian_mode_train:
+                        pred_loss.backward()
+                    else:
+                        total_loss.backward()
+                else:
+                    total_loss.backward()
             opt.step()
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
@@ -425,7 +441,7 @@ class job_object():
         del lrs
         return False
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False):
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False,bayesian_mode_train=None):
         for i in train_list:
             print_garbage()
             settings = train_dict[i]
@@ -434,7 +450,7 @@ class job_object():
             f()
             print(lr)
             opt = opts[lr]
-            ERROR = self.train_loop(opt, loss_func, warmup=warmup)
+            ERROR = self.train_loop(opt, loss_func, warmup=warmup,bayesian_mode_train=bayesian_mode_train)
             print_garbage()
             if ERROR:
                 return ERROR
@@ -502,10 +518,17 @@ class job_object():
         self.train_config['reset'] = 1.0
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
-            # ERROR = joint_train_loop(model,opts,loss_func,ERROR,train_list,train_dict, train_config, dataloader, warmup=False)
-            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False)
+            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,bayesian_mode_train=self.bayesian)
             if ERROR:
                 return -np.inf, -np.inf
+        if self.bayesian:
+            self.model.turn_off_mean()
+            for i in range(self.train_config['epochs']):
+                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False,
+                                              bayesian_mode_train=False)
+                if ERROR:
+                    return -np.inf, -np.inf
+
         val_loss_final = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
         test_loss_final = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
         del opts
@@ -523,6 +546,16 @@ class job_object():
         t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
         if self.bayesian:
             self.hyperparameter_space[f'reg_para'] = hp.uniform(f'reg_para', self.a, self.b)
+            for i in range(len(t_act)):
+                if self.latent_scale:
+                    pass
+                else:
+                    self.hyperparameter_space[f'mu_prior_prime_{i}'] = hp.uniform(f'mu_prior_prime_{i}', self.mu_a, self.mu_b)
+                    self.hyperparameter_space[f'sigma_prior_prime_{i}'] = hp.uniform(f'sigma_prior_prime_{i}', self.sigma_a, self.sigma_b)
+                self.hyperparameter_space[f'mu_prior_{i}'] = hp.uniform(f'mu_prior_{i}', self.mu_a, self.mu_b)
+                if not self.multivariate:
+                    self.hyperparameter_space[f'sigma_prior_{i}'] = hp.uniform(f'sigma_prior_{i}', self.sigma_a,
+                                                                               self.sigma_b)
         else:
             for i in range(len(t_act)):
                 self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
@@ -575,10 +608,10 @@ class job_object():
         print(parameters)
         if self.bayesian:
             if self.latent_scale:
-                self.model = varitional_KFT_scale(initialization_data=init_dict, KL_weight=lambdas['KL'],
+                self.model = varitional_KFT_scale(initialization_data=init_dict,
                                             cuda=self.device, config=self.config, old_setup=self.old_setup,lambdas=lambdas)
             else:
-                self.model = variational_KFT(initialization_data=init_dict, KL_weight=lambdas['KL'],
+                self.model = variational_KFT(initialization_data=init_dict,
                                             cuda=self.device, config=self.config, old_setup=self.old_setup,lambdas=lambdas)
         else:
             if self.latent_scale:
@@ -672,7 +705,6 @@ class job_object():
     def extract_reg_terms(self, parameters):
         reg_params = dict()
         if self.bayesian:
-            reg_params['KL'] = parameters['reg_para']
             for i in range(len(self.tensor_architecture)):
                 reg_params[f'reg_para_prime_{i}'] = 1.0
                 reg_params[f'reg_para_{i}'] = 1.0
@@ -746,6 +778,7 @@ class job_object():
         training_params['patience'] = 50
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
+        training_params['sigma_y'] = parameters['reg_para']
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
         return training_params

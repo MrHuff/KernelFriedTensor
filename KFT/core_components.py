@@ -153,6 +153,9 @@ class TT_component(torch.nn.Module):
                 T = lazy_mode_product(T, ones, mode+1)
             return T
 
+    def lock_mean(self):
+        self.core_param.requires_grad = False
+
 class TT_component_deep(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0):
         super(TT_component_deep, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,reg_para)
