@@ -743,18 +743,25 @@ class job_object():
     def construct_init_dict(self,parameters):
         init_dict = self.tensor_architecture
         for key,items in init_dict.items():
-            component_init = init_dict[key]
-            side_info_dims = component_init['ii']
+            side_info_dims = items['ii']
             if self.dual:
                 kernel_param  = self.construct_kernel_params(side_info_dims,parameters)
             else:
                 kernel_param = {}
             side_param = self.construct_side_info_params(side_info_dims)
-            component_init['kernel_para'] = kernel_param
-            component_init['side_info'] = side_param
-            component_init['init_scale'] = self.init_range
+            items['kernel_para'] = kernel_param
+            items['side_info'] = side_param
+            items['init_scale'] = self.init_range
             if self.bayesian:
-                component_init['multivariate'] = self.multivariate
+                items['multivariate'] = self.multivariate
+                if self.latent_scale:
+                    pass
+                else:
+                    items['mu_prior_prime'] = parameters[f'mu_prior_prime_{key}']
+                    items['sigma_prior_prime'] = parameters[f'sigma_prior_prime_{key}']
+                items['mu_prior'] = parameters[f'mu_prior_{key}']
+                if not self.multivariate:
+                    items['sigma_prior'] = parameters[f'sigma_prior_{key}']
         return init_dict
 
     def extract_training_params(self,parameters):
@@ -778,7 +785,8 @@ class job_object():
         training_params['patience'] = 50
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
-        training_params['sigma_y'] = parameters['reg_para']
+        if self.bayesian:
+            training_params['sigma_y'] = parameters['reg_para']
         if self.deep_kernel:
             training_params['deep_lr'] = 1e-3#parameters['lr_4']
         return training_params
