@@ -25,7 +25,8 @@ do
     --mu_b 1e-2 \
     --sigma_a 0.5 \
     --sigma_b 3 \
+    --epochs 20 \
     --task reg > public_job_$i.out &
   sleep 10
 done
-
+wait

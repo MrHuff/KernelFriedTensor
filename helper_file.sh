@@ -1,6 +1,4 @@
-dos2unix public_arch_0_job_ls.sh
-sh public_arch_0_job_ls.sh
-dos2unix public_arch_1_job_T_primal_ls.sh
-sh public_arch_1_job_T_primal_ls.sh
-dos2unix public_arch_1_job_T_dual_ls.sh
-sh public_arch_1_job_T_dual_ls.sh
+dos2unix public_arch_0_job_dual_bayesian_univariate.sh
+sh public_arch_0_job_dual_bayesian_univariate.sh
+dos2unix public_arch_0_job_dual_bayesian_multivariate.sh
+sh public_arch_0_job_dual_bayesian_multivariate.sh

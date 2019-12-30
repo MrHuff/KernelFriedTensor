@@ -4,7 +4,7 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
     --max_lr 1e-1 \
-    --max_R 25 \
+    --max_R 20 \
     --PATH ./public_data/ \
     --reg_para_a 1 \
     --reg_para_b 100 \
@@ -25,7 +25,8 @@ do
     --mu_b 1e-2 \
     --sigma_a 0.5 \
     --sigma_b 3 \
+    --epochs 20 \
     --task reg > public_job_$i.out &
   sleep 10
 done
-
+wait
