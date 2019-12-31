@@ -9,7 +9,7 @@ PI  = math.pi
 torch.set_printoptions(profile="full")
 
 class variational_TT_component(TT_component):
-    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,prime=True,sub_R=1,mu_prior=0,sigma_prior=-1):
+    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,prime=False,sub_R=1,mu_prior=0,sigma_prior=-1):
         super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,prime=prime,sub_R=sub_R)
         self.variance_parameters = torch.nn.Parameter(-init_scale*torch.ones(*self.shape_list),requires_grad=True)
         self.register_buffer('mu_prior',torch.tensor(mu_prior))
@@ -98,7 +98,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         for key, val in self.n_dict.items():
             if val is not None:
                 if self.dual:
-                    if not self.V_mode:
+                    if self.kernel_eval_mode:
                         X = getattr(self, f'kernel_data_{key}')
                         if self.deep_mode:
                             f = getattr(self, f'transformation_{key}')
@@ -111,11 +111,11 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                     if not self.RFF_dict[key]:
                         T = lazy_mode_product(T, val*val, key)
                     else:
-                        val = row_outer_prod(val,val)
-                        T = lazy_mode_product(T,val.t(), key)
-                        T = lazy_mode_product(T, val, key)
+                        RFF_squared = row_outer_prod(val,val)
+                        T = lazy_mode_product(T,RFF_squared.t(), key)
+                        T = lazy_mode_product(T, RFF_squared, key)
                 else:
-                    T = lazy_mode_product(T, val * val, key)
+                    T = lazy_mode_product(T, val**2, key)
         return T
 
     def sample(self,indices):
@@ -151,7 +151,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         T = self.core_param
         for key, val in self.n_dict.items():
             if val is not None:
-                if not self.V_mode:
+                if self.kernel_eval_mode:
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
                     val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
                 if not self.RFF_dict[key]:
@@ -179,6 +179,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
 
     def kernel_train_mode_off(self):
         self.turn_on()
+        self.kernel_eval_mode = False
         for key, val in self.n_dict.items():
             if val is not None:
                 k = getattr(self, f'kernel_{key}')
@@ -252,7 +253,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     prior_log_det = -(gpytorch.log_det(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
-            setattr(self, f'B_{key}', torch.nn.Parameter(-5*torch.ones(self.shape_list[key], R), requires_grad=True))
+            setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
             self.register_buffer(f'reg_diag_cholesky_{key}',torch.eye(val.shape[0],device=self.device)*1e-3)
@@ -263,7 +264,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 prior_log_det = -gpytorch.log_det(mat)
             setattr(self, f'D_{key}', torch.nn.Parameter(1e-3*torch.ones(mat.shape[0], 1), requires_grad=True))
             self.register_buffer(f'priors_inv_{key}', mat)
-            setattr(self, f'B_{key}', torch.nn.Parameter(torch.zeros(self.shape_list[key], R), requires_grad=True))
+            setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))
 
         self.noise_shape.append(R)
         self.register_buffer(f'prior_log_det_{key}',prior_log_det)
@@ -275,7 +276,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
     def get_trace_term_KL(self,key):
         if self.RFF_dict[key]:
             D = getattr(self,f'D_{key}')**2
-            B = getattr(self, f'B_{key}').exp()
+            B = getattr(self, f'B_{key}')
             sig_p_2 = getattr(self,f'sig_p_2_{key}')
             cov = B.t()@B
             B_times_B_sum = torch.sum(B*B)
@@ -337,7 +338,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             noise_2 = lazy_mode_product(noise_2, getattr(self,f'B_{key}'), key)
         T = self.core_param + noise_2 + noise
         T = self.apply_kernels(T)
-        if not self.V_mode:
+        if self.kernel_eval_mode:
             self.recalculate_priors()
         KL = self.calculate_KL()
         if self.full_grad:
@@ -366,7 +367,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         T = self.apply_kernels(self.core_param)
         T_cross_sigma = self.apply_cross_kernel()
         T_additional = self.apply_kernels(T_cross_sigma)
-        if not self.V_mode:
+        if self.kernel_eval_mode:
             self.recalculate_priors()
         KL = self.calculate_KL()
         if self.full_grad:
@@ -382,7 +383,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key, val in self.n_dict.items():
             if val is not None:
                 D = getattr(self, f'D_{key}') ** 2
-                if not self.V_mode:
+                if self.kernel_eval_mode:
                     X = getattr(self, f'kernel_data_{key}')
                     if self.deep_mode:
                         f = getattr(self, f'transformation_{key}')
@@ -399,10 +400,10 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     cov_diag = torch.sum(val*2,dim=1,keepdim=True)
                     T_D = lazy_mode_hadamard(T_D, D *cov_diag , key)
-                    B = getattr(self, f'B_{key}').exp()
-                    val = row_outer_prod(B,val)
-                    T = lazy_mode_product(T,val.t(), key)
-                    T = lazy_mode_product(T, val, key)
+                    B = getattr(self, f'B_{key}')
+                    RFF_squared = row_outer_prod(B,val)
+                    T = lazy_mode_product(T,RFF_squared.t(), key)
+                    T = lazy_mode_product(T, RFF_squared, key)
         return T+T_D
 
     def mean_forward(self,indices):
@@ -410,7 +411,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         T = self.core_param
         for key, val in self.n_dict.items():
             if val is not None:
-                if not self.V_mode:
+                if self.kernel_eval_mode:
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
                     val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
                     self.n_dict[key] = val

@@ -83,7 +83,6 @@ class TT_component(torch.nn.Module):
         self.r_2 = r_2
         self.n_list = n_list
         self.amp = None
-        self.V_mode = True
         self.device = cuda
         self.old_setup = old_setup
         self.full_grad = config['full_grad']
@@ -107,12 +106,10 @@ class TT_component(torch.nn.Module):
     def turn_off(self):
         for p in self.parameters():
             p.requires_grad = False
-        self.V_mode=False
 
     def turn_on(self):
         for p in self.parameters():
             p.requires_grad = True
-        self.V_mode=True
 
     def forward(self,indices):
         if self.prime:
@@ -196,6 +193,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True)
         self.deep_kernel = config['deep_kernel']
         self.deep_mode = False
+        self.kernel_eval_mode = False
         for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
             if self.dual:
                 self.assign_kernel(key,value,kernel_para_dict,config['deep_kernel'])
@@ -204,6 +202,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
 
     def kernel_train_mode_on(self):
         self.turn_off()
+        self.kernel_eval_mode = True
         if self.dual:
             for key,val in self.n_dict.items():
                 if val is not None:
@@ -215,6 +214,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
 
     def kernel_train_mode_off(self):
         self.turn_on()
+        self.kernel_eval_mode = False
         if self.dual:
             for key,val in self.n_dict.items():
                 if val is not None:
@@ -316,7 +316,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         for key, val in self.n_dict.items():
             if val is not None:
                 if self.dual:
-                    if not self.V_mode:
+                    if self.kernel_eval_mode:
                         val = self.side_data_eval(key)
                     if not self.RFF_dict[key]:
                         T = lazy_mode_product(T, val, key)

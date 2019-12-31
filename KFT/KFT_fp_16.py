@@ -473,25 +473,40 @@ class variational_KFT(KFT):
     def collect_core_outputs(self,indices):
         first_term = []
         second_term = []
+        debug_term = []
         total_KL = 0
         for i, v in self.ii.items():
             ix = indices[:, v]
             tt = self.TT_cores[str(i)]
             tt_prime = self.TT_cores_prime[str(i)]
-            V_prime, var_prime, KL_prime = tt_prime(ix)
+            M_prime, sigma_prime, KL_prime = tt_prime(ix)
             base, extra, KL = tt(ix)
-            first_term.append(V_prime*base)
-            second_term.append((extra+base**2)*var_prime+(V_prime**2)*extra)
+            first_term.append(M_prime*base)
+            second_term.append((extra+base**2)*sigma_prime+(M_prime**2)*extra)
+            debug_term.append(extra)
             total_KL += KL.abs() + KL_prime
+            with torch.no_grad():
+                print(extra.mean())
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
             group_func = self.bmm_collate
         middle = group_func(first_term)
-        last_term = middle**2 + group_func(second_term)
+        gf = group_func(second_term)
+        last_term = middle**2 + gf
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
             last_term = last_term[torch.unbind(indices, dim=1)]
+        d = group_func(debug_term)
+        print('dbug:', d.mean())
+        print(gf.mean())
+        if last_term.mean()<0:
+            with torch.no_grad():
+                d = group_func(debug_term)
+                print('dbug:',d.mean())
+                print(last_term.mean())
+                print(gf.mean())
+                print(torch.mean(middle**2))
         return middle,last_term, total_KL
 
     def collect_core_outputs_reparametrization(self, indices):
