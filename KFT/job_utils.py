@@ -358,19 +358,22 @@ class job_object():
                 print(reg)
                 print(pred_loss)
                 print(y_pred.mean())
+                self.reset_()
                 ERROR = True
             if (y_pred == 0).all():
-                fac = self.train_config['reset']
-                print(f'dead model_reinit factor: {fac}')
-                for n, param in self.model.named_parameters():
-                    if 'core_param' in n:
-                        param.normal_(0, self.train_config['reset'])
-                self.train_config['reset'] = self.train_config['reset'] * 1.1
-
+                self.reset_()
             if p % self.train_config['train_loss_interval_print'] == 0:
                 print(f'reg_term it {p}: {reg.data}')
                 print(f'train_loss it {p}: {pred_loss.data}')
         return ERROR
+
+    def reset_(self):
+        fac = self.train_config['reset']
+        print(f'dead model_reinit factor: {fac}')
+        for n, param in self.model.named_parameters():
+            if 'core_param' in n:
+                param.normal_(0, self.train_config['reset'])
+        self.train_config['reset'] = self.train_config['reset'] * 1.1
 
     def correct_validation_loss(self,X, y, ):
         with torch.no_grad():

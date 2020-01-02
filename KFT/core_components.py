@@ -60,17 +60,16 @@ def lazy_mode_hadamard(T,vec,mode):
     return T
 
 class RFF(torch.nn.Module):
-
     def __init__(self, X, lengtscale,rand_seed=1,device=None):
         super(RFF, self).__init__()
         torch.random.manual_seed(rand_seed)
         self.n_input_feat = X.shape[1] # dimension of the original input
         self.n_feat = int(round((X.shape[0]**0.25)*math.log(X.shape[0])))#Michaels paper!
-
         print(f'I= {self.n_feat}')
         self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
         self.register_buffer('w' ,torch.randn(*(self.n_feat,self.n_input_feat)))
         self.register_buffer('b' ,torch.rand(*(self.n_feat, 1),device=device)*2.0*PI)
+
     def forward(self,X,dum_2=None):
         return torch.transpose(math.sqrt(2./float(self.n_feat))*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
 

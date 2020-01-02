@@ -485,8 +485,6 @@ class variational_KFT(KFT):
             second_term.append((extra+base**2)*sigma_prime+(M_prime**2)*extra)
             debug_term.append(extra)
             total_KL += KL.abs() + KL_prime
-            with torch.no_grad():
-                print(extra.mean())
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
@@ -497,9 +495,9 @@ class variational_KFT(KFT):
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
             last_term = last_term[torch.unbind(indices, dim=1)]
-        d = group_func(debug_term)
-        print('dbug:', d.mean())
-        print(gf.mean())
+        # d = group_func(debug_term)
+        # print('dbug:', d.mean())
+        # print(gf.mean())
         if last_term.mean()<0:
             with torch.no_grad():
                 d = group_func(debug_term)

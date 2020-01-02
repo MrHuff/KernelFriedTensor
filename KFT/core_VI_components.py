@@ -271,7 +271,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         self.register_buffer(f'n_const_{key}',torch.tensor(self.shape_list[key]).float())
 
     def fast_log_det(self,L):
-        return torch.log(torch.prod(L.diag()).abs()+1e-5)*2
+        return torch.log(torch.prod(L.diag())**2+1e-5)
 
     def get_trace_term_KL(self,key):
         if self.RFF_dict[key]:
@@ -323,6 +323,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         middle_term = torch.sum(ref * T)
         return tr_term + middle_term + log_term
 
+    def get_L(self,key):
+        D = getattr(self, f'D_{key}')
+        B = getattr(self, f'B_{key}')
+        L = torch.tril(B @ B.t()) + D
+        return L
+
     def build_cov(self,key):
         D = getattr(self,f'D_{key}')
         B = getattr(self,f'B_{key}')
@@ -365,24 +371,21 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
 
     def forward(self,indices):
         T = self.apply_kernels(self.core_param)
-        T_cross_sigma = self.apply_cross_kernel()
-        T_additional = self.apply_kernels(T_cross_sigma)
+        T_cross_sigma = self.apply_cross_kernel() #Fundamental error, think about kronecker product and flattening sigma_p instead
         if self.kernel_eval_mode:
             self.recalculate_priors()
         KL = self.calculate_KL()
         if self.full_grad:
-            return T,T_additional, KL
+            return T,T_cross_sigma, KL
         else:
             if len(indices.shape) > 1:
                 indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices],T_additional.permute(self.permutation_list)[indices], KL
+            return T.permute(self.permutation_list)[indices],T_cross_sigma.permute(self.permutation_list)[indices], KL
 
     def apply_cross_kernel(self):
         T = self.ones
-        T_D = self.ones
         for key, val in self.n_dict.items():
             if val is not None:
-                D = getattr(self, f'D_{key}') ** 2
                 if self.kernel_eval_mode:
                     X = getattr(self, f'kernel_data_{key}')
                     if self.deep_mode:
@@ -394,17 +397,16 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     else:
                         val = tmp_kernel_func(X).evaluate()
                 if not self.RFF_dict[key]:
-                    T_D = lazy_mode_hadamard(T_D, D * torch.diag(val).unsqueeze(-1), key)
-                    cov,_,_ = self.build_cov(key)
-                    T = lazy_mode_product(T, val*cov, key)
+                    B = self.get_L(key)
+                    vec_apply = torch.sum((val@B)**2,dim=1,keepdim=True)
+                    T = lazy_mode_hadamard(T,vec_apply,key)
                 else:
-                    cov_diag = torch.sum(val*2,dim=1,keepdim=True)
-                    T_D = lazy_mode_hadamard(T_D, D *cov_diag , key)
+                    D = getattr(self, f'D_{key}') ** 2
                     B = getattr(self, f'B_{key}')
-                    RFF_squared = row_outer_prod(B,val)
-                    T = lazy_mode_product(T,RFF_squared.t(), key)
-                    T = lazy_mode_product(T, RFF_squared, key)
-        return T+T_D
+                    vec_apply = val@B
+                    vec_apply = torch.sum((val.t()@vec_apply)**2,dim=1,keepdim=True)+D
+                    T = lazy_mode_hadamard(T,vec_apply,key)
+        return T
 
     def mean_forward(self,indices):
         """Do tensor ops"""
