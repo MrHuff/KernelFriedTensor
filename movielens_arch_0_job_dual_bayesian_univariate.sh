@@ -28,4 +28,4 @@ do
     --task reg > movielens_job_$i.out &
   sleep 10
 done
-
+wait
