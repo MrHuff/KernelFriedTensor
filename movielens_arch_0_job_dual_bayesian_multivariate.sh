@@ -7,7 +7,7 @@ do
     --max_R 10 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 1 \
-    --reg_para_b 100 \
+    --reg_para_b 1e5 \
     --fp_16 False \
     --fused True \
     --save_path movielens_job_arch_0_dual_bayesian_multivariate \

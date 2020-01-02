@@ -548,7 +548,7 @@ class job_object():
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True, False])
 
         if self.bayesian:
-            self.hyperparameter_space[f'reg_para'] = hp.uniform(f'reg_para', self.a, self.b)
+            self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
             for i in range(len(t_act)):
                 if self.latent_scale:
                     pass

@@ -4,9 +4,9 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
     --max_lr 1e0 \
-    --max_R 6 \
+    --max_R 8 \
     --PATH ./public_movielens_data/ \
-    --reg_para_a 1e-2 \
+    --reg_para_a 1e-3 \
     --reg_para_b 1 \
     --fp_16 False \
     --fused True \

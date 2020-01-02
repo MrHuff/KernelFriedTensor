@@ -403,8 +403,8 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     D = getattr(self, f'D_{key}') ** 2
                     B = getattr(self, f'B_{key}')
-                    vec_apply = val@B
-                    vec_apply = torch.sum((val.t()@vec_apply)**2,dim=1,keepdim=True)+D
+                    vec_apply = val.t()@B
+                    vec_apply = torch.sum((val@vec_apply)**2,dim=1,keepdim=True)+D
                     T = lazy_mode_hadamard(T,vec_apply,key)
         return T
 

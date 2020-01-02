@@ -495,16 +495,6 @@ class variational_KFT(KFT):
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
             last_term = last_term[torch.unbind(indices, dim=1)]
-        # d = group_func(debug_term)
-        # print('dbug:', d.mean())
-        # print(gf.mean())
-        if last_term.mean()<0:
-            with torch.no_grad():
-                d = group_func(debug_term)
-                print('dbug:',d.mean())
-                print(last_term.mean())
-                print(gf.mean())
-                print(torch.mean(middle**2))
         return middle,last_term, total_KL
 
     def collect_core_outputs_reparametrization(self, indices):
