@@ -45,11 +45,18 @@ def parse_args(args):
             del side_info[i]
     if args['kernels'] is None:
         args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']
+    if args['special_mode']==1:
+        for i,v in side_info.items():
+            side_info[i]['data'] = torch.ones_like(v['data'])
+    elif args['special_mode']==2:
+        for i,v in side_info.items():
+            side_info[i]['data'] = torch.randn_like(v['data'])
     primal_dims = list(shape)
     for key, val in side_info.items():
         print(key)
         print(val['data'].shape[1])
         primal_dims[key] = val['data'].shape[1]
+
     print(primal_dims)
     print(f'USING GPU:{gpu_choice}')
     print(shape)
