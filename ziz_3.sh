@@ -1,0 +1,4 @@
+dos2unix public_arch_0_job_dual_const.sh
+sh public_arch_0_job_dual_const.sh
+dos2unix public_arch_0_job_dual_noise.sh
+sh public_arch_0_job_dual_noise.sh
