@@ -4,7 +4,7 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
     --max_lr 1e0 \
-    --max_R 8 \
+    --max_R 6 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 1e-3 \
     --reg_para_b 1 \
@@ -22,9 +22,10 @@ do
     --init_max 1e-1 \
     --bayesian True \
     --mu_a 0 \
-    --mu_b 1e-2 \
+    --mu_b 0 \
     --sigma_a 0.5 \
     --sigma_b 3 \
+    --epochs 20 \
     --task reg > movielens_job_$i.out &
   sleep 10
 done

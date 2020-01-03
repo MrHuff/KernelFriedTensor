@@ -4,7 +4,7 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
     --max_lr 1e-1 \
-    --max_R 20 \
+    --max_R 15 \
     --PATH ./public_data/ \
     --reg_para_a 1 \
     --reg_para_b 100 \
@@ -22,7 +22,7 @@ do
     --multivariate True \
     --init_max 1.0 \
     --mu_a 0 \
-    --mu_b 1e-2 \
+    --mu_b 0 \
     --sigma_a 0.5 \
     --sigma_b 3 \
     --epochs 20 \

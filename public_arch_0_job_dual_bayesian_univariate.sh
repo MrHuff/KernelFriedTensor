@@ -22,7 +22,7 @@ do
     --multivariate False \
     --init_max 1.0 \
     --mu_a 0 \
-    --mu_b 1e-2 \
+    --mu_b 0 \
     --sigma_a 0.5 \
     --sigma_b 3 \
     --epochs 20 \
