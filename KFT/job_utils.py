@@ -210,7 +210,7 @@ def calculate_calibration_objective(predictions,indices):
     for i in range(indices.shape[1]):
         predictions[f'idx_{i}'] = indices[:,i].numpy()
     for cal in cal_list:
-        predictions[f'calibrated_{cal}'] = (predictions['y_true'] > predictions[f'{cal}%']) and (predictions['y_true'] < predictions[f'{100-cal}%'])
+        predictions[f'calibrated_{cal}'] = (predictions['y_true'] > predictions[f'{cal}%']) & (predictions['y_true'] < predictions[f'{100-cal}%'])
         _cal_rate = predictions[f'calibrated_{cal}'].sum() / len(predictions)
         print(_cal_rate)
         err = abs((1-2*cal/100)-_cal_rate)
