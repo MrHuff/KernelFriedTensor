@@ -177,6 +177,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             self.set_variational_parameters(key,val)
         self.noise_shape.append(r_2)
 
+    def toggle_mean_var(self,toggle):
+        self.core_param.requires_grad = toggle
+        for key in self.n_dict.keys():
+            getattr(self,f'D_{key}').requires_grad = not toggle
+            getattr(self, f'B_{key}').requires_grad = not toggle
+
     def kernel_train_mode_off(self):
         self.turn_on()
         self.kernel_eval_mode = False

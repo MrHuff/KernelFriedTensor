@@ -108,5 +108,6 @@ dependencies:
     - thrift==0.13.0
     - tqdm==4.36.1
     - xlearn==0.40a1
+    - seaborn==0.9.0
 prefix: /home/rhu/miniconda3/envs/KFT
 

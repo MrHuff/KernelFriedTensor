@@ -455,7 +455,8 @@ class variational_KFT(KFT):
         with torch.no_grad():
             for i, v in self.ii.items():
                 print(torch.mean(self.TT_cores[str(i)].core_param.abs()))
-                print(torch.mean(self.TT_cores[str(i)].variance_parameters))
+                if self.TT_cores[str(i)].__class__.__name__=='univariate_variational_kernel_TT':
+                    print(torch.mean(self.TT_cores[str(i)].variance_parameters))
                 if not self.old_setup:
                     print(torch.mean(self.TT_cores_prime[str(i)].core_param.abs()))
                     print(torch.mean(self.TT_cores_prime[str(i)].variance_parameters))
