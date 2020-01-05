@@ -23,7 +23,7 @@ do
     --init_max 1.0 \
     --mu_a 0 \
     --mu_b 0 \
-    --sigma_a 0.5 \
+    --sigma_a -1 \
     --sigma_b 3 \
     --epochs 20 \
     --task reg > public_job_$i.out &
