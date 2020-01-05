@@ -14,6 +14,8 @@ import timeit
 import multiprocessing as mp
 import pandas as pd
 
+cal_list = [5, 15, 25, 35, 45]
+cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
 def get_non_lin(non_lin_name):
     if non_lin_name=='relu':
         return torch.nn.ReLU()
@@ -138,40 +140,6 @@ def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component 
            0: {'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
            1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
            },
-        # 2: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0,1], 'r_1': 1, 'n_list': [shape[0],shape[1]], 'r_2': R, 'has_side_info': True,'r_1_latent':1,'r_2_latent':R_scale},
-        #     1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
-        # },
-        # 3: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-        #     1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
-        # },
-        # 4: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-        #     1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1, 2], 'r_1': R, 'n_list': [shape[1], shape[2]], 'r_2':  1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
-        # },
-        # 5: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-        #     1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
-        #     2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':1},
-        # },
-        # 6: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False,'r_1_latent':1,'r_2_latent':R_scale},
-        #     1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False,'r_1_latent':R_scale,'r_2_latent':R_scale},  # Magnitude of kernel sum
-        #     2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True,'r_1_latent':R_scale,'r_2_latent':1},
-        # },
-        # 7: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': True, 'r_1_latent': 1,'r_2_latent': R_scale},
-        #     1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': False, 'r_1_latent': R_scale,'r_2_latent': R_scale},  # Magnitude of kernel sum
-        #     2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
-        #         'r_2_latent': 1},
-        # },
-        # 8: {
-        #     0: {'primal_list':[primal_dims[0]],'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'has_side_info': False, 'r_1_latent': 1,'r_2_latent': R_scale},
-        #     1: {'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R, 'has_side_info': True, 'r_1_latent': R_scale,'r_2_latent': R_scale},  # Magnitude of kernel sum
-        #     2: {'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1, 'has_side_info': True, 'r_1_latent': R_scale,
-        #         'r_2_latent': 1},
-        # },
     }
     return TENSOR_ARCHITECTURES[i]
 
@@ -229,7 +197,7 @@ def opt_32_reinit(model,train_config,lr):
 
 def para_func(df):
     df.sort(axis=1)
-    percentiles_list = [5,10,15,20,25,50,75,80,85,90,95]
+    percentiles_list = cal_list + [100-el for el in reversed(cal_list)]
     data = []
     for p in percentiles_list:
         tmp = np.percentile(df,p,axis=1)
@@ -238,32 +206,17 @@ def para_func(df):
     return data
 
 def calculate_calibration_objective(predictions,indices):
-    predictions['calibrated_5'] = (predictions['y_true'] > predictions["5%"]) & (
-            predictions['y_true'] < predictions["95%"])
-    predictions['calibrated_10'] = (predictions['y_true'] > predictions["10%"]) & (
-            predictions['y_true'] < predictions["90%"])
-    predictions['calibrated_15'] = (predictions['y_true'] > predictions["15%"]) & (
-            predictions['y_true'] < predictions["85%"])
-    predictions['calibrated_20'] = (predictions['y_true'] > predictions["20%"]) & (
-            predictions['y_true'] < predictions["80%"])
-    predictions['calibrated_25'] = (predictions['y_true'] > predictions["25%"]) & (
-            predictions['y_true'] < predictions["75%"])
+    cal_list_error= []
     for i in range(indices.shape[1]):
         predictions[f'idx_{i}'] = indices[:,i].numpy()
-    cal_5 = predictions['calibrated_5'].sum() / len(predictions)
-    cal_10 = predictions['calibrated_10'].sum() / len(predictions)
-    cal_15 = predictions['calibrated_15'].sum() / len(predictions)
-    cal_20 = predictions['calibrated_20'].sum() / len(predictions)
-    cal_25 = predictions['calibrated_25'].sum() / len(predictions)
-    cal_5_err = abs(0.9 - cal_5)
-    cal_10_err = abs(0.8 - cal_10)
-    cal_15_err = abs(0.7 - cal_15)
-    cal_20_err = abs(0.6 - cal_20)
-    cal_25_err = abs(0.5 - cal_25)
-    cal_list = [cal_5_err, cal_10_err, cal_15_err, cal_20_err, cal_25_err]
-    total_cal_error = sum(cal_list)
-    cal_dict = {i: j for i, j in zip([5, 10, 15, 20, 25], [cal_5_err, cal_10_err, cal_15_err, cal_20_err, cal_25_err])}
-
+    for cal in cal_list:
+        predictions[f'calibrated_{cal}'] = (predictions['y_true'] > predictions[f'{cal}%']) and (predictions['y_true'] < predictions[f'{100-cal}%'])
+        _cal_rate = predictions[f'calibrated_{cal}'].sum() / len(predictions)
+        print(_cal_rate)
+        err = abs((1-2*cal/100)-_cal_rate)
+        cal_list_error.append(err)
+    total_cal_error = sum(cal_list_error)
+    cal_dict = {i: j for i, j in zip(cal_list, cal_list_error)}
     return total_cal_error,cal_dict ,predictions
 
 
@@ -274,8 +227,8 @@ def para_summary(df):
     p = mp.Pool(2)
     results = np.concatenate(p.map(para_func,inputs),axis=0)
     data = np.concatenate([mean.reshape(-1, 1), std.reshape(-1, 1),results], axis=1)
-    dataframe = pd.DataFrame(data,columns=["mean", "std", "5%", "10%", "15%", "20%", "25%", "50%", "75%", "80%", "85%",
-                                            "90%", "95%"])
+    print(["mean", "std"]+ cal_string_list)
+    dataframe = pd.DataFrame(data,columns=["mean", "std"]+ cal_string_list)
     p.close()
     return dataframe
 
@@ -412,7 +365,7 @@ class job_object():
 
     def train_loop(self, opt, loss_func, warmup=False):
         sub_epoch = self.train_config['sub_epoch_V']
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.train_config['patience'], factor=0.5)
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
         print_garbage()
         torch.cuda.empty_cache()
         for p in range(sub_epoch + 1):
@@ -529,14 +482,20 @@ class job_object():
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
             ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,toggle=True)
-            if self.bayesian:
-                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False,
-                                              toggle=False)
             if ERROR:
                 if self.bayesian:
                     return -np.inf, -np.inf,-np.inf, -np.inf,-np.inf, -np.inf,-np.inf
                 else:
                     return -np.inf, -np.inf
+        if self.bayesian:
+            print('sigma round')
+            for i in range(self.train_config['epochs']):
+                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False, toggle=False)
+                if ERROR:
+                    if self.bayesian:
+                        return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
+                    else:
+                        return -np.inf, -np.inf
         val_loss_final = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
         test_loss_final = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
         del opts
@@ -544,7 +503,10 @@ class job_object():
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
             print(val_loss_final,test_loss_final)
-            return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
+            print(total_cal_error_val,total_cal_error_test)
+            print(val_cal_dict)
+            print(test_cal_dict)
+            return total_cal_error_val-val_loss_final,total_cal_error_test-test_loss_final,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
         else:
             return val_loss_final,test_loss_final
 
@@ -683,7 +645,7 @@ class job_object():
                     torch.cuda.empty_cache()
                     if total_cal_error_test < self.best:
                         self.best = total_cal_error_test
-                        predictions.to_hdf(self.save_path + '/'+'VI_predictions.h5', key='VI')
+                        predictions.to_hdf(self.save_path + '/'+f'VI_predictions_{self.seed}.h5', key='VI')
                     return {'loss': total_cal_error_val,
                             'status': STATUS_OK,
                             'test_loss': total_cal_error_test,
@@ -797,7 +759,6 @@ class job_object():
         training_params['architecture'] = self.architecture
         training_params['deep_kernel'] = self.deep_kernel
         training_params['batch_ratio'] = parameters['batch_size_ratio']
-        training_params['patience'] = 50
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
         if self.bayesian:

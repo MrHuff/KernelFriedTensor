@@ -12,8 +12,11 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns; sns.set()
 
-def plot_VI(save_path,idx_list):
-    predictions = pd.read_hdf(save_path+'VI_predictions.h5')
+def plot_VI(save_path,idx_list,seed=None):
+    if seed is None:
+        predictions = pd.read_hdf(save_path+f'VI_predictions.h5')
+    else:
+        predictions = pd.read_hdf(save_path+f'VI_predictions_{seed}.h5')
     df = predictions.groupby(idx_list).agg(['sum','count'])
     cal_list = [5,10,15,20,25]
     fig, ax = plt.subplots(1, len(cal_list)+1,figsize=(30,20),gridspec_kw={'width_ratios':[1,1,1,1,1,0.05]})
@@ -36,15 +39,16 @@ def plot_VI(save_path,idx_list):
         ax[i].set_yticks([])
         ax[i].set_xticks([])
         ax[i].set_title(r'$\alpha$ = {}%'.format(rate))
-#        for item in ([ax[i].title, ax[i].xaxis.label, ax[i].yaxis.label]):
- #           item.set_fontsize(40)
-
     for item in ([ax[-1].title, ax[-1].xaxis.label, ax[-1].yaxis.label]+ax[-1].get_yticklabels()):
         item.set_fontsize(40)
     plt.subplots_adjust(wspace=0.05, hspace=0)
 
-    plt.savefig(save_path + 'VI_plot.png', bbox_inches = 'tight',
-        pad_inches = 0)
+    if seed is None:
+        plt.savefig(save_path + f'VI_plot.png', bbox_inches='tight',
+                    pad_inches=0)
+    else:
+        plt.savefig(save_path + f'VI_plot_{seed}.png', bbox_inches = 'tight',
+            pad_inches = 0)
 
 def get_test_errors(folder_path,metric_name,data_path):
     trial_files = os.listdir(folder_path)
@@ -65,7 +69,7 @@ def get_test_errors(folder_path,metric_name,data_path):
     df.to_csv(folder_path+'test_error_ref.csv')
 
 
-def post_process(folder_path,metric_name):
+def post_process(folder_path,metric_name,reverse=False):
     trial_files = os.listdir(folder_path)
     print(trial_files)
     metrics = []
@@ -74,8 +78,8 @@ def post_process(folder_path,metric_name):
         if '.p'==el[-2:]:
             print(el)
             trials = pickle.load(open(folder_path + el, "rb"))
-            best_res = sorted(trials.trials, key=lambda x: x['result'][metric_name], reverse=False)[0]['misc']['vals']
-            best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0]
+            best_res = sorted(trials.trials, key=lambda x: x['result'][metric_name], reverse=reverse)[0]['misc']['vals']
+            best_trial = sorted(trials.results, key=lambda x: x[metric_name], reverse=reverse)[0]
             metrics.append(best_trial)
             best_config.append(best_res)
     df = pd.DataFrame(metrics)
