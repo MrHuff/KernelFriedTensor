@@ -6,7 +6,7 @@ do
     --max_lr 1e0 \
     --max_R 20 \
     --PATH ./public_data/ \
-    --reg_para_a 1e-3 \
+    --reg_para_a 1e-4 \
     --reg_para_b 1e-1 \
     --fp_16 False \
     --fused True \
@@ -23,8 +23,8 @@ do
     --init_max 1.0 \
     --mu_a 0 \
     --mu_b 0 \
-    --sigma_a 0.5 \
-    --sigma_b 3 \
+    --sigma_a -0.5 \
+    --sigma_b 2 \
     --epochs 20 \
     --task reg > public_job_$i.out &
   sleep 10

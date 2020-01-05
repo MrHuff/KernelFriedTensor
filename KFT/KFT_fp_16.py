@@ -451,11 +451,20 @@ class variational_KFT(KFT):
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
-    def turn_off_mean(self):
+    def get_norms(self):
+        with torch.no_grad():
+            for i, v in self.ii.items():
+                print(torch.mean(self.TT_cores[str(i)].core_param.abs()))
+                print(torch.mean(self.TT_cores[str(i)].variance_parameters))
+                if not self.old_setup:
+                    print(torch.mean(self.TT_cores_prime[str(i)].core_param.abs()))
+                    print(torch.mean(self.TT_cores_prime[str(i)].variance_parameters))
+
+    def toggle(self,toggle):
         for i,v in self.ii.items():
-            self.TT_cores[str(i)].lock_mean()
+            self.TT_cores[str(i)].toggle_mean_var(toggle)
             if not self.old_setup:
-                self.TT_cores_prime[str(i)].lock_mean()
+                self.TT_cores_prime[str(i)].toggle_mean_var(toggle)
         return 0
 
     def collect_core_outputs_mean(self,indices):
@@ -473,7 +482,6 @@ class variational_KFT(KFT):
     def collect_core_outputs(self,indices):
         first_term = []
         second_term = []
-        debug_term = []
         total_KL = 0
         for i, v in self.ii.items():
             ix = indices[:, v]
@@ -483,7 +491,6 @@ class variational_KFT(KFT):
             base, extra, KL = tt(ix)
             first_term.append(M_prime*base)
             second_term.append((extra+base**2)*sigma_prime+(M_prime**2)*extra)
-            debug_term.append(extra)
             total_KL += KL.abs() + KL_prime
         if self.full_grad:
             group_func = self.edge_mode_collate
