@@ -26,6 +26,7 @@ do
     --sigma_a -1 \
     --sigma_b 3 \
     --epochs 20 \
+    --hyperits 10 \
     --task reg > movielens_job_$i.out &
   sleep 10
 done
