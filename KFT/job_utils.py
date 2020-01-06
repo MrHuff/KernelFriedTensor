@@ -413,6 +413,8 @@ class job_object():
             opt = opts[lr]
             if self.bayesian:
                 self.model.toggle(toggle)
+                if not toggle and lr=='ls_lr':
+                    continue
             ERROR = self.train_loop(opt, loss_func, warmup=warmup)
             print_garbage()
             if ERROR:
@@ -477,25 +479,16 @@ class job_object():
         opts = self.opt_reinit( lrs, warmup=warmup)
         return  opts, loss_func, ERROR, train_list, train_dict
 
-    def train(self):
+    def train(self,toggle=False):
         self.train_config['reset'] = 1.0
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
-            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,toggle=True)
+            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,toggle=toggle)
             if ERROR:
                 if self.bayesian:
                     return -np.inf, -np.inf,-np.inf, -np.inf,-np.inf, -np.inf,-np.inf
                 else:
                     return -np.inf, -np.inf
-        if self.bayesian:
-            print('sigma round')
-            for i in range(self.train_config['epochs']):
-                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False, toggle=False)
-                if ERROR:
-                    if self.bayesian:
-                        return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
-                    else:
-                        return -np.inf, -np.inf
         val_loss_final = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
         test_loss_final = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
         del opts
@@ -599,7 +592,9 @@ class job_object():
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:
-            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train()
+            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(toggle=True)
+            print('sigma train')
+            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(toggle=False)
             del self.model
             del self.dataloader
             torch.cuda.empty_cache()
