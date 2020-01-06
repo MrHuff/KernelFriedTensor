@@ -18,7 +18,7 @@ def plot_VI(save_path,idx_list,seed=None):
     else:
         predictions = pd.read_hdf(save_path+f'VI_predictions_{seed}.h5')
     df = predictions.groupby(idx_list).agg(['sum','count'])
-    cal_list = [5,10,15,20,25]
+    cal_list = [5,15,25,35,45]
     fig, ax = plt.subplots(1, len(cal_list)+1,figsize=(30,20),gridspec_kw={'width_ratios':[1,1,1,1,1,0.05]})
     ax[0].get_shared_y_axes().join(*ax[1:5])
 
@@ -69,7 +69,7 @@ def get_test_errors(folder_path,metric_name,data_path):
     df.to_csv(folder_path+'test_error_ref.csv')
 
 
-def post_process(folder_path,metric_name,reverse=False):
+def post_process(folder_path,metric_name,reverse=False,bayesian = False):
     trial_files = os.listdir(folder_path)
     print(trial_files)
     metrics = []
