@@ -520,7 +520,14 @@ class job_object():
             self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
             for i in range(len(t_act)):
                 if self.latent_scale:
-                    pass
+                    self.hyperparameter_space[f'mu_prior_s_{i}'] = hp.uniform(f'mu_prior_s_{i}', self.mu_a,
+                                                                                  self.mu_b)
+                    self.hyperparameter_space[f'sigma_prior_s_{i}'] = hp.uniform(f'sigma_prior_s_{i}',
+                                                                                     self.sigma_a, self.sigma_b)
+                    self.hyperparameter_space[f'mu_prior_b_{i}'] = hp.uniform(f'mu_prior_b_{i}', self.mu_a,
+                                                                                  self.mu_b)
+                    self.hyperparameter_space[f'sigma_prior_b_{i}'] = hp.uniform(f'sigma_prior_b_{i}',
+                                                                                     self.sigma_a, self.sigma_b)
                 else:
                     self.hyperparameter_space[f'mu_prior_prime_{i}'] = hp.uniform(f'mu_prior_prime_{i}', self.mu_a, self.mu_b)
                     self.hyperparameter_space[f'sigma_prior_prime_{i}'] = hp.uniform(f'sigma_prior_prime_{i}', self.sigma_a, self.sigma_b)
@@ -725,7 +732,10 @@ class job_object():
             if self.bayesian:
                 items['multivariate'] = self.multivariate
                 if self.latent_scale:
-                    pass
+                    items['mu_prior_s'] = parameters[f'mu_prior_s_{key}']
+                    items['sigma_prior_s'] = parameters[f'sigma_prior_s_{key}']
+                    items['mu_prior_b'] = parameters[f'mu_prior_b_{key}']
+                    items['sigma_prior_b'] = parameters[f'sigma_prior_b_{key}']
                 else:
                     items['mu_prior_prime'] = parameters[f'mu_prior_prime_{key}']
                     items['sigma_prior_prime'] = parameters[f'sigma_prior_prime_{key}']

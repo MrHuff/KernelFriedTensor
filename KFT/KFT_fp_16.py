@@ -562,8 +562,8 @@ class variational_KFT(KFT):
 
 
 class varitional_KFT_scale(KFT_scale):
-    def __init__(self,initialization_data,KL_weight,cuda=None,config=None,old_setup=False):
-        super(varitional_KFT_scale, self).__init__(initialization_data,cuda,config,old_setup)
+    def __init__(self,initialization_data,cuda=None,config=None,old_setup=False,lambdas=None):
+        super(varitional_KFT_scale, self).__init__(initialization_data,lambdas,cuda,config,old_setup)
         tmp_dict = {}
         tmp_dict_s = {}
         tmp_dict_b = {}
@@ -577,16 +577,16 @@ class varitional_KFT_scale(KFT_scale):
                                                               r_2=v['r_2_latent'],
                                                               cuda=cuda,
                                                               config=config,
-                                                              mu_prior=v['mu_prior'],
-                                                              sigma_prior=v['sigma_prior']
+                                                              mu_prior=v['mu_prior_s'],
+                                                              sigma_prior=v['sigma_prior_s'],
                                                           )
             tmp_dict_b[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
                                                           n_list=v['n_list'],
                                                           r_2=v['r_2_latent'],
                                                           cuda=cuda,
                                                           config=config,
-                                                          mu_prior=v['mu_prior'],
-                                                          sigma_prior=v['sigma_prior']
+                                                          mu_prior=v['mu_prior_b'],
+                                                          sigma_prior=v['sigma_prior_b']
 
                                                           )
             if v['has_side_info']:
@@ -684,7 +684,7 @@ class varitional_KFT_scale(KFT_scale):
             bias_var.append(var_b)
             core.append(base)
             core_var.append(extra)
-            total_KL+= KL_s+KL_b+KL
+            total_KL+= KL_s+KL_b+KL.abs()
 
         if self.full_grad:
             group_func = self.edge_mode_collate
@@ -707,3 +707,23 @@ class varitional_KFT_scale(KFT_scale):
     def forward(self,indices):
         middle_term,third_term,reg = self.collect_core_outputs(indices)
         return middle_term,third_term,reg
+
+    def toggle(self, toggle):
+        for i, v in self.ii.items():
+            self.TT_cores[str(i)].toggle_mean_var(toggle)
+            if not self.old_setup:
+                self.TT_cores_s[str(i)].toggle_mean_var(toggle)
+                self.TT_cores_b[str(i)].toggle_mean_var(toggle)
+        return 0
+
+    def get_norms(self):
+        with torch.no_grad():
+            for i, v in self.ii.items():
+                print(torch.mean(self.TT_cores[str(i)].core_param.abs()))
+                if self.TT_cores[str(i)].__class__.__name__ == 'univariate_variational_kernel_TT':
+                    print(torch.mean(self.TT_cores[str(i)].variance_parameters))
+                if not self.old_setup:
+                    print(torch.mean(self.TT_cores_s[str(i)].core_param.abs()))
+                    print(torch.mean(self.TT_cores_s[str(i)].variance_parameters))
+                    print(torch.mean(self.TT_cores_b[str(i)].core_param.abs()))
+                    print(torch.mean(self.TT_cores_b[str(i)].variance_parameters))
