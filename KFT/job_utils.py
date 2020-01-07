@@ -335,6 +335,7 @@ class job_object():
             if 'core_param' in n:
                 param.normal_(0, self.train_config['reset'])
         self.train_config['reset'] = self.train_config['reset'] * 1.1
+        self.train_config['V_lr'] = self.train_config['V_lr']/10
 
     def correct_validation_loss(self,X, y, ):
         with torch.no_grad():
@@ -395,7 +396,8 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-                self.model.get_norms()
+                if self.bayesian:
+                    self.model.get_norms()
             ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
             if ERROR:
                 return ERROR
