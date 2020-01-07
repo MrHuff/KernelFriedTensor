@@ -637,7 +637,7 @@ class job_object():
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
-        for i in range(10):
+        for i in range(2):
             try:
                 torch.cuda.empty_cache()
                 get_free_gpu(10)  # should be 0 between calls..

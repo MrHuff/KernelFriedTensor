@@ -1,5 +1,3 @@
-dos2unix public_arch_0_job_dual_bayesian_univariate.sh
-sh public_arch_0_job_dual_bayesian_univariate.sh
 dos2unix public_arch_0_job_dual_bayesian_multivariate_ls.sh
 sh public_arch_0_job_dual_bayesian_multivariate_ls.sh
 dos2unix public_arch_0_job_dual_bayesian_univariate_ls.sh
