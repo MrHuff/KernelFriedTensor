@@ -221,9 +221,9 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     mat = val + getattr(self,f'reg_diag_cholesky_{key}')
                     self.register_buffer( f'priors_inv_{key}', mat)
                     if len(self.shape_list) > 3:
-                        prior_log_det = -gpytorch.log_det(mat) * mat.shape[0]
+                        prior_log_det = -gpytorch.logdet(mat) * mat.shape[0]
                     else:
-                        prior_log_det = -gpytorch.log_det(mat)
+                        prior_log_det = -gpytorch.logdet(mat)
                 self.register_buffer(f'prior_log_det_{key}', prior_log_det)
 
     def set_variational_parameters(self,key,val):
@@ -255,9 +255,9 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 RFF_dim_const = mat.shape[0]-R
                 self.register_buffer(f'RFF_dim_const_{key}',torch.tensor(RFF_dim_const))
                 if len(self.shape_list)>3:
-                    prior_log_det = -(gpytorch.log_det(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(gpytorch.logdet(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
                 else:
-                    prior_log_det = -(gpytorch.log_det(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(gpytorch.logdet(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
             setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))
         else:
@@ -265,9 +265,9 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             self.register_buffer(f'reg_diag_cholesky_{key}',torch.eye(val.shape[0],device=self.device)*1e-3)
             mat  = val + getattr(self,f'reg_diag_cholesky_{key}')
             if len(self.shape_list) > 3:
-                prior_log_det = -gpytorch.log_det(mat)*(mat.shape[0])
+                prior_log_det = -gpytorch.logdet(mat)*(mat.shape[0])
             else:
-                prior_log_det = -gpytorch.log_det(mat)
+                prior_log_det = -gpytorch.logdet(mat)
             setattr(self, f'D_{key}', torch.nn.Parameter(1e-3*torch.ones(mat.shape[0], 1), requires_grad=True))
             self.register_buffer(f'priors_inv_{key}', mat)
             setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))

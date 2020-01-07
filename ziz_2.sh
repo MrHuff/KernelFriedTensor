@@ -1,5 +1,4 @@
-dos2unix movielens_arch_0_job_dual_const.sh
-sh movielens_arch_0_job_dual_const.sh
-dos2unix movielens_arch_0_job_dual_noise.sh
-sh movielens_arch_0_job_dual_noise.sh
-
+dos2unix movielens_arch_0_job_dual_bayesian_multivariate_ls.sh
+sh movielens_arch_0_job_dual_bayesian_multivariate_ls.sh
+dos2unix movielens_arch_0_job_dual_bayesian_univariate_ls.sh
+sh movielens_arch_0_job_dual_bayesian_univariate_ls.sh
