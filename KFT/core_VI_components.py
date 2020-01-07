@@ -4,7 +4,7 @@ tensorly.set_backend('pytorch')
 import gpytorch
 import math
 import timeit
-from KFT.core_components import TT_component,TT_kernel_component,lazy_mode_product,lazy_mode_hadamard,row_outer_prod,edge_mode_product
+from KFT.core_components import TT_component,TT_kernel_component,lazy_mode_product,lazy_mode_hadamard,transpose_khatri_rao,edge_mode_product
 PI  = math.pi
 torch.set_printoptions(profile="full")
 
@@ -111,7 +111,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                     if not self.RFF_dict[key]:
                         T = lazy_mode_product(T, val*val, key)
                     else:
-                        RFF_squared = row_outer_prod(val,val)
+                        RFF_squared = transpose_khatri_rao(val, val)
                         T = lazy_mode_product(T,RFF_squared.t(), key)
                         T = lazy_mode_product(T, RFF_squared, key)
                 else:
@@ -209,7 +209,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                     sig_p_2 = getattr(self, f'sig_p_2_{key}')
                     raw_cov = getattr(self,f'Phi_T_{key}')
                     self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
-                    eye = getattr(self,f'eye_{key}')
+                    eye = getattr(self,f'prior_eye_{key}')
                     RFF_dim_const = getattr(self,f'RFF_dim_const_{key}')
                     if len(self.shape_list) > 3:
                         prior_log_det = -(gpytorch.logdet(raw_cov.float() + (eye * sig_p_2).float()) * mat.shape[0] + torch.log(
@@ -232,17 +232,17 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         if self.RFF_dict[key]:
             if val is None:
                 R = int(round(math.log(self.shape_list[key])))
-                self.register_buffer(f'sig_p_2_{key}',torch.tensor(1.,device=self.device))
+                self.register_buffer(f'sig_p_2_{key}', torch.tensor(1., device=self.device))
                 eye = torch.eye(R).to(self.device)
-                self.register_buffer(f'eye_{key}',eye)
-                self.register_buffer(f'r_const_{key}',torch.tensor(R).float())
-                self.register_buffer(f'Phi_T_{key}',torch.ones_like(eye))
-                self.register_buffer(f'Phi_T_trace_{key}',eye.mean())
-                self.register_buffer(f'RFF_dim_const_{key}',torch.tensor(0))
+                self.register_buffer(f'eye_{key}', eye)
+                self.register_buffer(f'r_const_{key}', torch.tensor(R).float())
+                self.register_buffer(f'Phi_T_{key}', torch.ones_like(eye))
+                self.register_buffer(f'Phi_T_trace_{key}', eye.sum())
+                self.register_buffer(f'RFF_dim_const_{key}', torch.tensor(0))
                 prior_log_det = torch.tensor(0)
             else:
                 mat  = val
-                R = mat.shape[1]
+                R = int(round(math.log(self.n_dict[key].shape[0])))
                 self.register_buffer(f'sig_p_2_{key}',torch.tensor(1e-2))
                 eye = torch.eye(R,device=self.device)
                 self.register_buffer(f'eye_{key}',eye)
@@ -250,14 +250,15 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 self.register_buffer(f'Phi_T_{key}',mat.t()@mat)
                 sig_p_2 = getattr(self, f'sig_p_2_{key}')
                 raw_cov = getattr(self,f'Phi_T_{key}')
-                self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
-                self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().mean())
+                self.register_buffer(f'Phi_T_trace_{key}',raw_cov.diag().sum())
                 RFF_dim_const = mat.shape[0]-R
                 self.register_buffer(f'RFF_dim_const_{key}',torch.tensor(RFF_dim_const))
+                self.register_buffer(f'prior_eye_{key}',torch.eye(mat.shape[1],device=self.device))
+                prior_eye = getattr(self,f'prior_eye_{key}')
                 if len(self.shape_list)>3:
-                    prior_log_det = -(gpytorch.logdet(raw_cov+eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(gpytorch.logdet(raw_cov+prior_eye*sig_p_2))*(mat.shape[0])+ torch.log(sig_p_2)*(RFF_dim_const)
                 else:
-                    prior_log_det = -(gpytorch.logdet(raw_cov+eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
+                    prior_log_det = -(gpytorch.logdet(raw_cov+prior_eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
             setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))
         else:
@@ -286,7 +287,11 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             sig_p_2 = getattr(self,f'sig_p_2_{key}')
             cov = B.t()@B
             B_times_B_sum = torch.sum(B*B)
-            trace_term = torch.sum(cov*getattr(self,f'Phi_T_{key}')) + sig_p_2*B_times_B_sum + D*getattr(self,f'Phi_T_trace_{key}') + D*sig_p_2*getattr(self,f'n_const_{key}')
+            if self.n_dict[key] is not None:
+                C = transpose_khatri_rao(B,self.n_dict[key])
+            else:
+                C = B
+            trace_term = torch.sum(C.t()@C) + sig_p_2*B_times_B_sum + D*getattr(self,f'Phi_T_trace_{key}') + D*sig_p_2*getattr(self,f'n_const_{key}')
         else:
             cov,D,B = self.build_cov(key)
             trace_term  = torch.sum(cov*getattr(self,f'priors_inv_{key}'))

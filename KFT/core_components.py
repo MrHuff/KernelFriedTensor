@@ -11,13 +11,13 @@ import numpy as np
 PI  = math.pi
 torch.set_printoptions(profile="full")
 
-def row_outer_prod(x,y):
+def transpose_khatri_rao(x, y):
     """
     :param x: n x c
     :param y: n x d
     :return: n x (cd)
     """
-    y = y.unsqueeze(-1).expand(-1,-1,y.shape[1]).permute(0,2,1)
+    y = y.unsqueeze(-1).expand(-1,-1,x.shape[1]).permute(0,2,1)
     return torch.einsum('ij,ijk->ijk', x, y).flatten(1)
 
 def edge_mode_product(T,also_T,mode_T, mode_also_T):
