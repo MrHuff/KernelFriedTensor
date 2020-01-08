@@ -39,6 +39,7 @@ def plot_VI(save_path,idx_list,seed=None):
         ax[i].set_yticks([])
         ax[i].set_xticks([])
         ax[i].set_title(r'$\alpha$ = {}%'.format(rate))
+        ax[i].title.set_fontsize(40)
     for item in ([ax[-1].title, ax[-1].xaxis.label, ax[-1].yaxis.label]+ax[-1].get_yticklabels()):
         item.set_fontsize(40)
     plt.subplots_adjust(wspace=0.05, hspace=0)
