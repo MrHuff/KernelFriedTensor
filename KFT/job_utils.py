@@ -13,7 +13,7 @@ import numpy as np
 import timeit
 import multiprocessing as mp
 import pandas as pd
-
+import shutil
 cal_list = [5, 15, 25, 35, 45]
 cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
 def get_non_lin(non_lin_name):
@@ -649,7 +649,9 @@ class job_object():
                         torch.cuda.empty_cache()
                         if total_cal_error_test < self.best:
                             self.best = total_cal_error_test
-                            predictions.to_hdf(self.save_path + '/'+f'VI_predictions_{self.seed}.h5', key='VI')
+                            if os.path.exists(self.save_path + '/'+f'VI_predictions_{self.seed}'):
+                                shutil.rmtree(self.save_path + '/'+f'VI_predictions_{self.seed}')
+                            predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
                         return {'loss': total_cal_error_val,
                                 'status': STATUS_OK,
                                 'test_loss': total_cal_error_test,

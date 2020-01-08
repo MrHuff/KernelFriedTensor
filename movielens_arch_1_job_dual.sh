@@ -7,13 +7,13 @@ do
     --max_R 60 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 0 \
-    --reg_para_b 2 \
+    --reg_para_b 1e-7 \
     --fp_16 False \
     --fused True \
     --save_path movielens_job_arch_1_dual \
     --seed $i \
     --tensor_name all_data.pt \
-    --architecture 4 \
+    --architecture 1 \
     --side_info_order 1 2 \
     --temporal_tag 2 \
     --delete_side_info 1 \
