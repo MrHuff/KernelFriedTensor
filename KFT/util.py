@@ -83,9 +83,22 @@ def post_process(folder_path,metric_name,reverse=False,bayesian = False):
             metrics.append(best_trial)
             best_config.append(best_res)
     df = pd.DataFrame(metrics)
+    print(df.columns)
+    if bayesian:
+        for f in ['val_cal_dict', 'test_cal_dict']:
+            dict_list = df[f].tolist()
+            dict_list = [x for x in dict_list if x == x]
+            print(dict_list)
+            dict_df = pd.DataFrame(dict_list)
+            df = df.drop([f],axis=1)
+            df = pd.concat([df,dict_df],axis=1)
+            df[f'{f}_tot_error'] = dict_df.sum(axis=1)
+        df['val_loss_final'] = df['val_loss_final'].astype(float)
+        df['test_loss_final'] = df['test_loss_final'].astype(float)
+
+    print(df)
     df.to_csv(folder_path+'results.csv')
     df_config = pd.DataFrame(best_config)
-    print(df)
     print(df_config)
     df = df.describe()
     df = df.round(3)
