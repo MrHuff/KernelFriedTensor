@@ -103,6 +103,8 @@ def post_process(folder_path,metric_name,reverse=False,bayesian = False):
     print(df_config)
     df = df.describe()
     df = df.round(3)
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+        print(df)
     df.to_csv(folder_path+'summary.csv')
     df_config.to_csv(folder_path+'config.csv')
 def generate_timestamp_side_info(sorted_timestamp_data):
