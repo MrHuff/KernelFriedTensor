@@ -7,7 +7,7 @@ do
     --max_R 12 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 0 \
-    --reg_para_b 1e-3 \
+    --reg_para_b 1e-5 \
     --fp_16 False \
     --fused True \
     --save_path movielens_job_arch_0_dual_noise \

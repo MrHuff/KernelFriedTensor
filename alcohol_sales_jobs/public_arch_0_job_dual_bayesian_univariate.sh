@@ -24,7 +24,7 @@ do
     --mu_a 0 \
     --mu_b 0 \
     --sigma_a -1 \
-    --sigma_b 3 \
+    --sigma_b 0 \
     --epochs 20 \
     --hyperits 10 \
     --task reg > public_job_$i.out &

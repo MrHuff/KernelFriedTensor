@@ -57,7 +57,7 @@ def plot_VI(save_path,idx_list,seed=None):
         plt.savefig(save_path + f'VI_plot_{seed}.png', bbox_inches = 'tight',
             pad_inches = 0)
 
-def get_test_errors(folder_path,metric_name,data_path):
+def get_test_errors(folder_path,metric_name,data_path,reverse=False,):
     trial_files = os.listdir(folder_path)
     print(trial_files)
     metrics = []
@@ -66,9 +66,11 @@ def get_test_errors(folder_path,metric_name,data_path):
                                            bs_ratio=1.0)
         var_Y_test = dataloader.Y_te.var().numpy()
         for el in trial_files:
-            if ('results' not in el and 'test_error_ref' not in el) and str(i) in el:
+            if '.p' == el[-2:] and (f'_{i}.p' in el) :
                 trials = pickle.load(open(folder_path + el, "rb"))
-                test_error = (1+sorted(trials.results, key=lambda x: x[metric_name], reverse=False)[0][metric_name])*var_Y_test
+                r_2 = abs(sorted(trials.results, key=lambda x: x[metric_name], reverse=reverse)[0][metric_name])
+                test_error = ((1-r_2)*var_Y_test)**0.5
+                print(test_error)
                 metrics.append([test_error,var_Y_test])
     df = pd.DataFrame(metrics)
     df = df.describe()

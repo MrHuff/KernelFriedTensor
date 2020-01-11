@@ -11,7 +11,7 @@ torch.set_printoptions(profile="full")
 class variational_TT_component(TT_component):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,prime=False,sub_R=1,mu_prior=0,sigma_prior=-1):
         super(variational_TT_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,prime=prime,sub_R=sub_R)
-        self.variance_parameters = torch.nn.Parameter(-3*torch.ones(*self.shape_list),requires_grad=True)
+        self.variance_parameters = torch.nn.Parameter(-2*torch.ones(*self.shape_list),requires_grad=True)
         self.register_buffer('mu_prior',torch.tensor(mu_prior))
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
 
@@ -72,7 +72,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0,mu_prior=0,sigma_prior=-1):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                  kernel_para_dict, cuda, config, init_scale)
-        self.variance_parameters = torch.nn.Parameter(-3*torch.ones(*self.shape_list),requires_grad=True)
+        self.variance_parameters = torch.nn.Parameter(-2*torch.ones(*self.shape_list),requires_grad=True)
         self.register_buffer('mu_prior', torch.tensor(mu_prior))
         self.register_buffer('sigma_prior', torch.tensor(sigma_prior))
 

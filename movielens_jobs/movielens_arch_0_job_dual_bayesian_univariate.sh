@@ -6,8 +6,8 @@ do
     --max_lr 1e-1 \
     --max_R 6 \
     --PATH ./public_movielens_data/ \
-    --reg_para_a 1e-2 \
-    --reg_para_b 2e0 \
+    --reg_para_a 3 \
+    --reg_para_b 10 \
     --fp_16 False \
     --fused True \
     --save_path movielens_job_arch_0_dual_bayesian_univariate \
@@ -23,8 +23,8 @@ do
     --bayesian True \
     --mu_a 0 \
     --mu_b 0 \
-    --sigma_a -1 \
-    --sigma_b 3 \
+    --sigma_a -2 \
+    --sigma_b 0 \
     --epochs 20 \
     --hyperits 10 \
     --task reg > movielens_job_$i.out &
