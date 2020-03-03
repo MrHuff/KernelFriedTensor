@@ -10,9 +10,10 @@ from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,p
 from sklearn import metrics
 import time
 import numpy as np
-import timeit
 import multiprocessing as mp
 import pandas as pd
+import pykeops
+
 cal_list = [5, 15, 25, 35, 45]
 cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
 def get_non_lin(non_lin_name):
@@ -45,7 +46,7 @@ def parse_args(args):
         for i in args['delete_side_info']:
             del side_info[i]
     if args['kernels'] is None:
-        args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']
+        args['kernels'] = ['rbf']#['matern_1', 'matern_2', 'matern_3', 'rbf']
     if args['special_mode']==1:
         for i,v in side_info.items():
             side_info[i]['data'] = torch.ones_like(v['data'])
@@ -57,7 +58,6 @@ def parse_args(args):
         print(key)
         print(val['data'].shape[1])
         primal_dims[key] = val['data'].shape[1]
-
     print(primal_dims)
     print(f'USING GPU:{gpu_choice}')
     print(shape)
@@ -167,9 +167,6 @@ class stableBCEwithlogits(_Loss):
 
 def analytical_reconstruction_error_VI(y,middle_term,last_term):
     loss = torch.mean(y**2 -2*y*middle_term+last_term)
-    # if loss<0:
-    #     with torch.no_grad():
-    #         print(torch.mean(y**2),torch.mean(2*y*middle_term),torch.mean(last_term))
     return loss
 
 def auc_check(y_pred,Y):
@@ -184,7 +181,6 @@ def print_garbage():
     for obj in gc.get_objects():
         try:
             if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                # print(type(obj), obj.size())
                 obj_list.append(obj)
         except:
             pass
@@ -278,6 +274,8 @@ class job_object():
         self.sigma_a = configs['sigma_a']
         self.mu_b = configs['mu_b']
         self.sigma_b = configs['sigma_b']
+        if not self.task=='reg':
+            self.pos_weight = configs['pos_weight']
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
@@ -378,14 +376,22 @@ class job_object():
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
+            start = time.time()
             total_loss, reg, pred_loss, y_pred = self.correct_forward_loss(X, y,loss_func)
+            end = time.time()
+            print(f'forward time: {end-start}')
             opt.zero_grad()
+            start = time.time()
             if self.train_config['fp_16'] and not warmup:
                 with self.train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
                     loss_scaled.backward()
             else:
                 total_loss.backward()
             opt.step()
+            end = time.time()
+            print(f'backward time: {end-start}')
+
+
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
                 torch.cuda.empty_cache()
@@ -600,7 +606,7 @@ class job_object():
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:
-            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(toggle=True)
+            self.train(toggle=True)
             print('sigma train')
             total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(toggle=False)
             del self.model
@@ -639,31 +645,32 @@ class job_object():
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(2):
-            try:
-                torch.cuda.empty_cache()
-                get_free_gpu(10)  # should be 0 between calls..
-                if self.bayesian:
-                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        if total_cal_error_test < self.best:
-                            self.best = total_cal_error_test
-                            predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
-                        return {'loss': total_cal_error_val,
-                                'status': STATUS_OK,
-                                'test_loss': total_cal_error_test,
-                                'val_cal_dict':val_cal_dict,
-                                'test_cal_dict':test_cal_dict,
-                                'val_loss_final':val_loss_final,
-                                'test_loss_final':test_loss_final}
-                else:
-                    val_loss_final, test_loss_final = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            except Exception as e:
-                print(e)
-                torch.cuda.empty_cache()
+        # try:
+        #     pykeops.clean_pykeops()  # just in case old build files are still present
+            torch.cuda.empty_cache()
+            get_free_gpu(10)  # should be 0 between calls..
+            if self.bayesian:
+                total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    if total_cal_error_test < self.best:
+                        self.best = total_cal_error_test
+                        predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
+                    return {'loss': total_cal_error_val,
+                            'status': STATUS_OK,
+                            'test_loss': total_cal_error_test,
+                            'val_cal_dict':val_cal_dict,
+                            'test_cal_dict':test_cal_dict,
+                            'val_loss_final':val_loss_final,
+                            'test_loss_final':test_loss_final}
+            else:
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
+            # except Exception as e:
+            # print(e)
+            torch.cuda.empty_cache()
         return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
     def get_kernel_vals(self,desc):
@@ -767,6 +774,9 @@ class job_object():
         training_params['batch_ratio'] = parameters['batch_size_ratio']
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
+        if not self.task=='reg':
+            training_params['pos_weight'] = self.pos_weight
+
         if self.bayesian:
             training_params['sigma_y'] = parameters['reg_para']
         if self.deep_kernel:

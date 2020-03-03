@@ -1,3 +1,9 @@
+
+
+
+
+
+
 # from pykeops.torch import KernelSolve
 # from KFT.job_utils import run_job_func
 # import warnings
@@ -41,12 +47,32 @@
 #     # b = torch.tensor(1e-6).half().cuda()
 #     # print(a+b)
 
-import torch
-from sklearn.preprocessing import StandardScaler
-from KFT.util import process_old_setup,concat_old_side_info
-from KFT.util import post_process
 
 if __name__ == '__main__':
+    import torch
+    from pykeops.torch.kernel_product.kernels import Kernel, kernel_product
+    import pykeops
+    # pykeops.clean_pykeops()  # just in case old build files are still present
+    x = torch.randn(1000, 3, requires_grad=True)
+    y = torch.randn(2000, 3, requires_grad=True)
+    b = torch.randn(2000, 2, requires_grad=True)
+    #
+    # Pre-defined kernel: using custom expressions is also possible!
+    # Notice that the parameter sigma is a dim-1 vector, *not* a scalar:
+    sigma = torch.nn.Parameter(torch.tensor([.5]),requires_grad=True)
+    print(sigma.shape)
+    params = {
+
+        "id": Kernel("gaussian(x,y)"),
+        "gamma": .5 / sigma ** 2,
+    }
+    #
+    # Depending on the inputs' types, 'a' is a CPU or a GPU variable.
+    # It can be differentiated wrt. x, y, b and sigma.
+    a = kernel_product(params, x, y, b)
+    print(a)
+    torch.dot(a.view(-1), torch.ones_like(a).view(-1)).backward()
+    print(sigma.grad)
     # post_process('./private_job_arch_0/','test_R2')
     # n,m,t = torch.load('./tensor_data/side_info.pt')
     # print(t)
@@ -56,4 +82,4 @@ if __name__ == '__main__':
     #     location_scaled = torch.tensor(scaler_location.fit_transform(location))
     #     torch.save(location_scaled, f'./tensor_data/{name}_tensor_400000_scaled.pt')
     # process_old_setup('./tensor_data/','data_tensor_400000.pt')
-    concat_old_side_info('./tensor_data/',['location_tensor_400000_scaled.pt','article_tensor_400000_scaled.pt','time_tensor_400000.pt'])
+    # concat_old_side_info('./tensor_data/',['location_tensor_400000_scaled.pt','article_tensor_400000_scaled.pt','time_tensor_400000.pt'])
