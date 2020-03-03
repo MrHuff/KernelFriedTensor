@@ -50,16 +50,18 @@
 
 if __name__ == '__main__':
     import torch
+    import time
     from pykeops.torch.kernel_product.kernels import Kernel, kernel_product
     import pykeops
     # pykeops.clean_pykeops()  # just in case old build files are still present
-    x = torch.randn(1000, 3, requires_grad=True)
-    y = torch.randn(2000, 3, requires_grad=True)
-    b = torch.randn(2000, 2, requires_grad=True)
+    x = torch.randn(4000, 3000, requires_grad=True) #Keops really slow for "wide matrices". Needs to be adjusted. 
+    # y = torch.randn(2000, 3, requires_grad=True)
+    b = torch.randn(4000, 30, requires_grad=True)
+    print(b.shape)
     #
     # Pre-defined kernel: using custom expressions is also possible!
     # Notice that the parameter sigma is a dim-1 vector, *not* a scalar:
-    sigma = torch.nn.Parameter(torch.tensor([.5]),requires_grad=True)
+    sigma = torch.nn.Parameter(torch.tensor([.5]*3000),requires_grad=True)
     print(sigma.shape)
     params = {
 
@@ -69,10 +71,13 @@ if __name__ == '__main__':
     #
     # Depending on the inputs' types, 'a' is a CPU or a GPU variable.
     # It can be differentiated wrt. x, y, b and sigma.
-    a = kernel_product(params, x, y, b)
-    print(a)
-    torch.dot(a.view(-1), torch.ones_like(a).view(-1)).backward()
-    print(sigma.grad)
+    s = time.time()
+    a = kernel_product(params, x, x, b)
+    e = time.time()
+    print(e-s)
+    # print(a)
+    # torch.dot(a.view(-1), torch.ones_like(a).view(-1)).backward()
+    # print(sigma.grad)
     # post_process('./private_job_arch_0/','test_R2')
     # n,m,t = torch.load('./tensor_data/side_info.pt')
     # print(t)

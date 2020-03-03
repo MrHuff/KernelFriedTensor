@@ -3,13 +3,46 @@ import tensorly
 tensorly.set_backend('pytorch')
 import gpytorch
 from tensorly.base import fold,unfold,partial_fold
-from tensorly.tenalg import multi_mode_dot,mode_dot
 from KFT.FLOWS.flows import IAF_no_h
 import math
-import timeit
+from pykeops.torch.kernel_product.kernels import Kernel,kernel_product
 import numpy as np
+import time
 PI  = math.pi
 torch.set_printoptions(profile="full")
+
+class keops_RBFkernel(torch.nn.Module):
+    def __init__(self,ls,x,y=None,):
+        super(keops_RBFkernel, self).__init__()
+        self.raw_lengthscale = torch.nn.Parameter(ls,requires_grad=True).contiguous()
+        self.register_buffer('x', x.contiguous())
+        self.shape = (x.shape[0],x.shape[0])
+        if y is not None:
+            self.register_buffer('y',y.contiguous())
+        else:
+            self.y = None
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __matmul__(self, b):
+        one = time.time()
+        s = self.forward(b)
+        two = time.time()
+        print('big_op: ', two-one)
+        return s
+
+    def forward(self,b):
+        params = {
+        "id": Kernel("gaussian(x,y)"),
+        "gamma": .5 / self.raw_lengthscale ** 2,
+        }
+
+        if self.y is not None:
+            return kernel_product(params, self.x, self.y, b,mode='sum',backend='pytorch')
+        else:
+            return kernel_product(params, self.x, self.x, b,mode='sum',backend='pytorch')
+
 
 def transpose_khatri_rao(x, y):
     """
@@ -41,8 +74,11 @@ def lazy_mode_product(T, K, mode):
     """
     new_shape = list(T.shape)
     new_shape[mode] = K.shape[0]
-    T = unfold(T,mode)
+    T = unfold(T,mode).contiguous()
+    e = time.time()
     T = K@T
+    e_2 = time.time()
+    print('matmul:', e_2-e )
     T = fold(T,mode,new_shape)
     return T
 
@@ -93,7 +129,7 @@ class TT_component(torch.nn.Module):
         if self.prime:
             self.core_param = sub_factorization(self.shape_list,R=sub_R,init_scale=init_scale)
         else:
-            self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
+            self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True).contiguous()
 
         self.init_scale = init_scale
         for i, n in enumerate(n_list):
@@ -193,7 +229,7 @@ class TT_component_deep(TT_component):
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0,reg_para=0,old_setup=False):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,reg_para)
-        self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True)
+        self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True).contiguous()
         self.deep_kernel = config['deep_kernel']
         self.deep_mode = False
         self.kernel_eval_mode = False
@@ -211,8 +247,6 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 if val is not None:
                     k = getattr(self,f'kernel_{key}')
                     k.raw_lengthscale.requires_grad = True
-                    if k.__class__.__name__=='PeriodicKernel':
-                        k.raw_period_length.requires_grad = True
             return 0
 
     def kernel_train_mode_off(self):
@@ -223,14 +257,9 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 if val is not None:
                     k = getattr(self,f'kernel_{key}')
                     k.raw_lengthscale.requires_grad = False
-                    if k.__class__.__name__=='PeriodicKernel':
-                        k.raw_period_length.requires_grad = False
                     with torch.no_grad():
                         value = getattr(self,f'kernel_data_{key}')
-                        if  k.__class__.__name__=='RFF':
-                            self.n_dict[key] = k(value)
-                        else:
-                            self.n_dict[key] = k(value).evaluate()
+                        self.n_dict[key] = k(value)
         return 0
 
     def deep_kernel_mode_on(self):
@@ -253,16 +282,13 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 input = getattr(self,f'kernel_data_{key}')
                 with torch.no_grad():
                     X = f(input)
-                    if  k.__class__.__name__=='RFF':
-                        self.n_dict[key] = k(X)
-                    else:
-                        self.n_dict[key] = k(X).evaluate()
+                    self.n_dict[key] = k(X)
         return 0
 
     def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
         base = gpytorch.kernels.Kernel()
         if X.shape[0] > 5000:
-            self.RFF_dict[key] = True
+            # self.RFF_dict[key] = True
             idx = torch.randperm(5000)
             X = X[idx, :]
         d = base.covar_dist(X, X)
@@ -273,34 +299,29 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         gwidth0 = self.get_median_ls(value,key)
         self.gamma_sq_init = gwidth0 * kernel_para_dict['ls_factor']
         ard_dims = None if not kernel_para_dict['ARD'] else value.shape[1]
+        self.register_buffer(f'kernel_data_{key}',value.to(self.device))
+        kernel_X = getattr(self, f'kernel_data_{key}')
         if self.RFF_dict[key]:
             setattr(self, f'kernel_{key}', RFF(value,lengtscale=self.gamma_sq_init))
-            # value = value.to(self.device)
         else:
             if kernel_para_dict['kernel_type']=='rbf':
-                setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims))
-                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims)),
-                    requires_grad=False)
+                setattr(self, f'kernel_{key}', keops_RBFkernel(ls=self.gamma_sq_init * torch.ones( 1 if ard_dims is None else ard_dims),x=kernel_X).to(self.device))
+                # setattr(self, f'kernel_{key}', gpytorch.kernels.keops.RBFKernel(ard_num_dims=ard_dims))
+                # getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
+                #     ,
+                #     requires_grad=False)
 
             elif kernel_para_dict['kernel_type']=='matern':
-                setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']))
+                setattr(self, f'kernel_{key}', gpytorch.kernels.keops.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']))
                 getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
                     self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims)),
                     requires_grad=False)
-            elif kernel_para_dict['kernel_type']=='periodic':
-                setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel())
-                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1)),
-                    requires_grad=False)
-                getattr(self,f'kernel_{key}').raw_period_length = torch.nn.Parameter(kernel_para_dict['p']*torch.ones(*(1,1)),requires_grad=False)
 
         tmp_kernel_func = getattr(self,f'kernel_{key}')
         if tmp_kernel_func.__class__.__name__ in 'RFF':
             self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
         else:
-            self.n_dict[key] =  tmp_kernel_func(value).evaluate().to(self.device)
-        self.register_buffer(f'kernel_data_{key}',value)
+            self.n_dict[key] = tmp_kernel_func(kernel_X,kernel_X)
         if deep_kernel:
             setattr(self,f'transformation_{key}',IAF_no_h(latent_size=value.shape[1],depth=2,tanh_flag_h=True,C=10))
 
@@ -315,14 +336,18 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         else:
             val = tmp_kernel_func(X).evaluate()
         return val
+
     def apply_kernels(self,T):
         for key, val in self.n_dict.items():
             if val is not None:
                 if self.dual:
-                    if self.kernel_eval_mode:
-                        val = self.side_data_eval(key)
+                    # if self.kernel_eval_mode:
+                    #     val = self.side_data_eval(key)
                     if not self.RFF_dict[key]:
+                        # start = time.time()
                         T = lazy_mode_product(T, val, key)
+                        # end = time.time()
+                        # print(end-start)
                     else:
                         T = lazy_mode_product(T, val.t(), key)
                         T = lazy_mode_product(T, val, key)
@@ -352,11 +377,11 @@ class sub_factorization(torch.nn.Module):
         self.init_scale = init_scale
         for i,n in enumerate(tensor_shape):
             if i==0:
-                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(1,n,R) ),requires_grad=True))
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(1,n,R) ),requires_grad=True)).contiguous()
             elif i==len(tensor_shape)-1:
-                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(R,n,1) ),requires_grad=True))
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(R,n,1) ),requires_grad=True)).contiguous()
             else:
-                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(R,n,R) ),requires_grad=True))
+                setattr(self,f'latent_component_{i}',torch.nn.Parameter(torch.ones(*(R,n,R) ),requires_grad=True)).contiguous()
     def forward(self):
         preds = getattr(self,f'latent_component_0')
         for i in range(1,len(self.tensor_shape)):

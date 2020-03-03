@@ -2,7 +2,7 @@ import torch
 import tensorly
 tensorly.set_backend('pytorch')
 import math
-import timeit
+import time
 from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product,TT_component_deep
 from KFT.core_VI_components import univariate_variational_kernel_TT,multivariate_variational_kernel_TT,variational_TT_component
 PI  = math.pi
@@ -153,7 +153,10 @@ class KFT(torch.nn.Module):
             if not self.old_setup:
                 tt_prime = self.TT_cores_prime[str(i)]
                 prime_pred,reg_prime = tt_prime(ix)
+                s = time.time()
                 pred, reg = tt(ix)
+                e = time.time()
+                print(f'iteration {i}: {e-s}')
                 if self.config['deep'] and self.config['dual']:
                     pred_outputs.append(tt_prime.nn_forward(pred)*prime_pred)
                 else:

@@ -376,20 +376,20 @@ class job_object():
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
-            start = time.time()
+            # start = time.time()
             total_loss, reg, pred_loss, y_pred = self.correct_forward_loss(X, y,loss_func)
-            end = time.time()
-            print(f'forward time: {end-start}')
+            # end = time.time()
+            # print(f'forward time: {end-start}')
             opt.zero_grad()
-            start = time.time()
+            # start = time.time()
             if self.train_config['fp_16'] and not warmup:
                 with self.train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
                     loss_scaled.backward()
             else:
                 total_loss.backward()
             opt.step()
-            end = time.time()
-            print(f'backward time: {end-start}')
+            # end = time.time()
+            # print(f'backward time: {end-start}')
 
 
             lrs.step(total_loss)
