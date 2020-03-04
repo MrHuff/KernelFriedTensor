@@ -173,7 +173,6 @@ def job_parser():
     parser.add_argument('--factorize_latent', default=False, help='fused',type=str2bool, nargs='?')
     parser.add_argument('--hyperits', type=int, nargs='?', default=20, help='hyperits')
     parser.add_argument('--save_path', type=str, nargs='?')
-    parser.add_argument('--non_lin', type=str,default=None, nargs='?')
     parser.add_argument('--task', type=str, nargs='?')
     parser.add_argument('--epochs', type=int, nargs='?', default=10, help='epochs')
     parser.add_argument('--bayesian', default=False, help='bayesian_VI',type=str2bool, nargs='?')

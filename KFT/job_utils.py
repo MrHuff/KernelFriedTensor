@@ -68,7 +68,6 @@ def parse_args(args):
         'factorize_latent': args['factorize_latent'],
         'config': {
             'full_grad': args['full_grad'],
-            'non_lin': get_non_lin(args['non_lin'])
         },
         'shape': shape,
         'architecture': args['architecture'],
