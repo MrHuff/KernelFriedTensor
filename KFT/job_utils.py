@@ -1,5 +1,5 @@
 import torch
-from KFT.KFT_fp_16 import KFT, variational_KFT,KFT_scale,varitional_KFT_scale
+from KFT.KFT import KFT, variational_KFT,KFT_scale,varitional_KFT_scale
 from torch.nn.modules.loss import _Loss
 import gc
 import pickle
@@ -81,8 +81,6 @@ def parse_args(args):
         'factorize_latent': args['factorize_latent'],
         'config': {
             'full_grad': args['full_grad'],
-            'deep_kernel': args['deep_kernel'],
-            'deep': args['deep'],
             'non_lin': get_non_lin(args['non_lin'])
         },
         'shape': shape,
@@ -255,7 +253,6 @@ class job_object():
         self.train_loss_interval_print  = configs['train_loss_interval_print']
         self.sub_epoch_V = configs['sub_epoch_V']
         self.config = configs['config']
-        self.deep_kernel = self.config['deep_kernel']
         self.shape = configs['shape']
         self.max_R = configs['max_R']
         self.max_lr = configs['max_lr']
@@ -391,7 +388,6 @@ class job_object():
             # end = time.time()
             # print(f'backward time: {end-start}')
 
-
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
                 torch.cuda.empty_cache()
@@ -465,7 +461,7 @@ class job_object():
     def setup_runs(self, warmup):
         loss_func = get_loss_func(self.train_config)
         ERROR = False
-        kernel, deep_kernel = self.model.has_kernel_component()
+        kernel = self.model.has_kernel_component()
         train_dict = {0: {'para': 'V_lr', 'call': self.model.turn_on_V}}
         train_list = [0]
         if not self.train_config['old_setup']:
@@ -475,9 +471,7 @@ class job_object():
             if kernel:
                 train_dict[2] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
                 train_list.insert(-1, 2)
-            if deep_kernel:
-                train_dict[3] = {'para': 'deep_lr', 'call': self.model.turn_on_deep_kernel}
-                train_list.insert(-2, 3)
+
         if warmup:
             train_list = [0]
             if not self.train_config['old_setup']:
@@ -557,9 +551,6 @@ class job_object():
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
-
-        if self.config['deep']:
-            self.hyperparameter_space['L'] = hp.choice('L', np.arange(1,self.max_L,dtype=int))
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
@@ -578,8 +569,7 @@ class job_object():
                     else:
                         self.config['sub_R'] = 1
                         component['prime'] = False
-        if self.config['deep']:
-            self.config['L'] = parameters['L']
+
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         self.train_config = self.extract_training_params(parameters)
@@ -770,7 +760,6 @@ class job_object():
         training_params['bayesian'] = self.bayesian
         training_params['old_setup'] = self.old_setup
         training_params['architecture'] = self.architecture
-        training_params['deep_kernel'] = self.deep_kernel
         training_params['batch_ratio'] = parameters['batch_size_ratio']
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
@@ -779,8 +768,7 @@ class job_object():
 
         if self.bayesian:
             training_params['sigma_y'] = parameters['reg_para']
-        if self.deep_kernel:
-            training_params['deep_lr'] = 1e-3#parameters['lr_4']
+
         return training_params
 
     def run_hyperparam_opt(self):

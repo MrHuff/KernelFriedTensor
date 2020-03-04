@@ -100,9 +100,6 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 if self.dual:
                     if self.kernel_eval_mode:
                         X = getattr(self, f'kernel_data_{key}')
-                        if self.deep_mode:
-                            f = getattr(self, f'transformation_{key}')
-                            X = f(X)
                         tmp_kernel_func = getattr(self, f'kernel_{key}')
                         if tmp_kernel_func.__class__.__name__=='RFF':
                             val = tmp_kernel_func(X)
@@ -190,8 +187,6 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             if val is not None:
                 k = getattr(self, f'kernel_{key}')
                 k.raw_lengthscale.requires_grad = False
-                if k.__class__.__name__ == 'PeriodicKernel':
-                    k.raw_period_length.requires_grad = False
                 with torch.no_grad():
                     value = getattr(self,f'kernel_data_{key}')
                     if k.__class__.__name__=='RFF':
@@ -399,9 +394,6 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             if val is not None:
                 if self.kernel_eval_mode:
                     X = getattr(self, f'kernel_data_{key}')
-                    if self.deep_mode:
-                        f = getattr(self, f'transformation_{key}')
-                        X = f(X)
                     tmp_kernel_func = getattr(self, f'kernel_{key}')
                     if tmp_kernel_func.__class__.__name__=='RFF':
                         val = tmp_kernel_func(X)

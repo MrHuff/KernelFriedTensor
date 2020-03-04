@@ -3,7 +3,7 @@ import tensorly
 tensorly.set_backend('pytorch')
 import math
 import time
-from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product,TT_component_deep
+from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product
 from KFT.core_VI_components import univariate_variational_kernel_TT,multivariate_variational_kernel_TT,variational_TT_component
 PI  = math.pi
 torch.set_printoptions(profile="full")
@@ -23,15 +23,6 @@ class KFT(torch.nn.Module):
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
-                if config['deep']:
-                    tmp_dict_prime[str(i)] = TT_component_deep(r_1=v['r_1'],
-                                                               n_list=v['n_list'],
-                                                               r_2=v['r_2'],
-                                                               cuda=cuda,
-                                                               config=config,
-                                                               init_scale=v['init_scale'],
-                                                               reg_para=lambdas[f'reg_para_prime_{i}'])
-                else:
                     tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],
                                                           n_list=v['n_list'],
                                                           r_2=v['r_2'],
@@ -72,8 +63,6 @@ class KFT(torch.nn.Module):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
             if not self.old_setup:
@@ -86,24 +75,9 @@ class KFT(torch.nn.Module):
                 if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                     self.TT_cores[str(i)].kernel_train_mode_off()
                     self.TT_cores[str(i)].turn_off()
-                    if self.TT_cores[str(i)].deep_kernel:
-                        self.TT_cores[str(i)].deep_kernel_mode_off()
                 else:
                     self.TT_cores[str(i)].turn_off()
                 self.TT_cores_prime[str(i)].turn_on()
-        return 0
-    #TODO: fix deep kernel by properly activating and turning of parameters
-    def turn_on_deep_kernel(self):
-        for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_off()
-                self.TT_cores[str(i)].turn_off()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_on()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            if not self.old_setup:
-                self.TT_cores_prime[str(i)].turn_off()
         return 0
 
     def has_kernel_component(self):
@@ -111,18 +85,13 @@ class KFT(torch.nn.Module):
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 for v in self.TT_cores[str(i)].n_dict.values():
                     if v is not None:
-                        if self.TT_cores[str(i)].deep_kernel:
-                            return True,True
-                        else:
-                            return True,False
-        return False,False
+                        return True
+        return False
 
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             if not self.old_setup:
@@ -157,10 +126,7 @@ class KFT(torch.nn.Module):
                 pred, reg = tt(ix)
                 e = time.time()
                 print(f'iteration {i}: {e-s}')
-                if self.config['deep'] and self.config['dual']:
-                    pred_outputs.append(tt_prime.nn_forward(pred)*prime_pred)
-                else:
-                    pred_outputs.append(pred * prime_pred)
+                pred_outputs.append(pred * prime_pred)
             else:
                 pred, reg = tt(ix)
                 pred_outputs.append(pred)
@@ -171,10 +137,7 @@ class KFT(torch.nn.Module):
                     reg_output += torch.mean(reg.float()) * tt.reg_para#numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             else:
                 if not self.old_setup:
-                    if self.config['deep']:
-                        reg_output +=tt.reg_para * torch.mean(reg)+ tt_prime.reg_para*torch.mean(reg_prime)+tt_prime.reg_para* tt_prime.nn_reg() #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
-                    else:
-                        reg_output += tt.reg_para*torch.mean(reg)+tt_prime.reg_para*torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    reg_output += tt.reg_para*torch.mean(reg)+tt_prime.reg_para*torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
                 else:
                     reg_output += tt.reg_para*torch.mean(reg) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
         return pred_outputs,reg_output
@@ -272,8 +235,6 @@ class KFT_scale(torch.nn.Module):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_on()
             self.TT_cores_s[str(i)].turn_off()
@@ -291,26 +252,11 @@ class KFT_scale(torch.nn.Module):
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
                 self.TT_cores[str(i)].turn_off()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_s[str(i)].turn_on()
             self.TT_cores_b[str(i)].turn_on()
 
-        return 0
-    #TODO: fix deep kernel by properly activating and turning of parameters
-    def turn_on_deep_kernel(self):
-        for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_off()
-                self.TT_cores[str(i)].turn_off()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_on()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            self.TT_cores_s[str(i)].turn_off()
-            self.TT_cores_b[str(i)].turn_off()
         return 0
 
     def has_kernel_component(self):
@@ -318,18 +264,13 @@ class KFT_scale(torch.nn.Module):
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 for v in self.TT_cores[str(i)].n_dict.values():
                     if v is not None:
-                        if self.TT_cores[str(i)].deep_kernel:
-                            return True,True
-                        else:
-                            return True,False
-        return False,False
+                        return True
+        return False
 
     def turn_on_kernel_mode(self):
         for i,v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
-                if self.TT_cores[str(i)].deep_kernel:
-                    self.TT_cores[str(i)].deep_kernel_mode_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_s[str(i)].turn_off()
