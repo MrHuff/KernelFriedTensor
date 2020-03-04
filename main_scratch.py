@@ -115,7 +115,7 @@ if __name__ == '__main__':
     from pykeops.torch.kernel_product.kernels import Kernel, kernel_product
     import gpytorch
     import pykeops
-    # pykeops.clean_pykeops()  # just in case old build files are still present
+    pykeops.clean_pykeops()  # just in case old build files are still present
     x = torch.randn(100000, 10, requires_grad=True) #Keops really slow for "wide matrices". Needs to be adjusted.
     # y = torch.randn(2000, 3, requires_grad=True)
     b = torch.randn(100000, 100, requires_grad=True)
@@ -139,25 +139,25 @@ if __name__ == '__main__':
     # B_0 = Vj(3, 100);
     # dtype: float32
 
-    # sigma = torch.nn.Parameter(torch.tensor([.5]*10),requires_grad=True)
-    # print(sigma.shape)
-    # params = {
-    #     "id": Kernel("laplacian(x,y)"),
-    #     "gamma": .5 / sigma ** 2,
-    # }
-    # s = time.time()
-    # a = kernel_product(params, x, x, b)
-    # e = time.time()
-    # print(e-s)
-
-    g = torch.tensor([0.5]*10)
-    nu = 2.5
-    formula = get_formula(nu=nu, D=10, Dv=100)
+    sigma = torch.nn.Parameter(torch.tensor([.5]*10),requires_grad=True)
+    print(sigma.shape)
+    params = {
+        "id": Kernel("gaussian(x,y)"),
+        "gamma": .5 / sigma ** 2,
+    }
     s = time.time()
-    test = run_formula(formula=formula, x=x, y=x, g=g, b=b, nu=nu, device_id=0)
+    a = kernel_product(params, x, x, b)
     e = time.time()
     print(e-s)
-    print(test.shape)
+
+    # g = torch.tensor([0.5]*10)
+    # nu = 2.5
+    # formula = get_formula(nu=nu, D=10, Dv=100)
+    # s = time.time()
+    # test = run_formula(formula=formula, x=x, y=x, g=g, b=b, nu=nu, device_id=0)
+    # e = time.time()
+    # print(e-s)
+    # print(test.shape)
 
     # print(a)
     # torch.dot(a.view(-1), torch.ones_like(a).view(-1)).backward()

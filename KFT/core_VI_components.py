@@ -99,12 +99,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
             if val is not None:
                 if self.dual:
                     if self.kernel_eval_mode:
-                        X = getattr(self, f'kernel_data_{key}')
-                        tmp_kernel_func = getattr(self, f'kernel_{key}')
-                        if tmp_kernel_func.__class__.__name__=='RFF':
-                            val = tmp_kernel_func(X)
-                        else:
-                            val = tmp_kernel_func(X).evaluate()
+                        val = self.side_data_eval(key)
                     if not self.RFF_dict[key]:
                         T = lazy_mode_product(T, val*val, key)
                     else:
@@ -189,10 +184,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 k.raw_lengthscale.requires_grad = False
                 with torch.no_grad():
                     value = getattr(self,f'kernel_data_{key}')
-                    if k.__class__.__name__=='RFF':
-                        self.n_dict[key] = k(value)
-                    else:
-                        self.n_dict[key] = k(value).evaluate()
+                    self.n_dict[key] = k(value).evaluate()
         self.recalculate_priors()
 
     def recalculate_priors(self):
@@ -393,12 +385,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key, val in self.n_dict.items():
             if val is not None:
                 if self.kernel_eval_mode:
-                    X = getattr(self, f'kernel_data_{key}')
-                    tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    if tmp_kernel_func.__class__.__name__=='RFF':
-                        val = tmp_kernel_func(X)
-                    else:
-                        val = tmp_kernel_func(X).evaluate()
+                   val = self.side_data_eval(key)
                 if not self.RFF_dict[key]:
                     B = self.get_L(key)
                     vec_apply = torch.sum((val@B)**2,dim=1,keepdim=True)

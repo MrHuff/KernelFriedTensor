@@ -11,8 +11,9 @@ PI  = math.pi
 torch.set_printoptions(profile="full")
 
 class keops_RBFkernel(torch.nn.Module):
-    def __init__(self,ls,x,y=None):
+    def __init__(self,ls,x,y=None,device_id=0):
         super(keops_RBFkernel, self).__init__()
+        self.device_id = device_id
         self.raw_lengthscale = torch.nn.Parameter(ls,requires_grad=False).contiguous()
         self.raw_lengthscale.requires_grad = False
         self.register_buffer('x', x.contiguous())
@@ -21,6 +22,19 @@ class keops_RBFkernel(torch.nn.Module):
             self.register_buffer('y',y.contiguous())
         else:
             self.y = x
+        self.gen_formula = None
+
+    def get_formula(self,D,ls_size,Dv):
+        aliases = ['G_0 = Pm(0, ' + str(ls_size) + ')',
+                   'X_0 = Vi(1, ' + str(D) + ')',
+                   'Y_0 = Vj(2, ' + str(D) + ')',
+                   'B_0 = Vj(3, ' + str(Dv) + ')'
+                   ]
+        formula = '(Exp( -WeightedSqDist(G_0,X_0,Y_0)) * B_0)'
+        return formula,aliases
+
+    def evaluate(self):
+        return self
 
     def __call__(self, *args, **kwargs):
         return self
@@ -30,54 +44,53 @@ class keops_RBFkernel(torch.nn.Module):
         return s
 
     def forward(self,b):
-        params = {
-        "id": Kernel("gaussian(x,y)"),
-        "gamma": .5 / self.raw_lengthscale ** 2,
-        }
-        return kernel_product(params, self.x, self.y, b,mode='sum')
+        Dv = b.shape[1]
+        if self.gen_formula is None:
+            self.formula, self.aliases = self.get_formula(D=self.x.shape[1], ls_size=self.raw_lengthscale.shape[0],Dv=Dv)
+            self.gen_formula = Genred(self.formula, self.aliases, reduction_op='Sum', axis=1, dtype='float32')
+        return self.gen_formula(*[self.raw_lengthscale,self.x,self.y,b],backend='GPU',device_id=self.device_id)
 
 class keops_matern_kernel(keops_RBFkernel):
 
     def __init__(self,ls,x,y=None,nu=0.5,device_id = 0):
-        super(keops_matern_kernel, self).__init__(ls,x,y)
-        self.register_buffer('nu',torch.tensor(nu))
+        super(keops_matern_kernel, self).__init__(ls,x,y,device_id)
         self.nu = nu
-        self.formula,self.aliases = self.get_formula(nu=self.nu,D=self.x.shape[1],ls_size=self.raw_lengthscale.shape[0])
-        self.gen_formula = None
-        self.device_id = device_id
+        if self.nu == 1.5:
+            self.register_buffer('c_1',torch.tensor([3.0]).sqrt())
+        elif self.nu==2.5:
+            self.register_buffer('c_1',torch.tensor([5.0]).sqrt())
+            self.register_buffer('c_2',torch.tensor([5.0/3.0]).sqrt())
 
-    def get_formula(self,nu, D,ls_size):
-        aliases = ['G_0 = Pm(0, ' + str(ls_size) + ')'
+    def get_formula_matern(self,nu, D,ls_size,Dv):
+        aliases = ['G_0 = Pm(0, ' + str(ls_size) + ')',
+                   'X_0 = Vi(1, ' + str(D) + ')',  # First arg:  i-variable of size D
+                   'Y_0 = Vj(2, ' + str(D) + ')',  # Second arg: j-variable of size D
+                   'B_0 = Vj(3, ' + str(Dv) + ')',
                    ]  # Fourth arg: scalar parameter
         if nu == 0.5:
-            # (Exp(-Sqrt( WeightedSqDist(G_0,X_0,Y_0))) * B_0) #CORRECT
             formula = '(Exp(-Sqrt( WeightedSqDist(G_0,X_0,Y_0))) * B_0)'
         elif nu == 1.5:
-            aliases.append('g = Pm(1)')
+            aliases.append('g = Pm(4,1)')
             formula = '((IntCst(1)+g*Sqrt( WeightedSqDist(G_0,X_0,Y_0)))*Exp(-g*Sqrt( WeightedSqDist(G_0,X_0,Y_0))) * B_0)'
-            self.c_1 = torch.tensor([3.0]).sqrt()
-
         elif nu == 2.5:
-            aliases.append('g = Pm(1)')
-            aliases.append('g_2 = Pm(1)')
+            aliases.append('g = Pm(4,1)')
+            aliases.append('g_2 = Pm(5,1)')
             formula = '((IntCst(1)+g*Sqrt( WeightedSqDist(G_0,X_0,Y_0))+g_2*WeightedSqDist(G_0,X_0,Y_0))*Exp(-g*Sqrt( WeightedSqDist(G_0,X_0,Y_0))) * B_0)'
-            self.c_1 = torch.tensor([5.]).sqrt()
-            self.c_2 = torch.tensor([5. / 3.])
-        aliases.append('X_0 = Vi(1, ' + str(D) + ')')
-        aliases.append('Y_0 = Vj(2, ' + str(D) + ')')
+
         return formula,aliases
 
     def forward(self,b):
         Dv = b.shape[1]
-        self.aliases.append('B_0 = Vj(3, ' + str(Dv) + ')')
         if self.gen_formula is None:
+            self.formula, self.aliases = self.get_formula_matern(nu=self.nu, D=self.x.shape[1],
+                                                                 ls_size=self.raw_lengthscale.shape[0],Dv=Dv)
             self.gen_formula = Genred(self.formula, self.aliases, reduction_op='Sum', axis=1, dtype='float32')
         if self.nu==0.5:
             return self.gen_formula(*[self.raw_lengthscale,self.x,self.y,b],backend='GPU',device_id=self.device_id)
         elif self.nu==1.5:
-            return self.gen_formula(*[self.raw_lengthscale,self.c_1,self.x,self.y,b],backend='GPU',device_id=self.device_id)
+            return self.gen_formula(*[self.raw_lengthscale,self.x,self.y,b,self.c_1],backend='GPU',device_id=self.device_id)
         elif self.nu==2.5:
-            return self.gen_formula(*[self.raw_lengthscale,self.c_1,self.c_2,self.x,self.y,b],backend='GPU',device_id=self.device_id)
+            return self.gen_formula(*[self.raw_lengthscale,self.x,self.y,b,self.c_1,self.c_2],backend='GPU',device_id=self.device_id)
 
 
 def transpose_khatri_rao(x, y):
@@ -111,7 +124,7 @@ def lazy_mode_product(T, K, mode):
     new_shape = list(T.shape)
     new_shape[mode] = K.shape[0]
     T = unfold(T,mode)
-    T = K@T
+    T = K@T.contiguous()
     T = fold(T,mode,new_shape)
     return T
 
@@ -138,9 +151,16 @@ class RFF(torch.nn.Module):
         self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
         self.register_buffer('w' ,torch.randn(*(self.n_feat,self.n_input_feat)))
         self.register_buffer('b' ,torch.rand(*(self.n_feat, 1),device=device)*2.0*PI)
+        self.register_buffer('X',X)
 
-    def forward(self,X,dum_2=None):
-        return torch.transpose(math.sqrt(2./float(self.n_feat))*torch.cos(torch.mm(self.w/self.raw_lengthscale, X.t()) + self.b),0,1)
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def evaluate(self):
+        return torch.transpose(
+            math.sqrt(2. / float(self.n_feat)) * torch.cos(torch.mm(self.w / self.raw_lengthscale, self.X.t()) + self.b), 0,
+            1)
+
 
 class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0,prime=False,sub_R=2):
@@ -227,11 +247,23 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,reg_para)
         self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True)
         self.kernel_eval_mode = False
-        for key,value in side_information_dict.items(): #Should be on the form {mode: side_info}'
+        self.side_info_dict = {}
+        if self.device not in ['cpu']:
+            for key, val in side_information_dict.items():
+                self.side_info_dict[key] = val.to(self.device)
+        for key,_ in self.side_info_dict.items(): #Should be on the form {mode: side_info}'
             if self.dual:
-                self.assign_kernel(key,value,kernel_para_dict)
+                self.assign_kernel(key,kernel_para_dict)
             else:
-                self.n_dict[key] = value.to(self.device)
+                self.set_side_info(key)
+
+    def set_side_info(self,key):
+        with torch.no_grad():
+            if self.dual:
+                tmp_kernel_func = getattr(self, f'kernel_{key}')
+                self.n_dict[key] = tmp_kernel_func(self.side_info_dict[key]).evaluate()
+            else:
+                self.n_dict[key] = self.side_info_dict[key]
 
     def kernel_train_mode_on(self):
         self.turn_off()
@@ -251,61 +283,55 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 if val is not None:
                     k = getattr(self,f'kernel_{key}')
                     k.raw_lengthscale.requires_grad = False
-                    with torch.no_grad():
-                        value = getattr(self,f'kernel_data_{key}')
-                        if  k.__class__.__name__=='RFF':
-                            self.n_dict[key] = k(value)
-                        else:
-                            self.n_dict[key] = k(value).evaluate()
+                    self.set_side_info(key)
         return 0
 
-    def get_median_ls(self,X,key):  # Super LS and init value sensitive wtf
-        base = gpytorch.kernels.Kernel()
-        if X.shape[0] > 5000:
-            self.RFF_dict[key] = True
-            idx = torch.randperm(5000)
-            X = X[idx, :]
-        d = base.covar_dist(X, X)
-        return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0)
+    def get_median_ls(self,key):  # Super LS and init value sensitive wtf
+        with torch.no_grad():
+            base = gpytorch.kernels.Kernel()
+            X = self.side_info_dict[key]
+            if X.shape[0] > 5000:
+                idx = torch.randperm(5000)
+                X = X[idx, :]
+            d = base.covar_dist(X, X)
+            return torch.sqrt(torch.median(d[d > 0])).unsqueeze(0).cpu()
 
-    def assign_kernel(self,key,value,kernel_dict_input):
+    def assign_kernel(self,key,kernel_dict_input):
         kernel_para_dict = kernel_dict_input[key]
-        gwidth0 = self.get_median_ls(value,key)
-        self.gamma_sq_init = gwidth0 * kernel_para_dict['ls_factor']
-        ard_dims = None if not kernel_para_dict['ARD'] else value.shape[1]
+        self.gamma_sq_init = self.get_median_ls(key)
+        ard_dims = None if not kernel_para_dict['ARD'] else self.side_info_dict[key].shape[1]
+        if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] > 200000:
+            self.RFF_dict[key] = True
         if self.RFF_dict[key]:
-            setattr(self, f'kernel_{key}', RFF(value,lengtscale=self.gamma_sq_init))
-            # value = value.to(self.device)
+            setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key],lengtscale=self.gamma_sq_init))
         else:
-            if kernel_para_dict['kernel_type']=='rbf':
-                setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims))
-                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims)),
-                    requires_grad=False)
+            if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] < 5000:
+                if kernel_para_dict['kernel_type']=='rbf':
+                    setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims).to(self.device))
+                elif kernel_para_dict['kernel_type']=='matern':
+                    setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']).to(self.device))
+                ls_init = self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims))
+                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(ls_init.to(self.device),
+                                                                                    requires_grad=False)
+            else:
+                d = 1 if ard_dims is None else ard_dims
+                if kernel_para_dict['kernel_type']=='rbf':
+                    ls_init = torch.tensor([self.gamma_sq_init]*d)
+                    setattr(self, f'kernel_{key}', keops_RBFkernel(ls=ls_init,x= self.side_info_dict[key],device_id=self.device))
 
-            elif kernel_para_dict['kernel_type']=='matern':
-                setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']))
-                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(
-                    self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims)),
-                    requires_grad=False)
-
-
-        tmp_kernel_func = getattr(self,f'kernel_{key}')
-        if tmp_kernel_func.__class__.__name__ in 'RFF':
-            self.n_dict[key] =  tmp_kernel_func(value).to(self.device)
-        else:
-            self.n_dict[key] =  tmp_kernel_func(value).evaluate().to(self.device)
-        self.register_buffer(f'kernel_data_{key}',value)
-
+                elif kernel_para_dict['kernel_type']=='matern':
+                    ls_init = torch.tensor([self.gamma_sq_init]*d)
+                    setattr(self, f'kernel_{key}', keops_matern_kernel(ls=ls_init,x= self.side_info_dict[key],device_id=self.device,nu=kernel_para_dict['nu']))
+        self.set_side_info(key)
 
     def side_data_eval(self,key):
-        X = getattr(self, f'kernel_data_{key}')
         tmp_kernel_func = getattr(self, f'kernel_{key}')
-        if tmp_kernel_func.__class__.__name__=='RFF':
-            val = tmp_kernel_func(X)
+        if tmp_kernel_func.__class__.__name__ in ['RFF','keops_RBFkernel','keops_matern_kernel']:
+            return tmp_kernel_func.evaluate()
         else:
+            X =  self.side_info_dict[key].to(self.device)
             val = tmp_kernel_func(X).evaluate()
-        return val
+            return val
 
     def apply_kernels(self,T):
         for key, val in self.n_dict.items():

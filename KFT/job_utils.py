@@ -46,7 +46,7 @@ def parse_args(args):
         for i in args['delete_side_info']:
             del side_info[i]
     if args['kernels'] is None:
-        args['kernels'] = ['rbf']#['matern_1', 'matern_2', 'matern_3', 'rbf']
+        args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']#['matern_1', 'matern_2', 'matern_3', 'rbf']
     if args['special_mode']==1:
         for i,v in side_info.items():
             side_info[i]['data'] = torch.ones_like(v['data'])
@@ -66,8 +66,6 @@ def parse_args(args):
         'reg_para_b': args['reg_para_b'],
         'batch_size_a': 1.0 if args['full_grad'] else args['batch_size_a'],
         'batch_size_b': 1.0 if args['full_grad'] else args['batch_size_b'],
-        'fp_16': args['fp_16'],  # Wanna use fp_16? Initialize smartly!
-        'fused': args['fused'],
         'hyperits': args['hyperits'],
         'save_path': args['save_path'],
         'task': args['task'],
@@ -238,8 +236,6 @@ class job_object():
         self.b = configs['reg_para_b']
         self.a_ = configs['batch_size_a']
         self.b_ = configs['batch_size_b'] #1.0 max
-        self.fp_16 = configs['fp_16']
-        self.fused = configs['fused']
         self.hyperits = configs['hyperits']
         self.save_path = configs['save_path']
         self.architecture = configs['architecture']
@@ -379,11 +375,7 @@ class job_object():
             # print(f'forward time: {end-start}')
             opt.zero_grad()
             # start = time.time()
-            if self.train_config['fp_16'] and not warmup:
-                with self.train_config['amp'].scale_loss(total_loss, opt, loss_id=0) as loss_scaled:
-                    loss_scaled.backward()
-            else:
-                total_loss.backward()
+            total_loss.backward()
             opt.step()
             # end = time.time()
             # print(f'backward time: {end-start}')
@@ -428,34 +420,11 @@ class job_object():
         return ERROR
 
     def opt_reinit(self, lr_params, warmup=False):
-        if self.train_config['fp_16'] and not warmup:
-            import apex
-            from apex import amp
-            amp.register_float_function(torch, 'bmm')  # TODO: HALLELUJA
-            if self.train_config['fused']:
-                tmp_opt_list = []
-                for lr in lr_params:
-                    tmp_opt_list.append(apex.optimizers.FusedAdam(self.model.parameters(), lr=self.train_config[
-                        lr]))  # Calling this again makes the model completely in FP16 wtf
-                [self.model], tmp_opt_list = amp.initialize([self.model], tmp_opt_list, opt_level='O1', num_losses=1)
-                opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
-                self.model.amp = amp
-                self.model.amp_patch(amp)
-            else:
-                tmp_opt_list = []
-                for lr in lr_params:
-                    tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
-                [self.model], tmp_opt_list = amp.initialize([self.model], tmp_opt_list, opt_level='O1', num_losses=1)
-                opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
-                [self.model], tmp_opt_list = amp.initialize([self.model], tmp_opt_list, opt_level='O1', num_losses=1)
-                self.model.amp = amp
-                self.model.amp_patch(amp)
-            self.train_config['amp'] = amp
-        else:
-            tmp_opt_list = []
-            for lr in lr_params:
-                tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
-            opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
+
+        tmp_opt_list = []
+        for lr in lr_params:
+            tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
+        opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
         return opts
 
     def setup_runs(self, warmup):
@@ -511,11 +480,8 @@ class job_object():
         for dim, val in self.side_info.items():
             self.available_side_info_dims.append(dim)
             if self.dual:
-                if self.fp_16:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', ['rbf'])
-                else:
-                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice', self.kernels)
-                self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True, False])
+                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice',self.kernels ) #self.kernels
+                self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
         if self.bayesian:
             self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
@@ -700,7 +666,7 @@ class job_object():
             dim = side_info_dims[i]
             if dim in self.available_side_info_dims:
                 k,nu = self.get_kernel_vals(parameters[f'kernel_{dim}_choice'])
-                kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'ls_factor':1.0,'nu':nu,'kernel_type':k,'p':1.0}
+                kernel_param[i+1] = {'ARD':parameters[f'ARD_{dim}'],'nu':nu,'kernel_type':k,'p':1.0}
         return kernel_param
 
     def construct_side_info_params(self,side_info_dims):
@@ -746,8 +712,6 @@ class job_object():
 
     def extract_training_params(self,parameters):
         training_params = {}
-        training_params['fp_16'] = (self.fp_16 and not self.bayesian)
-        training_params['fused'] = self.fused
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
         training_params['prime_lr'] = parameters['lr_2']/100.

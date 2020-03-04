@@ -122,10 +122,10 @@ class KFT(torch.nn.Module):
             if not self.old_setup:
                 tt_prime = self.TT_cores_prime[str(i)]
                 prime_pred,reg_prime = tt_prime(ix)
-                s = time.time()
+                # s = time.time()
                 pred, reg = tt(ix)
-                e = time.time()
-                print(f'iteration {i}: {e-s}')
+                # e = time.time()
+                # print(f'iteration {i}: {e-s}')
                 pred_outputs.append(pred * prime_pred)
             else:
                 pred, reg = tt(ix)
