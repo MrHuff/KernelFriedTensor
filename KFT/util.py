@@ -160,6 +160,7 @@ def job_parser():
     parser.add_argument('--max_R', type=int, nargs='?', default=10, help='max_R')
     parser.add_argument('--reg_para_a', type=float, nargs='?', default=0., help='reg_para_a')
     parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
+    parser.add_argument('--pos_weight', type=float, nargs='?', default=1., help='pos_weight')
     parser.add_argument('--mu_a', type=float, nargs='?', default=0., help='mu_a')
     parser.add_argument('--mu_b', type=float, nargs='?', default=1., help='mu_b')
     parser.add_argument('--sigma_a', type=float, nargs='?', default=1e-3, help='sigma_a')

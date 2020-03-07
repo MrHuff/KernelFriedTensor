@@ -86,6 +86,7 @@ def parse_args(args):
         'mu_b': args['mu_b'],
         'sigma_a': args['sigma_a'],
         'sigma_b': args['sigma_b'],
+        'pos_weight': args['pos_weight']
     }
     return side_info,other_configs
 
