@@ -725,7 +725,7 @@ class job_object():
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
         if not self.task=='reg':
-            training_params['pos_weight'] = self.pos_weight
+            training_params['pos_weight'] = torch.tensor(self.pos_weight).to(self.device) if self.cuda else torch.tensor(self.pos_weight)
 
         if self.bayesian:
             training_params['sigma_y'] = parameters['reg_para']
