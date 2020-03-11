@@ -161,6 +161,13 @@ def auc_check(y_pred,Y):
         auc =  metrics.auc(fpr, tpr)
         return auc
 
+def accuracy_check(y_pred,Y):
+    with torch.no_grad():
+        y_pred = (y_pred.float() > 0.5).cpu().float().numpy()
+        correct = y_pred==Y.cpu().numpy()
+        acc = correct.sum()/Y.shape[0]
+        return acc
+
 def print_garbage():
     obj_list = []
     for obj in gc.get_objects():
@@ -257,12 +264,13 @@ class job_object():
         self.mu_b = configs['mu_b']
         self.sigma_b = configs['sigma_b']
         if not self.task=='reg':
-            self.pos_weight = configs['pos_weight']
+            self.pos_weight =torch.tensor(configs['pos_weight']).to(self.device) if self.cuda else torch.tensor(configs['pos_weight'])
         self.seed = seed
         self.trials = Trials()
         self.define_hyperparameter_space()
         if self.bayesian:
             self.best = np.inf
+
     def calculate_loss_no_grad(self, task='reg', mode='val'):
         with torch.no_grad():
             loss_list = []
@@ -281,13 +289,18 @@ class job_object():
             total_loss = torch.tensor(loss_list).mean().data
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
-            print(y_preds.mean())
+            print(f'{mode} loss_func_loss: {y_preds.mean()}' )
             if task == 'reg':
                 var_Y = Y.var()
                 ref_metric = 1. - total_loss / var_Y
                 ref_metric = ref_metric.numpy()
             else:
-                ref_metric = auc_check(y_preds, Y)
+                if task=='classification_auc':
+                    ref_metric = auc_check(y_preds, Y)
+                elif task=='classification_acc':
+                    ref_metric = accuracy_check(y_preds, Y)
+                else:
+                    ref_metric = y_preds.mean().numpy()
         return ref_metric
 
     def train_monitor(self,total_loss, reg, pred_loss, y_pred, p):
@@ -326,9 +339,9 @@ class job_object():
                     y_pred, _ = self.model(X)
                 pred_loss = loss_func(y_pred, y.squeeze())
             else:
-                loss_func = torch.nn.BCELoss()
+                loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
                 y_pred, reg = self.model(X)
-                pred_loss = loss_func(y_pred, y.squeeze())
+                pred_loss = loss_func(y_pred, y)
             return pred_loss, y_pred
 
     def correct_forward_loss(self,X, y, loss_func):
@@ -346,7 +359,6 @@ class job_object():
     def train_loop(self, opt, loss_func, warmup=False):
         sub_epoch = self.train_config['sub_epoch_V']
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
-        print_garbage()
         torch.cuda.empty_cache()
         for p in range(sub_epoch + 1):
             if warmup:
@@ -388,7 +400,6 @@ class job_object():
 
     def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False,toggle=False):
         for i in train_list:
-            print_garbage()
             settings = train_dict[i]
             f = settings['call']
             lr = settings['para']
@@ -400,7 +411,6 @@ class job_object():
                 if not toggle and lr=='ls_lr':
                     continue
             ERROR = self.train_loop(opt, loss_func, warmup=warmup)
-            print_garbage()
             if ERROR:
                 return ERROR
             print(torch.cuda.memory_cached() / 1e6)
@@ -592,7 +602,7 @@ class job_object():
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(2):
-            try:
+            try: #Try two times
                 pykeops.clean_pykeops()  # just in case old build files are still present
                 torch.cuda.empty_cache()
                 get_free_gpu(10)  # should be 0 between calls..
@@ -725,8 +735,7 @@ class job_object():
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
         if not self.task=='reg':
-            training_params['pos_weight'] = torch.tensor(self.pos_weight).to(self.device) if self.cuda else torch.tensor(self.pos_weight)
-
+            training_params['pos_weight'] = self.pos_weight
         if self.bayesian:
             training_params['sigma_y'] = parameters['reg_para']
 
