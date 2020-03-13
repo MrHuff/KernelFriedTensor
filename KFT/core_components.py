@@ -315,11 +315,11 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             else:
                 d = 1 if ard_dims is None else ard_dims
                 if kernel_para_dict['kernel_type']=='rbf':
-                    ls_init = torch.tensor([self.gamma_sq_init]*d)
+                    ls_init = torch.tensor([1/self.gamma_sq_init]*d)
                     setattr(self, f'kernel_{key}', keops_RBFkernel(ls=ls_init,x= self.side_info_dict[key],device_id=self.device))
 
                 elif kernel_para_dict['kernel_type']=='matern':
-                    ls_init = torch.tensor([self.gamma_sq_init]*d)
+                    ls_init = torch.tensor([1/self.gamma_sq_init]*d)
                     setattr(self, f'kernel_{key}', keops_matern_kernel(ls=ls_init,x= self.side_info_dict[key],device_id=self.device,nu=kernel_para_dict['nu']))
         self.set_side_info(key)
 
