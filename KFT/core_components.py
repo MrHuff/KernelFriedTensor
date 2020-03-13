@@ -6,7 +6,6 @@ from tensorly.base import fold,unfold,partial_fold
 import math
 import time
 from pykeops.torch import LazyTensor,Genred
-from pykeops.torch.kernel_product.kernels import Kernel,kernel_product
 PI  = math.pi
 torch.set_printoptions(profile="full")
 
