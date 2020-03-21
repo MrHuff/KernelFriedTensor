@@ -14,7 +14,6 @@ class variational_TT_component(TT_component):
         self.variance_parameters = torch.nn.Parameter(-2*torch.ones(*self.shape_list),requires_grad=True)
         self.register_buffer('mu_prior',torch.tensor(mu_prior))
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
-
     def calculate_KL(self,mean,sig):
         KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).sum(dim=1).mean().squeeze()
         return KL
@@ -178,13 +177,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
     def kernel_train_mode_off(self):
         self.turn_on()
         self.kernel_eval_mode = False
-        for key, val in self.n_dict.items():
-            if val is not None:
-                k = getattr(self, f'kernel_{key}')
-                k.raw_lengthscale.requires_grad = False
-                with torch.no_grad():
-                    value = getattr(self,f'kernel_data_{key}')
-                    self.n_dict[key] = k(value).evaluate()
+        if self.dual:
+            for key,val in self.n_dict.items():
+                if val is not None:
+                    k = getattr(self,f'kernel_{key}')
+                    k.raw_lengthscale.requires_grad = False
+                    self.set_side_info(key)
         self.recalculate_priors()
 
     def recalculate_priors(self):

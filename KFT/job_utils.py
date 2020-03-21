@@ -68,6 +68,7 @@ def parse_args(args):
         'factorize_latent': args['factorize_latent'],
         'config': {
             'full_grad': args['full_grad'],
+            'bayesian':args['bayesian']
         },
         'shape': shape,
         'architecture': args['architecture'],
@@ -404,7 +405,7 @@ class job_object():
             f = settings['call']
             lr = settings['para']
             f()
-            print(lr)
+            # print(lr)
             opt = opts[lr]
             if self.bayesian:
                 self.model.toggle(toggle)
@@ -413,8 +414,8 @@ class job_object():
             ERROR = self.train_loop(opt, loss_func, warmup=warmup)
             if ERROR:
                 return ERROR
-            print(torch.cuda.memory_cached() / 1e6)
-            print(torch.cuda.memory_allocated() / 1e6)
+            # print(torch.cuda.memory_cached() / 1e6)
+            # print(torch.cuda.memory_allocated() / 1e6)
             torch.cuda.empty_cache()
         return ERROR
 
@@ -595,7 +596,7 @@ class job_object():
                 y_sample = np.concatenate(_y_preds,axis=0)
                 all_samples.append(y_sample)
             Y_preds = np.stack(all_samples,axis=1)
-            print(Y_preds.shape)
+            # print(Y_preds.shape)
             df = para_summary(Y_preds)
             df['y_true'] = self.dataloader.Y.numpy()
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)

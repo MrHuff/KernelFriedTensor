@@ -8,8 +8,6 @@ do
     --PATH ./public_data/ \
     --reg_para_a 1e-2 \
     --reg_para_b 2e0 \
-    --fp_16 False \
-    --fused True \
     --save_path public_job_arch_0_dual_bayesian_univariate \
     --seed $i \
     --bayesian True \

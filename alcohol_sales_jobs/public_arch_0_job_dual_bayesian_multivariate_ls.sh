@@ -3,13 +3,11 @@ do
   taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
-    --max_lr 1e-2 \
+    --max_lr 1e-1 \
     --max_R 20 \
     --PATH ./public_data/ \
-    --reg_para_a 1 \
-    --reg_para_b 100 \
-    --fp_16 False \
-    --fused True \
+    --reg_para_a 1e-3 \
+    --reg_para_b 1 \
     --save_path public_job_arch_0_dual_bayesian_multivariate_ls \
     --seed $i \
     --bayesian True \

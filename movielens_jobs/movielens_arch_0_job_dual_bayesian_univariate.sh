@@ -8,8 +8,6 @@ do
     --PATH ./public_movielens_data/ \
     --reg_para_a 3 \
     --reg_para_b 10 \
-    --fp_16 False \
-    --fused True \
     --save_path movielens_job_arch_0_dual_bayesian_univariate \
     --seed $i \
     --tensor_name all_data.pt \

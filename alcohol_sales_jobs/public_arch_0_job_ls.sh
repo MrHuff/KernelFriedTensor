@@ -8,8 +8,6 @@ do
     --PATH ./public_data/ \
     --reg_para_a 0 \
     --reg_para_b 5 \
-    --fp_16 False \
-    --fused True \
     --save_path public_job_arch_0_ls \
     --seed $i \
     --tensor_name all_data.pt \

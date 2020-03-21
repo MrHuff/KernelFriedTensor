@@ -164,6 +164,7 @@ class RFF(torch.nn.Module):
 class TT_component(torch.nn.Module):
     def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0,prime=False,sub_R=2):
         super(TT_component, self).__init__()
+        self.bayesian = config['bayesian']
         self.register_buffer('reg_para',torch.tensor(reg_para))
         self.prime = prime
         self.r_1 = r_1
@@ -304,7 +305,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         if self.RFF_dict[key]:
             setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key],lengtscale=self.gamma_sq_init))
         else:
-            if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] < 5000:
+            if (self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] < 5000) or self.bayesian:
                 if kernel_para_dict['kernel_type']=='rbf':
                     setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims).to(self.device))
                 elif kernel_para_dict['kernel_type']=='matern':
