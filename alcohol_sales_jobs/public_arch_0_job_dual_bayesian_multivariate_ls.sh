@@ -3,7 +3,7 @@ do
   taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
-    --max_lr 1e-2 \
+    --max_lr 5e-2 \
     --max_R 20 \
     --PATH ./public_data/ \
     --reg_para_a 1e-3 \

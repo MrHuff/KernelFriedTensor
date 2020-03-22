@@ -125,6 +125,10 @@ def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component 
            0: {'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
            1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
            },
+        2: {
+            0: {'primal_list': [primal_dims[0]], 'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'r_1_latent': 1,'r_2_latent': R_scale},
+            1: {'primal_list': [primal_dims[1]], 'ii': [1], 'r_1': R, 'n_list': [shape[1]],'r_2': 1, 'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
+        } #Regular MF
     }
     return TENSOR_ARCHITECTURES[i]
 

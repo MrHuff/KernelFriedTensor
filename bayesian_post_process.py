@@ -2,6 +2,6 @@ from KFT.util import post_process,plot_VI
 
 
 if __name__ == '__main__':
-    PATH = './movielens_job_arch_0_dual_bayesian_multivariate/'
+    PATH = './public_job_arch_0_dual_bayesian_multivariate_ls/'
     plot_VI(PATH,['idx_0','idx_2'],seed=3)
     post_process(PATH,'test_loss',reverse=False,bayesian=True)
