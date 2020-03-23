@@ -8,7 +8,7 @@ do
     --PATH ./public_data/ \
     --reg_para_a 1e-2 \
     --reg_para_b 2e0 \
-    --save_path public_job_arch_0_dual_bayesian_univariate \
+    --save_path public_job_arch_0_benchmark_bayesian_univariate \
     --seed $i \
     --bayesian True \
     --tensor_name all_data.pt \
@@ -16,9 +16,8 @@ do
     --side_info_order 1 0 2 \
     --delete_side_info 0 1 2 \
     --old_setup True \
-    --temporal_tag None \
     --latent_scale False \
-    --dual True \
+    --dual False \
     --multivariate False \
     --init_max 1.0 \
     --mu_a 0 \

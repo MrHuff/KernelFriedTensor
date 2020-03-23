@@ -1,0 +1,2 @@
+sh ./alcohol_sales_jobs/public_arch_0_job_benchmark_univariate.sh
+sh ./movielens_jobs/movielens_arch_0_job_benchmark_univariate.sh

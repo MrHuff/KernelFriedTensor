@@ -8,16 +8,15 @@ do
     --PATH ./public_movielens_data/ \
     --reg_para_a 3 \
     --reg_para_b 10 \
-    --save_path movielens_job_arch_0_dual_bayesian_univariate \
+    --save_path movielens_job_arch_0_benchmark_bayesian_univariate \
     --seed $i \
     --tensor_name all_data.pt \
     --architecture 0 \
     --side_info_order 1 2 \
-   --delete_side_info 1 2 \
+    --delete_side_info 1 2 \
     --old_setup True \
-    --temporal_tag None \
     --latent_scale False \
-    --dual True \
+    --dual False \
     --multivariate False \
     --init_max 1e-1 \
     --bayesian True \
