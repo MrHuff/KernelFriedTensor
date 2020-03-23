@@ -1,8 +1,8 @@
 for i in {1..5}
 do
   nohup taskset -c $i python run_job_script.py \
-    --batch_size_a 0.1 \
-    --batch_size_b 0.5 \
+    --batch_size_a 0.01 \
+    --batch_size_b 0.1 \
     --max_lr 1e-1 \
     --max_R 1000 \
     --PATH ./report_movielens_data_ml-1m/ \

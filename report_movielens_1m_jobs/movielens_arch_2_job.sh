@@ -4,7 +4,7 @@ do
     --batch_size_a 0.01 \
     --batch_size_b 0.10 \
     --max_lr 1e-1 \
-    --max_R 100 \
+    --max_R 1000 \
     --PATH ./report_movielens_data_ml-1m/ \
     --reg_para_a 0 \
     --reg_para_b 2 \
