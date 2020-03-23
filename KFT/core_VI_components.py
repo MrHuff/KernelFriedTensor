@@ -32,19 +32,6 @@ class variational_TT_component(TT_component):
             z = mean + torch.randn_like(mean)*(0.5*sig).exp()
             return z
 
-    def forward_reparametrization(self,indices):
-        if self.full_grad:
-            mean = self.core_param
-            sig = self.variance_parameters
-            T = mean + (0.5*sig).exp()*torch.randn_like(mean)
-            return T,  self.calculate_KL(mean,sig)
-        else:
-            if len(indices.shape)>1:
-                indices = indices.unbind(1)
-            mean = self.core_param.permute(self.permutation_list)[indices]
-            sig = self.variance_parameters.permute(self.permutation_list)[indices]
-            z = mean + torch.randn_like(mean)*(sig*0.5).exp()
-            return z, self.calculate_KL(mean,sig)
 
     def mean_forward(self,indices):
         if self.full_grad:
@@ -79,19 +66,6 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).sum(dim=1).mean().squeeze()
         return KL
 
-    def forward_reparametrization(self, indices):
-        """Do tensor ops"""
-        mean = self.core_param
-        sig = self.variance_parameters
-        T = mean + (0.5*self.variance_parameters).exp()*torch.randn_like(mean)
-        T = self.apply_kernels(T)
-        if self.full_grad:
-            return T, self.calculate_KL(mean,sig)
-        else:
-            if len(indices.shape) > 1:
-                indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[
-                       indices],self.calculate_KL(mean,sig)  # return both to calculate regularization when doing freque
 
     def apply_square_kernel(self,T):
         for key, val in self.n_dict.items():
@@ -331,24 +305,6 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         L = torch.tril(B@B.t())+D
         cov = L@L.t()
         return cov,D,L
-
-    def forward_reparametrization(self, indices):
-        noise = torch.randn_like(self.core_param)
-        noise_2 = torch.randn(*self.noise_shape).to(self.device)
-        for key, val in self.n_dict.items(): #Sample from multivariate
-            noise = lazy_mode_hadamard(noise,getattr(self,f'D_{key}'), key)
-            noise_2 = lazy_mode_product(noise_2, getattr(self,f'B_{key}'), key)
-        T = self.core_param + noise_2 + noise
-        T = self.apply_kernels(T)
-        if self.kernel_eval_mode:
-            self.recalculate_priors()
-        KL = self.calculate_KL()
-        if self.full_grad:
-            return T,KL
-        else:
-            if len(indices.shape) > 1:
-                indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices], KL
 
     def sample(self,indices):
         noise = torch.randn_like(self.core_param)

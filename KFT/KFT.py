@@ -108,11 +108,6 @@ class KFT(torch.nn.Module):
                 self.TT_cores_prime[str(i)].turn_off()
         return 0
 
-    def amp_patch(self,amp):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].amp=amp
-            self.TT_cores_prime[str(i)].amp=amp
-
     def collect_core_outputs(self,indices):
         pred_outputs = []
         reg_output=0
@@ -127,14 +122,18 @@ class KFT(torch.nn.Module):
                 # e = time.time()
                 # print(f'iteration {i}: {e-s}')
                 pred_outputs.append(pred * prime_pred)
+                # print(reg.shape)
+                # print(reg_prime.shape)
+                # print(pred.shape)
+                # print(prime_pred.shape)
             else:
                 pred, reg = tt(ix)
                 pred_outputs.append(pred)
             if self.config['dual']:
                 if not self.old_setup:
-                    reg_output += tt.reg_para * torch.mean(reg.float()*reg_prime.float()) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    reg_output += tt.reg_para * torch.mean(reg*reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
                 else:
-                    reg_output += torch.mean(reg.float()) * tt.reg_para#numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    reg_output += torch.mean(reg) * tt.reg_para#numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             else:
                 if not self.old_setup:
                     reg_output += tt.reg_para*torch.mean(reg)+tt_prime.reg_para*torch.mean(reg_prime) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
@@ -177,9 +176,9 @@ class KFT(torch.nn.Module):
             pred_outputs.append(pred * prime_pred)
             if self.config['dual']:
                 reg_output += torch.sum(
-                    reg.float() * reg_prime.float())  # numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
+                    reg  * reg_prime )  # numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
             else:
-                reg_output += torch.mean(reg.float()) + torch.mean(reg_prime.float())  # numerical issue with fp 16 how fix,
+                reg_output += torch.mean(reg ) + torch.mean(reg_prime )  # numerical issue with fp 16 how fix,
 
         return pred_outputs, reg_output * self.lambda_reg
 
@@ -240,12 +239,6 @@ class KFT_scale(torch.nn.Module):
             self.TT_cores_s[str(i)].turn_off()
             self.TT_cores_b[str(i)].turn_off()
         return 0
-
-    def amp_patch(self,amp):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].amp=amp
-            self.TT_cores_s[str(i)].amp=amp
-            self.TT_cores_b[str(i)].amp=amp
 
     def turn_on_prime(self):
         for i, v in self.ii.items():
@@ -345,16 +338,17 @@ class variational_KFT(KFT):
         self.ii = {}
         for i, v in initialization_data.items():
             self.ii[i] = v['ii']
-            tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                              n_list=v['n_list'],
-                                                              r_2=v['r_2'],
-                                                              cuda=cuda,
-                                                              config=config,
-                                                              init_scale=v['init_scale'],
-                                                              prime=v['prime'],
-                                                              sub_R=config['sub_R'],
-                                                              mu_prior=v['mu_prior_prime'],
-                                                              sigma_prior=v['sigma_prior_prime'])
+            if not old_setup:
+                tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'],
+                                                                  n_list=v['n_list'],
+                                                                  r_2=v['r_2'],
+                                                                  cuda=cuda,
+                                                                  config=config,
+                                                                  init_scale=v['init_scale'],
+                                                                  prime=v['prime'],
+                                                                  sub_R=config['sub_R'],
+                                                                  mu_prior=v['mu_prior_prime'],
+                                                                  sigma_prior=v['sigma_prior_prime'])
             if v['has_side_info']:
                 if v['multivariate'] and config['dual']:
                     tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
@@ -393,7 +387,8 @@ class variational_KFT(KFT):
                                                             )
 
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
-        self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
+        if not old_setup:
+            self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
     def get_norms(self):
         with torch.no_grad():
@@ -423,7 +418,39 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
         return pred_outputs
 
+    def collect_core_outputs_mean_old(self,indices):
+        pred_outputs = []
+        for i,v in self.ii.items():
+            ix = indices[:,v]
+            tt = self.TT_cores[str(i)]
+            pred = tt.mean_forward(ix)
+            pred_outputs.append(pred)
+        return pred_outputs
+
     #TODO: prior hyper para/opt scheme
+    def collect_core_outputs_old(self,indices):
+        first_term = []
+        second_term = []
+        total_KL = 0
+        for i, v in self.ii.items():
+            ix = indices[:, v]
+            tt = self.TT_cores[str(i)]
+            base, extra, KL = tt(ix)
+            first_term.append(base)
+            second_term.append(extra)
+            total_KL += KL.abs()
+        if self.full_grad:
+            group_func = self.edge_mode_collate
+        else:
+            group_func = self.bmm_collate
+        middle = group_func(first_term)
+        gf = group_func(second_term)
+        last_term = middle ** 2 + gf
+        if self.full_grad:
+            middle = middle[torch.unbind(indices, dim=1)]
+            last_term = last_term[torch.unbind(indices, dim=1)]
+        return middle, last_term, total_KL
+
     def collect_core_outputs(self,indices):
         first_term = []
         second_term = []
@@ -449,18 +476,14 @@ class variational_KFT(KFT):
             last_term = last_term[torch.unbind(indices, dim=1)]
         return middle,last_term, total_KL
 
-    def collect_core_outputs_reparametrization(self, indices):
+    def collect_core_outputs_sample_old(self, indices):
         pred_outputs = []
-        total_KL=0
         for i,v in self.ii.items():
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
-            tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred,KL_prime = tt_prime.forward_reparametrization(ix)
-            pred, KL = tt.forward_reparametrization(ix)
-            pred_outputs.append(pred*prime_pred)
-            total_KL += KL.abs() + KL_prime.abs()
-        return pred_outputs,total_KL
+            pred= tt.sample(ix)
+            pred_outputs.append(pred)
+        return pred_outputs
 
     def collect_core_outputs_sample(self, indices):
         pred_outputs = []
@@ -473,17 +496,11 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
         return pred_outputs
 
-    def forward_reparametrization(self, indices):
-        preds_list, regularization = self.collect_core_outputs_reparametrization(indices)
-        if self.full_grad:
-            preds = self.edge_mode_collate(preds_list)
-            return preds[torch.unbind(indices, dim=1)], regularization
-        else:
-            preds = self.bmm_collate(preds_list)
-            return preds, regularization
-
     def sample(self, indices):
-        preds_list = self.collect_core_outputs_sample(indices)
+        if self.old_setup:
+            preds_list = self.collect_core_outputs_sample_old(indices)
+        else:
+            preds_list = self.collect_core_outputs_sample(indices)
         if self.full_grad:
             preds = self.edge_mode_collate(preds_list)
             return preds[torch.unbind(indices, dim=1)]
@@ -492,11 +509,18 @@ class variational_KFT(KFT):
             return preds
 
     def forward(self, indices):
-        middle,third, regularization = self.collect_core_outputs(indices)
+        if self.old_setup:
+            middle,third, regularization = self.collect_core_outputs_old(indices)
+
+        else:
+            middle,third, regularization = self.collect_core_outputs(indices)
         return middle,third,regularization
 
     def mean_forward(self,indices):
-        preds_list = self.collect_core_outputs_mean(indices)
+        if self.old:
+            preds_list = self.collect_core_outputs_mean_old(indices)
+        else:
+            preds_list = self.collect_core_outputs_mean(indices)
         if self.full_grad:
             preds = self.edge_mode_collate(preds_list)
             return preds[torch.unbind(indices, dim=1)]

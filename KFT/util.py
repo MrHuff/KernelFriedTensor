@@ -185,7 +185,7 @@ def job_parser():
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
     parser.add_argument('--chunks', type=int, nargs='?', help='chunks',default=1)
     parser.add_argument('--side_info_order', nargs='+', type=int)
-    parser.add_argument('--temporal_tag', nargs='+', type=int)
+    parser.add_argument('--temporal_tag',default=None, nargs='+', type=int)
     parser.add_argument('--architecture', type=int, nargs='?', default=0, help='architecture')
     parser.add_argument('--L', type=int, nargs='?', default=2, help='L')
     parser.add_argument('--tensor_name', type=str,default='', nargs='?')
@@ -278,8 +278,11 @@ def concat_old_side_info(PATH,paths):
 def load_side_info(side_info_path,indices):
     container = {}
     side_info = torch.load(side_info_path + 'side_info.pt')
-    for i,info in zip(indices,side_info):
-        container[i] = {'data':info,'temporal':False}
+    if len(indices)==1:
+        container[indices[0]] = {'data': side_info, 'temporal': False}
+    else:
+        for i,info in zip(indices,side_info):
+            container[i] = {'data':info,'temporal':False}
     return container
 
 class tensor_dataset(Dataset):

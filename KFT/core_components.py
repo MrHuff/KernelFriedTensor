@@ -300,12 +300,12 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         kernel_para_dict = kernel_dict_input[key]
         self.gamma_sq_init = self.get_median_ls(key)
         ard_dims = None if not kernel_para_dict['ARD'] else self.side_info_dict[key].shape[1]
-        if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] > 200000:
+        if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] > 10000:
             self.RFF_dict[key] = True
         if self.RFF_dict[key]:
             setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key],lengtscale=self.gamma_sq_init))
         else:
-            if (self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] < 5000) or self.bayesian:
+            if (self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] < 10000) or self.bayesian:
                 if kernel_para_dict['kernel_type']=='rbf':
                     setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims).to(self.device))
                 elif kernel_para_dict['kernel_type']=='matern':

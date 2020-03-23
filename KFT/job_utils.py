@@ -45,7 +45,7 @@ def parse_args(args):
     primal_dims = list(shape)
     for key, val in side_info.items():
         print(key)
-        print(val['data'].shape[1])
+        print(val['data'].shape)
         primal_dims[key] = val['data'].shape[1]
     print(primal_dims)
     print(f'USING GPU:{gpu_choice}')
@@ -115,21 +115,36 @@ def get_loss_func(train_config):
     return loss_func
 
 def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component tends to overfit?! Really weird!
-    TENSOR_ARCHITECTURES = {
-        0:{
-           0:{'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
-           1:{'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R,'r_1_latent':R_scale,'r_2_latent':R_scale}, #Magnitude of kernel sum
-           2:{'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1},
-           },
-        1:{
-           0: {'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
-           1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
-           },
-        2: {
-            0: {'primal_list': [primal_dims[0]], 'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R, 'r_1_latent': 1,'r_2_latent': R_scale},
-            1: {'primal_list': [primal_dims[1]], 'ii': [1], 'r_1': R, 'n_list': [shape[1]],'r_2': 1, 'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
-        } #Regular MF
-    }
+
+    if len(shape)==3:
+        TENSOR_ARCHITECTURES = {
+            0:{
+               0:{'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
+               1:{'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R,'r_1_latent':R_scale,'r_2_latent':R_scale}, #Magnitude of kernel sum
+               2:{'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1},
+               },
+            1:{
+               0: {'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
+               1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
+               },
+            2: {
+                0: {'primal_list': [primal_dims[0]], 'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R,
+                    'r_1_latent': 1, 'r_2_latent': R_scale},
+                1: {'primal_list': [primal_dims[1]], 'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': 1,
+                    'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
+            }  # Regular MF
+
+        }
+    elif len(shape)==2:
+        TENSOR_ARCHITECTURES = {
+
+            2: {
+                0: {'primal_list': [primal_dims[0]], 'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R,
+                    'r_1_latent': 1, 'r_2_latent': R_scale},
+                1: {'primal_list': [primal_dims[1]], 'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': 1,
+                    'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
+            }  # Regular MF
+        }
     return TENSOR_ARCHITECTURES[i]
 
 class Log1PlusExp(torch.autograd.Function):
@@ -480,7 +495,7 @@ class job_object():
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
-        t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims, 2)
+        t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims)
         for dim, val in self.side_info.items():
             self.available_side_info_dims.append(dim)
             if self.dual:
@@ -543,7 +558,6 @@ class job_object():
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         self.train_config = self.extract_training_params(parameters)
-        print(parameters)
         if self.bayesian:
             if self.latent_scale:
                 self.model = varitional_KFT_scale(initialization_data=init_dict,
@@ -560,7 +574,6 @@ class job_object():
                             config=self.config, old_setup=self.old_setup,lambdas=lambdas)
         if self.cuda:
             self.model = self.model.to(self.device)
-        print(self.model)
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
                                                  bs_ratio=parameters['batch_size_ratio'])
         self.dataloader.chunks = self.train_config['chunks']
@@ -607,32 +620,32 @@ class job_object():
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
         for i in range(2):
-            try: #Try two times
-                pykeops.clean_pykeops()  # just in case old build files are still present
-                torch.cuda.empty_cache()
-                get_free_gpu(10)  # should be 0 between calls..
-                if self.bayesian:
-                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        if total_cal_error_test < self.best:
-                            self.best = total_cal_error_test
-                            predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
-                        return {'loss': total_cal_error_val,
-                                'status': STATUS_OK,
-                                'test_loss': total_cal_error_test,
-                                'val_cal_dict':val_cal_dict,
-                                'test_cal_dict':test_cal_dict,
-                                'val_loss_final':val_loss_final,
-                                'test_loss_final':test_loss_final}
-                else:
-                    val_loss_final, test_loss_final = self.init_and_train(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            except Exception as e:
-                print(e)
-                torch.cuda.empty_cache()
+            # try: #Try two times
+            pykeops.clean_pykeops()  # just in case old build files are still present
+            torch.cuda.empty_cache()
+            get_free_gpu(10)  # should be 0 between calls..
+            if self.bayesian:
+                total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    if total_cal_error_test < self.best:
+                        self.best = total_cal_error_test
+                        predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
+                    return {'loss': total_cal_error_val,
+                            'status': STATUS_OK,
+                            'test_loss': total_cal_error_test,
+                            'val_cal_dict':val_cal_dict,
+                            'test_cal_dict':test_cal_dict,
+                            'val_loss_final':val_loss_final,
+                            'test_loss_final':test_loss_final}
+            else:
+                val_loss_final, test_loss_final = self.init_and_train(parameters)
+                if not np.isinf(val_loss_final):
+                    torch.cuda.empty_cache()
+                    return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
+            # except Exception as e:
+            #     print(e)
+            #     torch.cuda.empty_cache()
         return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
     def get_kernel_vals(self,desc):
