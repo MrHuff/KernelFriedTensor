@@ -8,14 +8,16 @@ do
     --PATH ./report_movielens_data_ml-10m/ \
     --reg_para_a 0 \
     --reg_para_b 2 \
-    --save_path report_movielens_10m_job_arch_2_primal \
+    --save_path report_movielens_10m_job_arch_2_primal_split_1 \
     --seed $i \
     --tensor_name all_data.pt \
     --architecture 2 \
     --side_info_order 1 \
     --latent_scale False \
+    --split_mode 1 \
     --dual False \
     --init_max 1e-1 \
     --task reg > report_movielens_job_$i.out &
   sleep 10
 done
+wait

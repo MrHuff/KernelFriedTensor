@@ -57,13 +57,13 @@ def plot_VI(save_path,idx_list,seed=None):
         plt.savefig(save_path + f'VI_plot_{seed}.png', bbox_inches = 'tight',
             pad_inches = 0)
 
-def get_test_errors(folder_path,metric_name,data_path,reverse=False,):
+def get_test_errors(folder_path, metric_name, data_path, split_mode, reverse=False):
     trial_files = os.listdir(folder_path)
     print(trial_files)
     metrics = []
     for i in range(1,6):
         dataloader = get_dataloader_tensor(data_path, seed=i, mode='test',
-                                           bs_ratio=1.0)
+                                           bs_ratio=1.0, split_mode=split_mode)
         var_Y_test = dataloader.Y_te.var().numpy()
         for el in trial_files:
             if '.p' == el[-2:] and (f'_{i}.p' in el) :
@@ -158,6 +158,7 @@ def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--PATH', type=str, nargs='?')
     parser.add_argument('--max_R', type=int, nargs='?', default=10, help='max_R')
+    parser.add_argument('--split_mode', type=int, nargs='?', default=0, help='split_mode')
     parser.add_argument('--reg_para_a', type=float, nargs='?', default=0., help='reg_para_a')
     parser.add_argument('--reg_para_b', type=float, nargs='?', default=1., help='reg_para_b')
     parser.add_argument('--pos_weight', type=float, nargs='?', default=1., help='pos_weight')
@@ -286,18 +287,28 @@ def load_side_info(side_info_path,indices):
     return container
 
 class tensor_dataset(Dataset):
-    def __init__(self, tensor_path,seed,mode,bs_ratio=1.):
+    def __init__(self, tensor_path, seed, mode, bs_ratio=1., split_mode=0):
+        if split_mode==0:
+            test_size = 0.2
+            val_size = 0.25
+        if split_mode == 1:
+            test_size = 0.2
+            val_size = 0.2
+        if split_mode ==2:
+            test_size = 0.1
+            val_size = 0.05
+
         self.chunks = 1
         self.ratio = bs_ratio
         self.indices,self.Y = torch.load(tensor_path)
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.indices.numpy(),
                                                                                 self.Y.numpy(),
-                                                                                test_size=0.2,
+                                                                                test_size=test_size,
                                                                                 random_state=seed
                                                                                 )
         self.X_train, self.X_val, self.Y_train, self.Y_val = train_test_split(self.X_train,
                                                                               self.Y_train,
-                                                                              test_size=0.25,
+                                                                              test_size=val_size,
                                                                               random_state=seed)
         self.X_tr = torch.from_numpy(self.X_train).long()
         self.Y_tr = torch.from_numpy(self.Y_train).float()
@@ -341,7 +352,7 @@ class tensor_dataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx,:],self.Y[idx]
 
-def get_dataloader_tensor(tensor_path,seed,mode,bs_ratio):
-    ds = tensor_dataset(tensor_path,seed,mode,bs_ratio=bs_ratio)
+def get_dataloader_tensor(tensor_path, seed, mode, bs_ratio, split_mode):
+    ds = tensor_dataset(tensor_path, seed, mode, bs_ratio=bs_ratio, split_mode=split_mode)
     return ds
 

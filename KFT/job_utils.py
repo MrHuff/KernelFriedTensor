@@ -87,7 +87,8 @@ def parse_args(args):
         'mu_b': args['mu_b'],
         'sigma_a': args['sigma_a'],
         'sigma_b': args['sigma_b'],
-        'pos_weight': args['pos_weight']
+        'pos_weight': args['pos_weight'],
+        'split_mode': args['split_mode']
     }
     return side_info,other_configs
 
@@ -283,6 +284,7 @@ class job_object():
         self.sigma_a = configs['sigma_a']
         self.mu_b = configs['mu_b']
         self.sigma_b = configs['sigma_b']
+        self.split_mode = configs['split_mode']
         if not self.task=='reg':
             self.pos_weight =torch.tensor(configs['pos_weight']).to(self.device) if self.cuda else torch.tensor(configs['pos_weight'])
         self.seed = seed
@@ -410,12 +412,23 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-                if self.bayesian:
-                    self.model.get_norms()
+
+                if not self.bayesian: #Early stopping for frequentist since easy eval metric (R^2)
+                    if self.kill_counter==10:
+                        print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
+                        return 'early_stop'
+                    if -l_val < -self.best_val_loss:
+                        self.kill_counter = 0
+                        self.best_val_loss = l_val
+                        self.dump_model(val_loss=l_val,test_loss=l_test,i=self.hyperits_i)
+                        print(f"dumping model @ val_loss = {l_val} test_loss = {l_test}")
+                    else:
+                        self.kill_counter+=1
+                # if self.bayesian:
+                #     self.model.get_norms()
             ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
             if ERROR:
                 return ERROR
-        del lrs
         return False
 
     def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False,toggle=False):
@@ -431,8 +444,12 @@ class job_object():
                 if not toggle and lr=='ls_lr':
                     continue
             ERROR = self.train_loop(opt, loss_func, warmup=warmup)
+
+            if ERROR=='early_stop':
+                return ERROR
             if ERROR:
                 return ERROR
+
             # print(torch.cuda.memory_cached() / 1e6)
             # print(torch.cuda.memory_allocated() / 1e6)
             torch.cuda.empty_cache()
@@ -469,27 +486,32 @@ class job_object():
         return  opts, loss_func, ERROR, train_list, train_dict
 
     def train(self,toggle=False):
+
+        if not self.bayesian:
+            self.kill_counter = 0
+            self.best_val_loss = -np.inf
         self.train_config['reset'] = 1.0
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
             ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,toggle=toggle)
+
+            if ERROR=='early_stop':
+                break
             if ERROR:
                 if self.bayesian:
                     return -np.inf, -np.inf,-np.inf, -np.inf,-np.inf, -np.inf,-np.inf
                 else:
                     return -np.inf, -np.inf
-        val_loss_final = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
-        test_loss_final = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
-        del opts
         if self.bayesian:
+            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
+            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
-            print(val_loss_final,test_loss_final)
-            print(total_cal_error_val,total_cal_error_test)
-            print(val_cal_dict)
-            print(test_cal_dict)
             return total_cal_error_val-val_loss_final,total_cal_error_test-test_loss_final,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
         else:
+            self.load_dumped_model(self.hyperits_i)
+            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
+            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
             return val_loss_final,test_loss_final
 
     def define_hyperparameter_space(self):
@@ -539,10 +561,11 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.8)),self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
 
     def init_and_train(self,parameters):
+        print(parameters)
         self.config['dual'] = self.dual
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
         if not self.old_setup:
@@ -575,26 +598,28 @@ class job_object():
         if self.cuda:
             self.model = self.model.to(self.device)
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
-                                                 bs_ratio=parameters['batch_size_ratio'])
+                                                 bs_ratio=parameters['batch_size_ratio'],split_mode=self.split_mode)
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:
             self.train(toggle=True)
             print('sigma train')
             total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(toggle=False)
-            del self.model
-            del self.dataloader
-            torch.cuda.empty_cache()
+            self.dump_model(total_cal_error_val,total_cal_error_test,self.hyperits_i)
+            self.hyperits_i+=1
+            self.reset_model_dataloader()
             return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
 
         else:
             val_loss_final, test_loss_final = self.train()
-            self.dump_model(val_loss=val_loss_final,test_loss=test_loss_final,i=self.hyperits_i)
             self.hyperits_i+=1
-            del self.model
-            del self.dataloader
-            torch.cuda.empty_cache()
+            self.reset_model_dataloader()
             return val_loss_final, test_loss_final
+
+    def reset_model_dataloader(self):
+        del self.model
+        del self.dataloader
+        torch.cuda.empty_cache()
 
     def calculate_calibration(self,mode='val',task='reg',samples=100):
         self.dataloader.set_mode(mode)
@@ -676,7 +701,6 @@ class job_object():
                     reg_params[f'reg_para_prime_{i}'] = parameters[f'reg_para_prime_{i}']
                 else:
                     reg_params[f'reg_para_prime_{i}'] = 1.0
-        print(reg_params)
         return reg_params
 
     def construct_kernel_params(self,side_info_dims,parameters):
@@ -734,6 +758,9 @@ class job_object():
                     'i':i
                     }, f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
 
+    def load_dumped_model(self,i):
+        model_dict = torch.load(f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
+        self.model.load_state_dict(model_dict['model_state_dict'])
 
     def extract_training_params(self,parameters):
         training_params = {}
