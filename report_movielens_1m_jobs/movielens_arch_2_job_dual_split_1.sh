@@ -5,7 +5,7 @@ do
     --batch_size_b 0.1 \
     --full_grad True \
     --max_lr 1e-1 \
-    --max_R 1000 \
+    --max_R 2000 \
     --PATH ./report_movielens_data_ml-1m/ \
     --reg_para_a 1e-4 \
     --reg_para_b 1e-2 \

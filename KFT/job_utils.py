@@ -412,8 +412,7 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-
-                if not self.bayesian: #Early stopping for frequentist since easy eval metric (R^2)
+                if self.train_means:
                     if self.kill_counter==10:
                         print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
                         return 'early_stop'
@@ -431,7 +430,7 @@ class job_object():
                 return ERROR
         return False
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False,toggle=False):
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False, train_means=False):
         for i in train_list:
             settings = train_dict[i]
             f = settings['call']
@@ -440,8 +439,8 @@ class job_object():
             # print(lr)
             opt = opts[lr]
             if self.bayesian:
-                self.model.toggle(toggle)
-                if not toggle and lr=='ls_lr':
+                self.model.toggle(train_means)
+                if not train_means and lr== 'ls_lr':
                     continue
             ERROR = self.train_loop(opt, loss_func, warmup=warmup)
 
@@ -485,15 +484,18 @@ class job_object():
         opts = self.opt_reinit( lrs, warmup=warmup)
         return  opts, loss_func, ERROR, train_list, train_dict
 
-    def train(self,toggle=False):
-
-        if not self.bayesian:
-            self.kill_counter = 0
-            self.best_val_loss = -np.inf
+    def train(self, train_means=False):
+        if self.bayesian:
+            self.train_means = train_means
+        else:
+            self.train_means = True
+        self.kill_counter = 0
+        self.best_val_loss = -np.inf
         self.train_config['reset'] = 1.0
+
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
-            ERROR = self.outer_train_loop(opts,loss_func,ERROR,train_list,train_dict, warmup=False,toggle=toggle)
+            ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False, train_means=train_means)
 
             if ERROR=='early_stop':
                 break
@@ -503,6 +505,8 @@ class job_object():
                 else:
                     return -np.inf, -np.inf
         if self.bayesian:
+            if not train_means:
+                self.load_dumped_model(self.hyperits_i)
             val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
             test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
@@ -602,9 +606,10 @@ class job_object():
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:
-            self.train(toggle=True)
+            self.train(train_means=True)
             print('sigma train')
-            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(toggle=False)
+            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(
+                train_means=False)
             self.dump_model(total_cal_error_val,total_cal_error_test,self.hyperits_i)
             self.hyperits_i+=1
             self.reset_model_dataloader()

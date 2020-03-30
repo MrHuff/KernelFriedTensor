@@ -1,4 +1,4 @@
-dos2unix public_arch_0_job_dual_bayesian_multivariate_ls.sh
-sh public_arch_0_job_dual_bayesian_multivariate_ls.sh
-dos2unix public_arch_0_job_dual_bayesian_univariate_ls.sh
-sh public_arch_0_job_dual_bayesian_univariate_ls.sh
+sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_split_1.sh
+sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_split_2.sh
+sh ./report_movielens_10m_jobs/movielens_arch_2_job_dual_split_1.sh
+sh ./report_movielens_10m_jobs/movielens_arch_2_job_dual_split_2.sh

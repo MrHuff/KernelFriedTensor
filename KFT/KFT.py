@@ -676,12 +676,12 @@ class varitional_KFT_scale(KFT_scale):
         middle_term,third_term,reg = self.collect_core_outputs(indices)
         return middle_term,third_term,reg
 
-    def toggle(self, toggle):
+    def toggle(self, train_means):
         for i, v in self.ii.items():
-            self.TT_cores[str(i)].toggle_mean_var(toggle)
+            self.TT_cores[str(i)].toggle_mean_var(train_means)
             if not self.old_setup:
-                self.TT_cores_s[str(i)].toggle_mean_var(toggle)
-                self.TT_cores_b[str(i)].toggle_mean_var(toggle)
+                self.TT_cores_s[str(i)].toggle_mean_var(train_means)
+                self.TT_cores_b[str(i)].toggle_mean_var(train_means)
         return 0
 
     def get_norms(self):
