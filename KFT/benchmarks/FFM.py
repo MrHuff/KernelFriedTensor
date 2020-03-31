@@ -8,6 +8,7 @@ from KFT.benchmarks.utils import read_benchmark_data,get_auc,get_R_square
 import torch
 from KFT.job_utils import get_loss_func,auc_check,accuracy_check,job_object
 import numpy as np
+import tqdm
 class FeaturesLinear(torch.nn.Module):
 
     def __init__(self, field_dims, output_dim=1):
@@ -78,6 +79,7 @@ class xl_FFM(job_object):
         self.its = params['its']
         self.name = f'FFM_{seed}'
         self.cuda=params['cuda']
+        self.train_config = {'task':self.task,'bayesian':False}
         if self.cuda:
             gpu = get_free_gpu(10)[0]
             self.device = f'cuda:{gpu}'
@@ -108,38 +110,46 @@ class xl_FFM(job_object):
     def init_train(self,params):
         self.best = np.inf
         self.kill_counter = 0
-        model = FFM(self.nr_cols,params['k']).to(self.device)
-        for n,p in model.named_parameters():
+        self.model = FFM(self.nr_cols,params['k']).to(self.device)
+        for n,p in self.model.named_parameters():
             print(n)
             print(p.shape)
             print(p.requires_grad)
-        opt = torch.optim.Adam(model.parameters(), params['lr'])
+        opt = torch.optim.Adam(self.model.parameters(), params['lr'])
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=params['patience'], factor=0.5)
         loss_func = get_loss_func(params)
-        self.data_obj.set_mode('train')
-        for i in range(params['epoch']):
+        for i in range(params['epoch']): #beware of dataleaks!
             for j in range(self.its):
+                self.data_obj.set_mode('train')
                 X, y = self.data_obj.get_batch()
                 if self.cuda:
                     X = X.to(self.device)
                     y = y.to(self.device)
-                y_pred,reg = model(X)
+                y_pred,reg = self.model(X)
                 pred_loss = loss_func(y_pred,y)
                 l =  pred_loss + reg*params['lambda']
                 opt.zero_grad()
                 l.backward()
                 opt.step()
                 lrs.step(l)
-            print(f'train error: {pred_loss.data}')
-            val = self.calculate_loss_no_grad(task=self.task, mode='val')
-            test = self.calculate_loss_no_grad(task=self.task, mode='test')
-            if -val < self.best:
-                self.best = -val
-                self.kill_counter = 0
-            else:
-                self.kill_counter += 1
-            if self.kill_counter == 10:
-                self.dump_model(val_loss=val, test_loss=test, i=0)
+                if j % (self.its // 2) == 0:
+                    val = self.calculate_loss_no_grad(task=self.task, mode='val')
+                    test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                    print(f'val_loss: {val} test_loss: {test}')
+                    if -val < self.best:
+                        self.best = -val
+                        self.kill_counter = 0
+                        self.dump_model(val_loss=val, test_loss=test, i=0)
+                    else:
+                        self.kill_counter += 1
+                    if self.kill_counter == 10:
+                        self.load_dumped_model(i=0)
+                        val = self.calculate_loss_no_grad(task=self.task, mode='val')
+                        test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                        print(val)
+                        print(test)
+                        return val, test
+
         self.load_dumped_model(i=0)
         val = self.calculate_loss_no_grad( task=self.task,mode='val')
         test =  self.calculate_loss_no_grad( task=self.task,mode='test')
@@ -156,8 +166,8 @@ class xl_FFM(job_object):
             for i in range(self.data_obj.chunks):
                 X, y = self.data_obj.get_chunk(i)
                 if self.cuda:
-                    X = X.to(self.cuda)
-                    y = y.to(self.cuda)
+                    X = X.to(self.device)
+                    y = y.to(self.device)
                 loss, y_pred = self.correct_validation_loss(X, y)
                 loss_list.append(loss)
                 y_s.append(y.cpu())

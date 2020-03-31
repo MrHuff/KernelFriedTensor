@@ -51,6 +51,7 @@ class linear_job_class(xl_FFM):
         self.bayesian = params['bayesian']
         self.name = f'linear_{seed}'
         self.cuda=params['cuda']
+        self.train_config = {'task':self.task,'bayesian':self.bayesian}
         if self.cuda:
             gpu = get_free_gpu(10)[0]
             self.device = f'cuda:{gpu}'
@@ -72,6 +73,7 @@ class linear_job_class(xl_FFM):
         lgb_params['patience'] = 50
         lgb_params['cuda'] = self.cuda
         lgb_params['device'] = self.device
+
         self.data_obj.ratio =space['ratio']
         self.data_obj.chunks = self.chunks
         return lgb_params
@@ -80,14 +82,14 @@ class linear_job_class(xl_FFM):
         self.best = np.inf
         self.kill_counter = 0
         if not self.bayesian:
-            model = linear_regression(self.nr_cols).to(self.device)
+            self.model = linear_regression(self.nr_cols).to(self.device)
         else:
-            model =bayesian_linear_regression(self.nr_cols).to(self.device)
-        for n,p in model.named_parameters():
+            self.model =bayesian_linear_regression(self.nr_cols).to(self.device)
+        for n,p in self.model.named_parameters():
             print(n)
             print(p.shape)
             print(p.requires_grad)
-        opt = torch.optim.Adam(model.parameters(), params['lr'])
+        opt = torch.optim.Adam(self.model.parameters(), params['lr'])
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=params['patience'], factor=0.5)
         loss_func = get_loss_func(params)
         for i in range(params['epoch']):
@@ -99,10 +101,10 @@ class linear_job_class(xl_FFM):
                     X = X.to(self.device)
                     y = y.to(self.device)
                 if not self.bayesian:
-                    y_pred,reg = model(X)
+                    y_pred,reg = self.model(X)
                     pred_loss = loss_func(y_pred,y)
                 else:
-                    middle_term,last_term,reg = model(X)
+                    middle_term,last_term,reg = self.model(X)
                     pred_loss = loss_func(y,middle_term,last_term)
                 l =  pred_loss + reg*params['lambda']
                 opt.zero_grad()
@@ -111,16 +113,23 @@ class linear_job_class(xl_FFM):
                 lrs.step(l)
                 e = time.time()
                 print(e-s)
-            print(f'train error: {pred_loss}')
-            val = self.calculate_loss_no_grad( task=self.task,mode='val')
-            test =  self.calculate_loss_no_grad( task=self.task,mode='test')
-            if -val < self.best:
-                self.best = -val
-                self.kill_counter=0
-            else:
-                self.kill_counter+=1
-            if self.kill_counter==10:
-                self.dump_model(val_loss=val,test_loss=test,i=0)
+                if j % (self.its // 2) == 0:
+                    val = self.calculate_loss_no_grad(task=self.task, mode='val')
+                    test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                    print(f'val_loss: {val} test_loss: {test}')
+                    if -val < self.best:
+                        self.best = -val
+                        self.kill_counter = 0
+                        self.dump_model(val_loss=val, test_loss=test, i=0)
+                    else:
+                        self.kill_counter += 1
+                    if self.kill_counter == 10:
+                        self.load_dumped_model(i=0)
+                        val = self.calculate_loss_no_grad(task=self.task, mode='val')
+                        test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                        print(val)
+                        print(test)
+                        return val, test
         self.load_dumped_model(i=0)
         val = self.calculate_loss_no_grad(task=self.task, mode='val')
         test = self.calculate_loss_no_grad(task=self.task, mode='test')

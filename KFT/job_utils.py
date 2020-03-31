@@ -420,7 +420,6 @@ class job_object():
                         self.kill_counter = 0
                         self.best_val_loss = l_val
                         self.dump_model(val_loss=l_val,test_loss=l_test,i=self.hyperits_i)
-                        print(f"dumping model @ val_loss = {l_val} test_loss = {l_test}")
                     else:
                         self.kill_counter+=1
                 # if self.bayesian:
@@ -756,6 +755,7 @@ class job_object():
         return init_dict
 
     def dump_model(self,val_loss,test_loss,i):
+        print(f"dumping model @ val_loss = {val_loss} test_loss = {test_loss}")
         torch.save({'model_state_dict':self.model.state_dict(),
                     'test_loss': test_loss,
                     'val_loss': val_loss,
