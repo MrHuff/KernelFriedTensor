@@ -59,14 +59,13 @@ def plot_VI(save_path,idx_list,seed=None):
 
 def get_test_errors(folder_path, metric_name, data_path, split_mode, reverse=False):
     trial_files = os.listdir(folder_path)
-    print(trial_files)
     metrics = []
     for i in range(1,6):
         dataloader = get_dataloader_tensor(data_path, seed=i, mode='test',
                                            bs_ratio=1.0, split_mode=split_mode)
         var_Y_test = dataloader.Y_te.var().numpy()
         for el in trial_files:
-            if '.p' == el[-2:] and (f'_{i}.p' in el) :
+            if '.p' == el[-2:] and (f'_{i}' in el) :
                 trials = pickle.load(open(folder_path + el, "rb"))
                 r_2 = abs(sorted(trials.results, key=lambda x: x[metric_name], reverse=reverse)[0][metric_name])
                 test_error = ((1-r_2)*var_Y_test)**0.5
