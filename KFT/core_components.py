@@ -141,15 +141,15 @@ def lazy_mode_hadamard(T,vec,mode):
     return T
 
 class RFF(torch.nn.Module):
-    def __init__(self, X, lengtscale,rand_seed=1,device=None):
+    def __init__(self, X, lengthscale, rand_seed=1, device=None):
         super(RFF, self).__init__()
         torch.random.manual_seed(rand_seed)
         self.n_input_feat = X.shape[1] # dimension of the original input
         self.n_feat = int(round((X.shape[0]**0.25)*math.log(X.shape[0])))#Michaels paper!
         print(f'I= {self.n_feat}')
-        self.raw_lengthscale = torch.nn.Parameter(lengtscale,requires_grad=False)
+        self.raw_lengthscale = torch.nn.Parameter(lengthscale, requires_grad=False)
         self.register_buffer('w' ,torch.randn(*(self.n_feat,self.n_input_feat)))
-        self.register_buffer('b' ,torch.rand(*(self.n_feat, 1),device=device)*2.0*PI)
+        self.register_buffer('b' ,torch.rand(*(self.n_feat, 1))*2.0*PI)
         self.register_buffer('X',X)
 
     def __call__(self, *args, **kwargs):
@@ -303,7 +303,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] > 10000:
             self.RFF_dict[key] = True
         if self.RFF_dict[key]:
-            setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key],lengtscale=self.gamma_sq_init))
+            setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key], lengthscale=self.gamma_sq_init).to(self.device))
         else:
             if (self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] < 10000) or self.bayesian:
                 if kernel_para_dict['kernel_type']=='rbf':

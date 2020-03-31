@@ -4,9 +4,7 @@ import torch
 import os
 import pickle
 from sklearn.preprocessing import StandardScaler
-def index_join(df,join,id):
-    df = df[df[id].isin(join[id].unique())]
-    return df
+from process_movielens_data import index_join
 
 if __name__ == '__main__':
     for dataset in ['ml-1m','ml-10m']:

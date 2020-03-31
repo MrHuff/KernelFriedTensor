@@ -1,5 +1,3 @@
-sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_split_1_variant.sh
-sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_split_2_variant.sh
 sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_bayesian_multivariate_split_1_variant.sh
 sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_bayesian_multivariate_split_2_variant.sh
 sh ./report_movielens_1m_jobs/movielens_arch_2_job_dual_bayesian_univariate_split_1_variant.sh
