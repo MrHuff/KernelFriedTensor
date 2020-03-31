@@ -6,7 +6,7 @@ import time
 import pickle
 from KFT.benchmarks.utils import read_benchmark_data,get_auc,get_R_square
 import torch
-from KFT.job_utils import get_loss_func,calculate_loss_no_grad
+from KFT.job_utils import get_loss_func,auc_check,accuracy_check,job_object
 import numpy as np
 class FeaturesLinear(torch.nn.Module):
 
@@ -64,7 +64,7 @@ class FFM(torch.nn.Module):
         ret_val = linear_term+ffm_term
         return ret_val.squeeze(),self.get_reg_term()
 
-class xl_FFM():
+class xl_FFM(job_object):
     def __init__(self,seed,y_name,data_path,save_path,params):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
@@ -106,6 +106,8 @@ class xl_FFM():
         return lgb_params
 
     def init_train(self,params):
+        self.best = np.inf
+        self.kill_counter = 0
         model = FFM(self.nr_cols,params['k']).to(self.device)
         for n,p in model.named_parameters():
             print(n)
@@ -129,12 +131,53 @@ class xl_FFM():
                 opt.step()
                 lrs.step(l)
             print(f'train error: {pred_loss.data}')
-
-        val = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='val')
-        test = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='test')
+            val = self.calculate_loss_no_grad(task=self.task, mode='val')
+            test = self.calculate_loss_no_grad(task=self.task, mode='test')
+            if -val < self.best:
+                self.best = -val
+                self.kill_counter = 0
+            else:
+                self.kill_counter += 1
+            if self.kill_counter == 10:
+                self.dump_model(val_loss=val, test_loss=test, i=0)
+        self.load_dumped_model(i=0)
+        val = self.calculate_loss_no_grad( task=self.task,mode='val')
+        test =  self.calculate_loss_no_grad( task=self.task,mode='test')
         print(val)
         print(test)
         return val,test
+
+    def calculate_loss_no_grad(self, task='reg', mode='val'):
+        with torch.no_grad():
+            loss_list = []
+            y_s = []
+            _y_preds = []
+            self.data_obj.set_mode(mode)
+            for i in range(self.data_obj.chunks):
+                X, y = self.data_obj.get_chunk(i)
+                if self.cuda:
+                    X = X.to(self.cuda)
+                    y = y.to(self.cuda)
+                loss, y_pred = self.correct_validation_loss(X, y)
+                loss_list.append(loss)
+                y_s.append(y.cpu())
+                _y_preds.append(y_pred.cpu())
+            total_loss = torch.tensor(loss_list).mean().data
+            Y = torch.cat(y_s, dim=0)
+            y_preds = torch.cat(_y_preds)
+            print(f'{mode} loss_func_loss: {y_preds.mean()}' )
+            if task == 'reg':
+                var_Y = Y.var()
+                ref_metric = 1. - total_loss / var_Y
+                ref_metric = ref_metric.numpy()
+            else:
+                if task=='classification_auc':
+                    ref_metric = auc_check(y_preds, Y)
+                elif task=='classification_acc':
+                    ref_metric = accuracy_check(y_preds, Y)
+                else:
+                    ref_metric = y_preds.mean().numpy()
+        return ref_metric
 
     def __call__(self, params):
         lgb_params = self.get_lgb_params(params)

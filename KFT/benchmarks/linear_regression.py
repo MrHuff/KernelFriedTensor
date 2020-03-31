@@ -6,7 +6,8 @@ import time
 import pickle
 from KFT.benchmarks.utils import read_benchmark_data,get_auc,get_R_square
 import torch
-from KFT.job_utils import get_loss_func,calculate_loss_no_grad
+from KFT.job_utils import get_loss_func
+from KFT.benchmarks.FFM import xl_FFM
 import numpy as np
 
 class linear_regression(torch.nn.Module):
@@ -35,7 +36,7 @@ class bayesian_linear_regression(linear_regression):
         KL_tot = self.KL(self.w,self.w_sigma)+self.KL(self.b,self.b_sigma)
         return middle_term,last_term,KL_tot
 
-class linear_job_class():
+class linear_job_class(xl_FFM):
     def __init__(self,seed,y_name,data_path,save_path,params):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
@@ -76,6 +77,8 @@ class linear_job_class():
         return lgb_params
 
     def init_train(self,params):
+        self.best = np.inf
+        self.kill_counter = 0
         if not self.bayesian:
             model = linear_regression(self.nr_cols).to(self.device)
         else:
@@ -109,9 +112,18 @@ class linear_job_class():
                 e = time.time()
                 print(e-s)
             print(f'train error: {pred_loss}')
-
-        val = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='val')
-        test = calculate_loss_no_grad(model, dataloader=self.data_obj, train_config=params, task=self.task, mode='test')
+            val = self.calculate_loss_no_grad( task=self.task,mode='val')
+            test =  self.calculate_loss_no_grad( task=self.task,mode='test')
+            if -val < self.best:
+                self.best = -val
+                self.kill_counter=0
+            else:
+                self.kill_counter+=1
+            if self.kill_counter==10:
+                self.dump_model(val_loss=val,test_loss=test,i=0)
+        self.load_dumped_model(i=0)
+        val = self.calculate_loss_no_grad(task=self.task, mode='val')
+        test = self.calculate_loss_no_grad(task=self.task, mode='test')
         return val,test
 
     def __call__(self, params):
