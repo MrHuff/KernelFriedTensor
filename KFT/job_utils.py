@@ -760,10 +760,10 @@ class job_object():
                     'test_loss': test_loss,
                     'val_loss': val_loss,
                     'i':i
-                    }, f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
+                    }, f'{self.save_path}/{self.name}_model.pt')
 
     def load_dumped_model(self,i):
-        model_dict = torch.load(f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
+        model_dict = torch.load(f'{self.save_path}/{self.name}_model.pt')
         self.model.load_state_dict(model_dict['model_state_dict'])
 
     def extract_training_params(self,parameters):

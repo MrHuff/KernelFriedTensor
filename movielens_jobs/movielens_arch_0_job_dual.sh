@@ -7,7 +7,7 @@ do
     --max_R 12 \
     --PATH ./public_movielens_data/ \
     --reg_para_a 0 \
-    --reg_para_b 1e-3 \
+    --reg_para_b 1e-9 \
     --save_path movielens_job_arch_0_dual \
     --seed $i \
     --tensor_name all_data.pt \
