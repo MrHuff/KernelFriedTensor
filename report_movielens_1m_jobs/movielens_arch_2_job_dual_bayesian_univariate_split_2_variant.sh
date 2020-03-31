@@ -3,17 +3,19 @@ do
   taskset -c $i python run_job_script.py \
     --batch_size_a 0.01 \
     --batch_size_b 0.05 \
+    --full_grad True \
     --max_lr 1e-1 \
-    --max_R 100 \
-    --PATH ./report_movielens_data_ml-10m/ \
-    --reg_para_a 50 \
-    --reg_para_b 500 \
-    --save_path report_movielens_univariate_10m_split_1 \
+    --max_R 2000 \
+    --PATH ./report_movielens_data_ml-1m/ \
+    --reg_para_a 1000 \
+    --reg_para_b 10000 \
+    --save_path report_movielens_univariate_1m_split_2_variant \
     --seed $i \
-    --split_mode 1 \
+    --split_mode 2 \
     --tensor_name all_data.pt \
     --architecture 2 \
-    --side_info_order 1 \
+    --side_info_order 1 0 \
+    --delete_side_info 0 \
     --latent_scale False \
     --dual True \
     --multivariate False \
