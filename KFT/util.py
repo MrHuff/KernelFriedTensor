@@ -226,45 +226,6 @@ def get_int_dates(x):
 def chunkify(lst, n):
     return [lst[i::n] for i in range(n)]
 
-class kernel_adding_tensor():
-    def __init__(self,tensor_path):
-        self.data = torch.load(tensor_path + 'tensor_data.pt')
-        try:
-            self.m_side, self.n_side, self.t_side = torch.load(tensor_path + 'side_info.pt')
-        except Exception as e:
-            print(e)
-
-        self.indices = (torch.isnan(self.data) == 0).nonzero()
-        self.Y = self.data[torch.unbind(self.indices, dim=1)]
-        self.indices = self.indices.numpy()
-        self.Y = self.Y.numpy()
-        self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.indices,
-                                                                                self.Y,
-                                                                                test_size=0.2,
-                                                                                random_state=10
-                                                                                )
-        self.X_train, self.X_val, self.Y_train, self.Y_val = train_test_split(self.X_train,
-                                                                              self.Y_train,
-                                                                              test_size=0.25,
-                                                                              random_state=10)
-        self.X_train = torch.from_numpy(self.X_train)
-        self.X_val = torch.from_numpy(self.X_val)
-        self.X_test = torch.from_numpy(self.X_test)
-        self.Y_train = torch.from_numpy(self.Y_train)
-        self.Y_val = torch.from_numpy(self.Y_val)
-        self.Y_test = torch.from_numpy(self.Y_test)
-
-    def get_batch(self, rate):
-        batch_msk = np.random.choice(self.X_train.shape[0], int(self.X_train.shape[0] * rate),
-                                     replace=False)
-        return self.X_train[batch_msk, :], self.data[torch.unbind(self.X_train[batch_msk, :], dim=1)]
-
-    def get_test(self):
-        return self.X_test, self.data[torch.unbind(self.X_test, dim=1)]
-
-    def get_validation(self):
-        return self.X_val, self.data[torch.unbind(self.X_val, dim=1)]
-
 def process_old_setup(folder,tensor_name):
     data = torch.load(folder+tensor_name)
     shape = data.shape
