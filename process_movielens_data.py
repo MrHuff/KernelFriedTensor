@@ -14,7 +14,10 @@ if __name__ == '__main__':
         df = pd.read_csv(f'./{dataset}/ratings.csv')
     else:
         df = pd.read_csv(f'./{dataset}/ratings.csv', sep="::", names=['userId', 'movieId', 'rating', 'timestamp'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'].values,infer_datetime_format=True,unit='s').hour
+    if dataset=='ml-20m':
+        df['timestamp'] = pd.to_datetime(df['timestamp'].values,infer_datetime_format=True,unit='s').hour
+    else:
+        df['timestamp'] = pd.to_datetime(df['timestamp'].values,infer_datetime_format=True,unit='s').year*12+pd.to_datetime(df['timestamp'].values,infer_datetime_format=True,unit='s').month
     movie_side_info = pd.read_csv(f'./{dataset}/genome-scores.csv')
     df = df[df['movieId'].isin(movie_side_info['movieId'].unique())]
     movie_side_info = movie_side_info[movie_side_info['movieId'].isin(df['movieId'].unique())]
