@@ -181,6 +181,7 @@ class xl_FFM(job_object):
                 ref_metric = 1. - total_loss / var_Y
                 ref_metric = ref_metric.numpy()
             else:
+                y_preds = torch.sigmoid(y_preds)
                 if task=='classification_auc':
                     ref_metric = auc_check(y_preds, Y)
                 elif task=='classification_acc':

@@ -185,9 +185,7 @@ def auc_check(y_pred,Y):
 def accuracy_check(y_pred,Y):
     with torch.no_grad():
         y_pred = (y_pred.float() > 0.5).cpu().float().numpy()
-        correct = y_pred==Y.cpu().numpy()
-        acc = correct.sum()/Y.shape[0]
-        return acc
+        return np.mean(y_pred==Y.cpu().numpy())
 
 def print_garbage():
     obj_list = []
@@ -317,6 +315,7 @@ class job_object():
                 ref_metric = 1. - total_loss / var_Y
                 ref_metric = ref_metric.numpy()
             else:
+                y_preds = torch.sigmoid(y_preds)
                 if task=='classification_auc':
                     ref_metric = auc_check(y_preds, Y)
                 elif task=='classification_acc':
