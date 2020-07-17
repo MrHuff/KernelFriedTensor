@@ -367,7 +367,7 @@ class job_object():
                         loss_func = torch.nn.MSELoss()
                         pred_loss = loss_func(y_pred, y.squeeze())
                     else:
-                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term) + reg
+                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg
                 else:
                     loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
