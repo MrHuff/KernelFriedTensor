@@ -566,7 +566,7 @@ class job_object():
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
 
-    def init_and_train(self,parameters):
+    def init(self, parameters):
         print(parameters)
         self.config['dual'] = self.dual
         self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
@@ -597,6 +597,8 @@ class job_object():
             else:
                 self.model = KFT(initialization_data=init_dict, cuda=self.device,
                             config=self.config, old_setup=self.old_setup,lambdas=lambdas)
+
+    def start_training(self,parameters):
         if self.cuda:
             self.model = self.model.to(self.device)
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
@@ -651,8 +653,9 @@ class job_object():
             try: #Try two times
                 torch.cuda.empty_cache()
                 get_free_gpu(10)  # should be 0 between calls..
+                self.init(parameters)
                 if self.bayesian:
-                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.init_and_train(parameters)
+                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.start_training(parameters)
                     if not np.isinf(val_loss_final):
                         torch.cuda.empty_cache()
                         if total_cal_error_test < self.best:
@@ -666,7 +669,7 @@ class job_object():
                                 'val_loss_final':val_loss_final,
                                 'test_loss_final':test_loss_final}
                 else:
-                    val_loss_final, test_loss_final = self.init_and_train(parameters)
+                    val_loss_final, test_loss_final = self.start_training(parameters)
                     if not np.isinf(val_loss_final):
                         torch.cuda.empty_cache()
                         return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
