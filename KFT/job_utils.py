@@ -367,7 +367,7 @@ class job_object():
                         loss_func = torch.nn.MSELoss()
                         pred_loss = loss_func(y_pred, y.squeeze())
                     else:
-                        pred_loss= -(analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
+                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg
                 else:
                     loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
@@ -496,10 +496,7 @@ class job_object():
         self.kill_counter = 0
         self.train_config['reset'] = 1.0
         self.train_means = train_means
-        if train_means:
-            self.best_val_loss = -np.inf
-        else:
-            self.best_val_loss = np.inf
+        self.best_val_loss = -np.inf
 
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
