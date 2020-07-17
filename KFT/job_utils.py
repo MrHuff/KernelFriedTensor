@@ -306,14 +306,22 @@ class job_object():
                 loss_list.append(loss)
                 y_s.append(y.cpu())
                 _y_preds.append(y_pred.cpu())
-            total_loss = torch.tensor(loss_list).mean().data
+            total_loss = torch.tensor(loss_list).mean().item()
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
             print(f'{mode} loss_func_loss: {y_preds.mean()}' )
             if task == 'reg':
-                var_Y = Y.var()
-                ref_metric = 1. - total_loss / var_Y
-                ref_metric = ref_metric.numpy()
+                if self.bayesian:
+                    if self.train_means:
+                        var_Y = Y.var()
+                        ref_metric = 1. - total_loss / var_Y
+                        ref_metric = ref_metric.numpy()
+                    else:
+                        ref_metric = total_loss
+                else:
+                    var_Y = Y.var()
+                    ref_metric = 1. - total_loss / var_Y
+                    ref_metric = ref_metric.numpy()
             else:
                 y_preds = torch.sigmoid(y_preds)
                 if task=='classification_auc':
@@ -353,12 +361,17 @@ class job_object():
     def correct_validation_loss(self,X, y, ):
         with torch.no_grad():
             if self.train_config['task'] == 'reg':
-                loss_func = torch.nn.MSELoss()
                 if self.train_config['bayesian']:
-                    y_pred, _, _ = self.model(X)
+                    y_pred, middle_term, _ = self.model(X)
+                    if self.train_means:
+                        loss_func = torch.nn.MSELoss()
+                        pred_loss = loss_func(y_pred, y.squeeze())
+                    else:
+                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)
                 else:
+                    loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
-                pred_loss = loss_func(y_pred, y.squeeze())
+                    pred_loss = loss_func(y_pred, y.squeeze())
             else:
                 loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
                 y_pred, reg = self.model(X)
@@ -411,18 +424,15 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-                if self.train_means:
-                    if self.kill_counter==10:
-                        print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
-                        return 'early_stop'
-                    if -l_val < -self.best_val_loss:
-                        self.kill_counter = 0
-                        self.best_val_loss = l_val
-                        self.dump_model(val_loss=l_val,test_loss=l_test,i=self.hyperits_i)
-                    else:
-                        self.kill_counter+=1
-                # if self.bayesian:
-                #     self.model.get_norms()
+                if self.kill_counter==10:
+                    print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
+                    return 'early_stop'
+                if -l_val < -self.best_val_loss:
+                    self.kill_counter = 0
+                    self.best_val_loss = l_val
+                    self.dump_model(val_loss=l_val, test_loss=l_test, i=self.hyperits_i, parameters=self.parameters) #think carefully here!
+                else:
+                    self.kill_counter+=1
             ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
             if ERROR:
                 return ERROR
@@ -483,18 +493,13 @@ class job_object():
         return  opts, loss_func, ERROR, train_list, train_dict
 
     def train(self, train_means=False):
-        if self.bayesian:
-            self.train_means = train_means
-        else:
-            self.train_means = True
         self.kill_counter = 0
         self.best_val_loss = -np.inf
         self.train_config['reset'] = 1.0
-
+        self.train_means = train_means
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False, train_means=train_means)
-
             if ERROR=='early_stop':
                 break
             if ERROR:
@@ -502,16 +507,14 @@ class job_object():
                     return -np.inf, -np.inf,-np.inf, -np.inf,-np.inf, -np.inf,-np.inf
                 else:
                     return -np.inf, -np.inf
+        self.load_dumped_model(self.hyperits_i)
         if self.bayesian:
-            if not train_means:
-                self.load_dumped_model(self.hyperits_i)
             val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
             test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
             return total_cal_error_val-val_loss_final,total_cal_error_test-test_loss_final,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
         else:
-            self.load_dumped_model(self.hyperits_i)
             val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
             test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
             return val_loss_final,test_loss_final
@@ -599,6 +602,8 @@ class job_object():
                             config=self.config, old_setup=self.old_setup,lambdas=lambdas)
 
     def start_training(self,parameters):
+        print(parameters)
+        self.parameters = parameters
         if self.cuda:
             self.model = self.model.to(self.device)
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
@@ -610,13 +615,12 @@ class job_object():
             print('sigma train')
             total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(
                 train_means=False)
-            self.dump_model(total_cal_error_val,total_cal_error_test,self.hyperits_i)
             self.hyperits_i+=1
             self.reset_model_dataloader()
             return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
 
         else:
-            val_loss_final, test_loss_final = self.train()
+            val_loss_final, test_loss_final = self.train(train_means=True)
             self.hyperits_i+=1
             self.reset_model_dataloader()
             return val_loss_final, test_loss_final
@@ -756,16 +760,17 @@ class job_object():
                     items['sigma_prior'] = parameters[f'sigma_prior_{key}']
         return init_dict
 
-    def dump_model(self,val_loss,test_loss,i):
+    def dump_model(self, val_loss, test_loss, i, parameters):
         print(f"dumping model @ val_loss = {val_loss} test_loss = {test_loss}")
         torch.save({'model_state_dict':self.model.state_dict(),
                     'test_loss': test_loss,
                     'val_loss': val_loss,
-                    'i':i
-                    }, f'{self.save_path}/{self.name}_model.pt')
+                    'i':i,
+                    'parameters':parameters
+                    }, f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
 
     def load_dumped_model(self,i):
-        model_dict = torch.load(f'{self.save_path}/{self.name}_model.pt')
+        model_dict = torch.load(f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
         self.model.load_state_dict(model_dict['model_state_dict'])
 
     def extract_training_params(self,parameters):
