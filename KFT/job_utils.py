@@ -291,7 +291,7 @@ class job_object():
         if self.bayesian:
             self.best = np.inf
 
-    def calculate_loss_no_grad(self, task='reg', mode='val'):
+    def calculate_loss_no_grad(self, task='reg', mode='val',final=False):
         with torch.no_grad():
             loss_list = []
             y_s = []
@@ -302,7 +302,7 @@ class job_object():
                 if self.train_config['cuda']:
                     X = X.to(self.train_config['device'])
                     y = y.to(self.train_config['device'])
-                loss, y_pred = self.correct_validation_loss(X, y)
+                loss, y_pred = self.correct_validation_loss(X, y,final)
                 loss_list.append(loss)
                 y_s.append(y.cpu())
                 _y_preds.append(y_pred.cpu())
@@ -311,7 +311,7 @@ class job_object():
             y_preds = torch.cat(_y_preds)
             print(f'{mode} loss_func_loss: {y_preds.mean()}' )
             if task == 'reg':
-                if self.bayesian:
+                if self.bayesian and not final:
                     if self.train_means:
                         var_Y = Y.var()
                         ref_metric = 1. - total_loss / var_Y
@@ -358,16 +358,16 @@ class job_object():
         self.train_config['reset'] = self.train_config['reset'] * 1.1
         self.train_config['V_lr'] = self.train_config['V_lr']/10
 
-    def correct_validation_loss(self,X, y, ):
+    def correct_validation_loss(self,X, y,final=False ):
         with torch.no_grad():
             if self.train_config['task'] == 'reg':
-                if self.train_config['bayesian']:
+                if self.train_config['bayesian'] and not final:
                     y_pred, middle_term, reg = self.model(X)
                     if self.train_means:
                         loss_func = torch.nn.MSELoss()
                         pred_loss = loss_func(y_pred, y.squeeze())
                     else:
-                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg
+                        pred_loss= -(analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
                 else:
                     loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
@@ -494,9 +494,13 @@ class job_object():
 
     def train(self, train_means=False):
         self.kill_counter = 0
-        self.best_val_loss = -np.inf
         self.train_config['reset'] = 1.0
         self.train_means = train_means
+        if train_means:
+            self.best_val_loss = -np.inf
+        else:
+            self.best_val_loss = np.inf
+
         opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
         for i in range(self.train_config['epochs']):
             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False, train_means=train_means)
@@ -509,14 +513,14 @@ class job_object():
                     return -np.inf, -np.inf
         self.load_dumped_model(self.hyperits_i)
         if self.bayesian:
-            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
-            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
+            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'],final=True)
+            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'],final=True)
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
             return total_cal_error_val-val_loss_final,total_cal_error_test-test_loss_final,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
         else:
-            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'])
-            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'])
+            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'],final=True)
+            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'],final=True)
             return val_loss_final,test_loss_final
 
     def define_hyperparameter_space(self):
