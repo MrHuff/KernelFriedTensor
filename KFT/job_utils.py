@@ -362,12 +362,12 @@ class job_object():
         with torch.no_grad():
             if self.train_config['task'] == 'reg':
                 if self.train_config['bayesian']:
-                    y_pred, middle_term, _ = self.model(X)
+                    y_pred, middle_term, reg = self.model(X)
                     if self.train_means:
                         loss_func = torch.nn.MSELoss()
                         pred_loss = loss_func(y_pred, y.squeeze())
                     else:
-                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)
+                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term) + reg
                 else:
                     loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
