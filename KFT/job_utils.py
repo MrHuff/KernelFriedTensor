@@ -309,7 +309,7 @@ class job_object():
             total_loss = torch.tensor(loss_list).mean().item()
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
-            print(f'{mode} loss_func_loss: {y_preds.mean()}' )
+            print(f'{mode} loss_func_loss: {total_loss.mean()}' )
             if task == 'reg':
                 if self.bayesian and not final:
                     if self.train_means:
@@ -328,8 +328,6 @@ class job_object():
                     ref_metric = auc_check(y_preds, Y)
                 elif task=='classification_acc':
                     ref_metric = accuracy_check(y_preds, Y)
-                else:
-                    ref_metric = y_preds.mean().numpy()
         return ref_metric
 
     def train_monitor(self,total_loss, reg, pred_loss, y_pred, p):
@@ -367,7 +365,7 @@ class job_object():
                         loss_func = torch.nn.MSELoss()
                         pred_loss = loss_func(y_pred, y.squeeze())
                     else:
-                        pred_loss= analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg
+                        pred_loss= -(analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
                 else:
                     loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
