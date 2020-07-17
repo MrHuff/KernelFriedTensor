@@ -309,7 +309,7 @@ class job_object():
             total_loss = torch.tensor(loss_list).mean().item()
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
-            print(f'{mode} loss_func_loss: {total_loss.mean()}' )
+            print(f'{mode} loss_func_loss: {total_loss}' )
             if task == 'reg':
                 if self.bayesian and not final:
                     if self.train_means:
