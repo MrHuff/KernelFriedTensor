@@ -361,9 +361,9 @@ class job_object():
     def correct_validation_loss(self,X, y,final=False ):
         with torch.no_grad():
             if self.train_config['task'] == 'reg':
-                if self.train_config['bayesian'] and not final:
+                if self.train_config['bayesian']:
                     y_pred, middle_term, reg = self.model(X)
-                    if self.train_means:
+                    if self.train_means or final:
                         loss_func = torch.nn.MSELoss()
                         pred_loss = loss_func(y_pred, y.squeeze())
                     else:
