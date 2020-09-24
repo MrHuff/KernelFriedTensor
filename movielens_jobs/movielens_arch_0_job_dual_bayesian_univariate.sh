@@ -6,8 +6,8 @@ do
     --max_lr 1e-1 \
     --max_R 6 \
     --PATH ./public_movielens_data/ \
-    --reg_para_a 3 \
-    --reg_para_b 10 \
+    --reg_para_a 10 \
+    --reg_para_b 100 \
     --save_path movielens_job_arch_0_dual_bayesian_univariate \
     --seed $i \
     --tensor_name all_data.pt \

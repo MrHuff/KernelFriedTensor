@@ -69,6 +69,8 @@ class read_benchmark_data():
         self.Y = self.Y.compute()
         self.n_list = self.X.nunique().tolist()
         print(self.n_list)
+        pd.set_option('display.max_columns', None)
+        print(self.X.head(10))
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.X,
                                                                                 self.Y,
                                                                                 test_size=0.2,

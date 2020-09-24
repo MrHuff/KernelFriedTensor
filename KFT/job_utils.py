@@ -68,7 +68,9 @@ def parse_args(args):
         'factorize_latent': args['factorize_latent'],
         'config': {
             'full_grad': args['full_grad'],
-            'bayesian':args['bayesian']
+            'bayesian':args['bayesian'],
+            'RFF': args['RFF'],
+            'keops':args['keops']
         },
         'shape': shape,
         'architecture': args['architecture'],
