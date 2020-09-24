@@ -307,7 +307,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         kernel_para_dict = kernel_dict_input[key]
         self.gamma_sq_init = self.get_median_ls(key)
         ard_dims = None if not kernel_para_dict['ARD'] else self.side_info_dict[key].shape[1]
-        if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] > 10000:
+        if self.side_info_dict[key].shape[1] > 15 and self.side_info_dict[key].shape[0] > 10000:
             self.RFF_dict[key] = True
         if self.RFF_dict[key]:
             setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key],
