@@ -69,7 +69,6 @@ def parse_args(args):
         'config': {
             'full_grad': args['full_grad'],
             'bayesian':args['bayesian'],
-            'RFF': args['RFF'],
             'keops':args['keops']
         },
         'shape': shape,
