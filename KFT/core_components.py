@@ -181,7 +181,6 @@ class TT_component(torch.nn.Module):
         self.old_setup = old_setup
         self.full_grad = config['full_grad']
         self.dual = config['dual']
-        self.RFF = config['RFF']
         self.keops = config['keops']
         self.n_dict = {i + 1: None for i in range(len(n_list))}
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
@@ -308,7 +307,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
         kernel_para_dict = kernel_dict_input[key]
         self.gamma_sq_init = self.get_median_ls(key)
         ard_dims = None if not kernel_para_dict['ARD'] else self.side_info_dict[key].shape[1]
-        if self.RFF:
+        if self.side_info_dict[key].shape[1] > 50 and self.side_info_dict[key].shape[0] > 10000:
             self.RFF_dict[key] = True
         if self.RFF_dict[key]:
             setattr(self, f'kernel_{key}', RFF(self.side_info_dict[key],
