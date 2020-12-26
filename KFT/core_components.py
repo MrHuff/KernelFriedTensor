@@ -181,7 +181,6 @@ class TT_component(torch.nn.Module):
         self.old_setup = old_setup
         self.full_grad = config['full_grad']
         self.dual = config['dual']
-        self.keops = config['keops']
         self.n_dict = {i + 1: None for i in range(len(n_list))}
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
@@ -315,23 +314,18 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                                                kernel=kernel_para_dict['kernel_type'],
                                                kernel_para=kernel_para_dict).to(self.device))
         else:
-            if self.keops:
-                d = 1 if ard_dims is None else ard_dims
-                if kernel_para_dict['kernel_type']=='rbf':
-                    ls_init = torch.tensor([1/self.gamma_sq_init]*d)
-                    setattr(self, f'kernel_{key}', keops_RBFkernel(ls=ls_init,x= self.side_info_dict[key],device_id=self.device))
+            if kernel_para_dict['kernel_type']=='rbf':
+                setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims).to(self.device))
+            elif kernel_para_dict['kernel_type']=='matern':
+                setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']).to(self.device))
 
-                elif kernel_para_dict['kernel_type']=='matern':
-                    ls_init = torch.tensor([1/self.gamma_sq_init]*d)
-                    setattr(self, f'kernel_{key}', keops_matern_kernel(ls=ls_init,x= self.side_info_dict[key],device_id=self.device,nu=kernel_para_dict['nu']))
-            else:
-                if kernel_para_dict['kernel_type']=='rbf':
-                    setattr(self, f'kernel_{key}', gpytorch.kernels.RBFKernel(ard_num_dims=ard_dims).to(self.device))
-                elif kernel_para_dict['kernel_type']=='matern':
-                    setattr(self, f'kernel_{key}', gpytorch.kernels.MaternKernel(ard_num_dims=ard_dims,nu=kernel_para_dict['nu']).to(self.device))
-                ls_init = self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims))
-                getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(ls_init.to(self.device),
-                                                                                    requires_grad=False)
+            elif kernel_para_dict['kernel_type']=='periodic':
+                setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel(ard_num_dims=ard_dims).to(self.device))
+            elif kernel_para_dict['kernel_type'] == 'local_periodic':
+                pass
+            ls_init = self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims))
+            getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(ls_init.to(self.device),
+                                                                                requires_grad=False)
         self.set_side_info(key)
 
     def side_data_eval(self,key):
@@ -340,7 +334,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             return tmp_kernel_func.evaluate()
         else:
             X =  self.side_info_dict[key].to(self.device)
-            val = tmp_kernel_func(X).evaluate()
+            val = tmp_kernel_func(X,X).evaluate()
             return val
 
     def apply_kernels(self,T):

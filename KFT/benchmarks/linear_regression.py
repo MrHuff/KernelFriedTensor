@@ -120,7 +120,7 @@ class linear_job_class(xl_FFM):
                     if -val < self.best:
                         self.best = -val
                         self.kill_counter = 0
-                        self.dump_model(val_loss=val, test_loss=test, i=0)
+                        self.dump_model(val_loss=val, test_loss=test, i=0,parameters=params)
                     else:
                         self.kill_counter += 1
                     if self.kill_counter == 10:

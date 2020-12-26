@@ -1,6 +1,4 @@
 import torch
-import tensorly
-tensorly.set_backend('pytorch')
 import math
 import time
 from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product
@@ -9,13 +7,13 @@ PI  = math.pi
 torch.set_printoptions(profile="full")
 
 class KFT(torch.nn.Module):
-    def __init__(self, initialization_data,lambdas, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self, initialization_data,lambdas,shape_permutation, cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT, self).__init__()
         self.kernel_class_name = ['TT_kernel_component']
         self.cuda = cuda
-        self.amp = None
         self.config = config
         self.old_setup = old_setup
+        self.shape_permutation = torch.tensor(shape_permutation).long()
         tmp_dict = {}
         tmp_dict_prime = {}
         self.full_grad = config['full_grad']
@@ -34,7 +32,7 @@ class KFT(torch.nn.Module):
                     #TODO: "Mixed prime factorizations..."
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
-                                                       n_list=v['n_list'] if config['dual'] else v['primal_list'],
+                                                       n_list= v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
                                                        kernel_para_dict=v['kernel_para'],
@@ -44,7 +42,7 @@ class KFT(torch.nn.Module):
                                                        reg_para=lambdas[f'reg_para_{i}'])
             else:
                 tmp_dict[str(i)] = TT_component(r_1=v['r_1'],
-                                                n_list= v['n_list'] if config['dual'] else v['primal_list'],
+                                                n_list=  v['n_list'],
                                                 r_2=v['r_2'],
                                                 cuda=cuda,
                                                 config=config,
@@ -154,6 +152,7 @@ class KFT(torch.nn.Module):
         return preds.squeeze()
 
     def forward(self,indices):
+        indices = indices[:,self.shape_permutation]
         preds_list,regularization = self.collect_core_outputs(indices)
         if self.full_grad:
             preds = self.edge_mode_collate(preds_list=preds_list)
@@ -185,12 +184,12 @@ class KFT(torch.nn.Module):
 
 
 class KFT_scale(torch.nn.Module):
-    def __init__(self, initialization_data,lambdas,  cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+    def __init__(self, initialization_data,lambdas,shape_permutation,  cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT_scale, self).__init__()
+        self.shape_permutation = shape_permutation
         self.kernel_class_name = ['TT_kernel_component']
         self.cuda = cuda
         self.config = config
-        self.amp = None
         self.old_setup = old_setup
         tmp_dict = {}
         tmp_dict_s = {}
@@ -216,7 +215,7 @@ class KFT_scale(torch.nn.Module):
                                               reg_para=lambdas[f'reg_para_s_{i}'])
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
-                                                       n_list=v['n_list'] if config['dual'] else v['primal_list'],
+                                                       n_list= v['n_list'],
                                                        r_2=v['r_2'],
                                                        side_information_dict=v['side_info'],
                                                        kernel_para_dict=v['kernel_para'],
@@ -225,7 +224,7 @@ class KFT_scale(torch.nn.Module):
                                                        init_scale=v['init_scale'],
                                                        reg_para=lambdas[f'reg_para_{i}'])
             else:
-                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list=v['n_list'] if config['dual'] else v['primal_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
+                tmp_dict[str(i)] = TT_component(r_1=v['r_1'],n_list= v['n_list'],r_2=v['r_2'],cuda=cuda,config=config,init_scale=v['init_scale'],old_setup=old_setup)
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
         self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
         self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
@@ -329,8 +328,8 @@ class KFT_scale(torch.nn.Module):
         return pred,reg
 
 class variational_KFT(KFT):
-    def __init__(self,initialization_data,cuda=None,config=None,old_setup=False,lambdas=None):
-        super(variational_KFT, self).__init__(initialization_data, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
+    def __init__(self,initialization_data,shape_permutation,cuda=None,config=None,old_setup=False,lambdas=None):
+        super(variational_KFT, self).__init__(initialization_data=initialization_data,shape_permutation=shape_permutation, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
         tmp_dict = {}
         tmp_dict_prime = {}
         self.kernel_class_name = ['multivariate_variational_kernel_TT','univariate_variational_kernel_TT']
@@ -377,7 +376,7 @@ class variational_KFT(KFT):
                                                                         )
             else:
                 tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                            n_list=v['n_list'] if config['dual'] else v['primal_list'],
+                                                            n_list= v['n_list'],
                                                             r_2=v['r_2'],
                                                             cuda=cuda,
                                                             config=config,
@@ -530,8 +529,8 @@ class variational_KFT(KFT):
 
 
 class varitional_KFT_scale(KFT_scale):
-    def __init__(self,initialization_data,cuda=None,config=None,old_setup=False,lambdas=None):
-        super(varitional_KFT_scale, self).__init__(initialization_data,lambdas,cuda,config,old_setup)
+    def __init__(self,initialization_data,shape_permutation,cuda=None,config=None,old_setup=False,lambdas=None):
+        super(varitional_KFT_scale, self).__init__(initialization_data=initialization_data,shape_permutation=shape_permutation, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
         tmp_dict = {}
         tmp_dict_s = {}
         tmp_dict_b = {}
@@ -560,7 +559,7 @@ class varitional_KFT_scale(KFT_scale):
             if v['has_side_info']:
                 if v['multivariate'] and config['dual']:
                     tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                          n_list=v['n_list'] if config['dual'] else v['primal_list'],
+                                                                          n_list= v['n_list'],
                                                                           r_2=v['r_2'],
                                                                           side_information_dict=v['side_info'],
                                                                           kernel_para_dict=v['kernel_para'],
@@ -572,7 +571,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                           )
                 else:
                     tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                        n_list=v['n_list'] if config['dual'] else v['primal_list'],
+                                                                        n_list= v['n_list'],
                                                                         r_2=v['r_2'],
                                                                         side_information_dict=v['side_info'],
                                                                         kernel_para_dict=v['kernel_para'],
@@ -584,7 +583,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                         )
             else:
                 tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                            n_list=v['n_list'] if config['dual'] else v['primal_list'],
+                                                            n_list= v['n_list'],
                                                             r_2=v['r_2'],
                                                             cuda=cuda,
                                                             config=config,

@@ -15,7 +15,7 @@ do_scale = False
 read data
 """
 PATH = './raw_data_hm/'
-save_path = './tensor_data/'
+save_path = '../tensor_data/'
 n_article_list = [400000]
 scale_list = [False]
 ProgressBar().register()

@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns; sns.set()
+import GPUtil
 
 def plot_VI(save_path,idx_list,seed=None):
     if seed is None:
@@ -137,17 +138,6 @@ def core_data_extract(df,indices_list,target_name):
     y = torch.tensor(y).float()
     return X,y,tensor_shape
 
-def get_free_gpu(n=3):
-    gpu_stats = subprocess.check_output(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
-    gpu_df = pd.read_csv(BytesIO(gpu_stats),
-                         names=['memory.used', 'memory.free'],
-                         skiprows=1)
-    print('GPU usage:\n{}'.format(gpu_df))
-    gpu_df['memory.free'] = gpu_df['memory.free'].map(lambda x: int(x.rstrip(' [MiB]')))
-    idx = gpu_df.nlargest(n,['memory.free']).index.values
-    for i in idx:
-        print('Returning GPU{} with {} free MiB'.format(i, gpu_df.iloc[i]['memory.free']))
-    return idx
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -186,7 +176,6 @@ def job_parser():
     parser.add_argument('--cuda', default=True, help='cuda',type=str2bool, nargs='?')
     parser.add_argument('--full_grad', default=False, help='full_grad',type=str2bool, nargs='?')
     parser.add_argument('--dual', default=False, help='dual',type=str2bool, nargs='?')
-    parser.add_argument('--keops', default=False, help='dual',type=str2bool, nargs='?')
     parser.add_argument('--multivariate', default=False, help='dual',type=str2bool, nargs='?')
     parser.add_argument('--sub_epoch_V', type=int, nargs='?', default=100, help='sub_epoch_V')
     parser.add_argument('--seed', type=int, nargs='?', help='seed')
@@ -194,12 +183,15 @@ def job_parser():
     parser.add_argument('--side_info_order', nargs='+', type=int)
     parser.add_argument('--temporal_tag',default=None, nargs='+', type=int)
     parser.add_argument('--architecture', type=int, nargs='?', default=0, help='architecture')
-    parser.add_argument('--L', type=int, nargs='?', default=2, help='L')
     parser.add_argument('--tensor_name', type=str,default='', nargs='?')
-    parser.add_argument('--side_info_name', type=str,nargs='+')
     parser.add_argument('--special_mode', type=int,default=0, nargs='?')
     parser.add_argument('--delete_side_info', type=int,nargs='+')
-    parser.add_argument('--kernels', type=str,nargs='+')
+    return parser
+
+def job_parser_preloaded():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--idx', type=int, nargs='?', default=0, help='idx')
+    parser.add_argument('--job_path', type=str,nargs='?')
     return parser
 
 def print_ls_gradients(model):
@@ -243,15 +235,10 @@ def concat_old_side_info(PATH,paths):
         concated.append(s.float())
     torch.save(concated,PATH+'side_info.pt')
 
-def load_side_info(side_info_path,indices):
-    container = {}
-    side_info = torch.load(side_info_path + 'side_info.pt')
-    if len(indices)==1:
-        container[indices[0]] = {'data': side_info, 'temporal': False}
-    else:
-        for i,info in zip(indices,side_info):
-            container[i] = {'data':info,'temporal':False}
-    return container
+def load_side_info(side_info_path,shape):
+    side_info = torch.load(side_info_path)
+    return side_info
+
 
 class tensor_dataset(Dataset):
     def __init__(self, tensor_path, seed, mode, bs_ratio=1., split_mode=0):

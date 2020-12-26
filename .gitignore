@@ -23,3 +23,7 @@ ml-20m
 *dask*
 *.png
 *.dat
+RAdam
+*.npy
+ReadMe
+demo_script.m

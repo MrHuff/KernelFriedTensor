@@ -6,108 +6,24 @@ import pickle
 import os
 import warnings
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
-from KFT.util import get_dataloader_tensor,print_model_parameters,get_free_gpu,process_old_setup,concat_old_side_info,load_side_info,print_ls_gradients
+from KFT.util import *
 from sklearn import metrics
 import time
 import numpy as np
 import multiprocessing as mp
 import pandas as pd
-import pykeops
 
 cal_list = [5, 15, 25, 35, 45]
 cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
 
-def parse_args(args):
-    print(args)
-    gpu = get_free_gpu(8)
-    gpu_choice = gpu[0]
-    torch.cuda.set_device(int(gpu_choice))
-    PATH = args['PATH']
-    if not os.path.exists(PATH + 'all_data.pt'):
-        process_old_setup(PATH, tensor_name=args['tensor_name'])
-        concat_old_side_info(PATH, args['side_info_name'])
-    side_info = load_side_info(side_info_path=PATH, indices=args['side_info_order'])
-    shape = pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb'))
-    if args['temporal_tag'] is not None:
-        for i in args['temporal_tag']:
-            side_info[i]['temporal'] = True
-    if args['delete_side_info'] is not None:
-        for i in args['delete_side_info']:
-            del side_info[i]
-    if args['kernels'] is None:
-        args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']#['matern_1', 'matern_2', 'matern_3', 'rbf']
-    if args['special_mode']==1:
-        for i,v in side_info.items():
-            side_info[i]['data'] = torch.ones_like(v['data'])
-    elif args['special_mode']==2:
-        for i,v in side_info.items():
-            side_info[i]['data'] = torch.randn_like(v['data'])
-    primal_dims = list(shape)
-    for key, val in side_info.items():
-        print(key)
-        print(val['data'].shape)
-        primal_dims[key] = val['data'].shape[1]
-    print(primal_dims)
-    print(f'USING GPU:{gpu_choice}')
-    print(shape)
-    other_configs = {
-        'reg_para_a': args['reg_para_a'],  # Regularization term! Need to choose wisely
-        'reg_para_b': args['reg_para_b'],
-        'batch_size_a': 1.0 if args['full_grad'] else args['batch_size_a'],
-        'batch_size_b': 1.0 if args['full_grad'] else args['batch_size_b'],
-        'hyperits': args['hyperits'],
-        'save_path': args['save_path'],
-        'task': args['task'],
-        'epochs': args['epochs'],
-        'bayesian': args['bayesian'],  # Mean field does not converge to something meaningful?!
-        'data_path': PATH + 'all_data.pt',
-        'cuda': args['cuda'],
-        'device': f'cuda:{gpu_choice}',
-        'train_loss_interval_print': args['sub_epoch_V'] // 2,
-        'sub_epoch_V': args['sub_epoch_V'],
-        'factorize_latent': args['factorize_latent'],
-        'config': {
-            'full_grad': args['full_grad'],
-            'bayesian':args['bayesian'],
-            'keops':args['keops']
-        },
-        'shape': shape,
-        'architecture': args['architecture'],
-        'max_R': args['max_R'],
-        'max_lr': args['max_lr'],
-        'old_setup': args['old_setup'],
-        'latent_scale': args['latent_scale'],
-        'chunks': args['chunks'],
-        'primal_list': primal_dims,
-        'dual': args['dual'],
-        'init_max': args['init_max'],
-        'L': args['L'],
-        'kernels':args['kernels'],
-        'multivariate':args['multivariate'],
-        'mu_a': args['mu_a'],
-        'mu_b': args['mu_b'],
-        'sigma_a': args['sigma_a'],
-        'sigma_b': args['sigma_b'],
-        'pos_weight': args['pos_weight'],
-        'split_mode': args['split_mode']
-    }
-    return side_info,other_configs
 
 def run_job_func(args):
-    side_info,other_configs = parse_args(args)
     torch.cuda.empty_cache()
-    j = job_object(
-        side_info_dict=side_info,
-        configs=other_configs,
-        seed=args['seed']
-    )
+    j = job_object(args)
     j.run_hyperparam_opt()
-    del j
-    torch.cuda.empty_cache()
-    return 0
 
 def get_loss_func(train_config):
-    if train_config['task']=='reg':
+    if train_config['task']=='regression':
         if train_config['bayesian']:
             loss_func = analytical_reconstruction_error_VI
         else:
@@ -116,34 +32,34 @@ def get_loss_func(train_config):
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     return loss_func
 
-def get_tensor_architectures(i,shape,primal_dims,R=2,R_scale=1): #Two component tends to overfit?! Really weird!
+def get_tensor_architectures(i, permuted_shape, R=2, R_scale=1): #Two component tends to overfit?! Really weird!
 
-    if len(shape)==3:
+    if len(permuted_shape)==3:
         TENSOR_ARCHITECTURES = {
             0:{
-               0:{'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
-               1:{'primal_list':[primal_dims[1]],'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': R,'r_1_latent':R_scale,'r_2_latent':R_scale}, #Magnitude of kernel sum
-               2:{'primal_list':[primal_dims[2]],'ii': [2], 'r_1': R, 'n_list': [shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1},
+               0:{'ii':[0],'r_1':1,'n_list':[permuted_shape[0]], 'r_2':R, 'r_1_latent':1, 'r_2_latent':R_scale},
+               1:{'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]], 'r_2': R, 'r_1_latent':R_scale, 'r_2_latent':R_scale}, #Magnitude of kernel sum
+               2:{'ii': [2], 'r_1': R, 'n_list': [permuted_shape[2]], 'r_2': 1, 'r_1_latent':R_scale, 'r_2_latent':1},
                },
             1:{
-               0: {'primal_list':[primal_dims[0]],'ii':[0],'r_1':1,'n_list':[shape[0]],'r_2':R,'r_1_latent':1,'r_2_latent':R_scale},
-               1: {'primal_list':[primal_dims[1],primal_dims[2]],'ii': [1,2], 'r_1': R, 'n_list': [shape[1],shape[2]], 'r_2': 1,'r_1_latent':R_scale,'r_2_latent':1}, #Magnitude of kernel sum
+               0: {'ii':[0],'r_1':1,'n_list':[permuted_shape[0]], 'r_2':R, 'r_1_latent':1, 'r_2_latent':R_scale},
+               1: {'ii': [1,2], 'r_1': R, 'n_list': [permuted_shape[1], permuted_shape[2]], 'r_2': 1, 'r_1_latent':R_scale, 'r_2_latent':1}, #Magnitude of kernel sum
                },
             2: {
-                0: {'primal_list': [primal_dims[0]], 'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R,
+                0: {'ii': [0], 'r_1': 1, 'n_list': [permuted_shape[0]], 'r_2': R,
                     'r_1_latent': 1, 'r_2_latent': R_scale},
-                1: {'primal_list': [primal_dims[1]], 'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': 1,
+                1: {'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]], 'r_2': 1,
                     'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
             }  # Regular MF
 
         }
-    elif len(shape)==2:
+    elif len(permuted_shape)==2:
         TENSOR_ARCHITECTURES = {
 
-            2: {
-                0: {'primal_list': [primal_dims[0]], 'ii': [0], 'r_1': 1, 'n_list': [shape[0]], 'r_2': R,
+            0: {
+                0: { 'ii': [0], 'r_1': 1, 'n_list': [permuted_shape[0]], 'r_2': R,
                     'r_1_latent': 1, 'r_2_latent': R_scale},
-                1: {'primal_list': [primal_dims[1]], 'ii': [1], 'r_1': R, 'n_list': [shape[1]], 'r_2': 1,
+                1: {'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]], 'r_2': 1,
                     'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
             }  # Regular MF
         }
@@ -198,9 +114,6 @@ def print_garbage():
             pass
     print(len(obj_list))
 
-def opt_32_reinit(model,train_config,lr):
-    opt = torch.optim.Adam(model.parameters(), lr=train_config[lr], amsgrad=False)
-    return opt
 
 def para_func(df):
     df.sort(axis=1)
@@ -241,56 +154,78 @@ def para_summary(df):
 
 
 class job_object():
-    def __init__(self, side_info_dict, configs, seed):
+    def __init__(self, args):
         """
         :param side_info_dict: Dict containing side info EX) {i:{'data':side_info,'temporal':True}}
         :param tensor_architecture: Tensor architecture  EX) {0:{ii:[0,1],...}
         """
-        self.side_info = side_info_dict
-        self.hyper_parameters = {}
-        self.a = configs['reg_para_a']
-        self.b = configs['reg_para_b']
-        self.a_ = configs['batch_size_a']
-        self.b_ = configs['batch_size_b'] #1.0 max
-        self.hyperits = configs['hyperits']
-        self.save_path = configs['save_path']
-        self.architecture = configs['architecture']
-        self.name = f'bayesian_{seed}' if configs['bayesian'] else f'frequentist_{seed}_architecture_{self.architecture}'
-        self.task = configs['task']
-        self.epochs = configs['epochs']
-        self.bayesian = configs['bayesian']
-        self.data_path = configs['data_path']
-        self.cuda = configs['cuda']
-        self.device = configs['device'] if self.cuda else 'cpu'
-        self.train_loss_interval_print  = configs['train_loss_interval_print']
-        self.sub_epoch_V = configs['sub_epoch_V']
-        self.config = configs['config']
-        self.shape = configs['shape']
-        self.max_R = configs['max_R']
-        self.max_lr = configs['max_lr']
-        self.old_setup = configs['old_setup']
-        self.latent_scale = configs['latent_scale']
-        self.chunks = configs['chunks']
-        self.primal_dims = configs['primal_list']
+
+        self.tensor_component_configs, args, self.side_info = self.process_input(args)
+        for key,val in args.items():
+            setattr(self,key,val)
+
+        self.device = args['device'] if self.cuda else 'cpu'
         self.lrs = [self.max_lr/10**i for i in range(2)]
-        self.dual = configs['dual']
-        self.max_L = configs['L']
-        self.init_range = configs['init_max']
-        self.factorize_latent = configs['factorize_latent']
-        self.kernels = configs['kernels']
-        self.multivariate = configs['multivariate']
-        self.mu_a = configs['mu_a']
-        self.sigma_a = configs['sigma_a']
-        self.mu_b = configs['mu_b']
-        self.sigma_b = configs['sigma_b']
-        self.split_mode = configs['split_mode']
-        if not self.task=='reg':
-            self.pos_weight =torch.tensor(configs['pos_weight']).to(self.device) if self.cuda else torch.tensor(configs['pos_weight'])
-        self.seed = seed
+        self.name = f'bayesian_{self.seed}' if args['bayesian'] else f'frequentist_{self.seed}'
+        if not self.task=='regression':
+            self.pos_weight =torch.tensor(args['pos_weight']).to(self.device) if self.cuda else torch.tensor(args['pos_weight'])
         self.trials = Trials()
+        self.hyper_parameters = {}
         self.define_hyperparameter_space()
         if self.bayesian:
             self.best = np.inf
+
+    def process_input(self,args):
+        print(args)
+        devices = GPUtil.getAvailable(order='memory', limit=1)
+        device = devices[0]
+        torch.cuda.set_device(int(device))
+        PATH = args['PATH']
+        original_shape = list(pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb')))
+        loaded_side_info = list(load_side_info(side_info_path=PATH+'side_info.pt', shape=original_shape))
+        side_info_dict_tmp = {} #'dim_idx':{'side_info_for_that_dim':0,'temporal':False}
+        for dim_idx,n in enumerate(original_shape):
+            for idx,s in enumerate(loaded_side_info):
+                if s.shape[0]==n:
+                    side_info_dict_tmp[dim_idx]={'data':loaded_side_info.pop(idx),'temporal':False}
+        if args['temporal_tag'] is not None:
+            for i in args['temporal_tag']: # a list if passed relative to the orginal shape
+                side_info_dict_tmp[i]['temporal'] = True
+        if args['delete_side_info'] is not None: # a list if passed to the orginal shape
+            for i in args['delete_side_info']:
+                del side_info_dict_tmp[i]
+        if args['special_mode'] == 1:
+            for i, v in side_info_dict_tmp.items():
+                side_info_dict_tmp[i]['data'] = torch.ones_like(v['data']) #relative to the orginal shape
+        elif args['special_mode'] == 2:
+            for i, v in side_info_dict_tmp.items():
+                side_info_dict_tmp[i]['data'] = torch.randn_like(v['data']) #relative to the orginal shape
+
+        for dim_idx, n in enumerate(original_shape):
+            if dim_idx in side_info_dict_tmp:
+                if not args['dual']:
+                    original_shape[dim_idx] = side_info_dict_tmp[dim_idx]['data'].shape[1]
+
+        side_info_dict = {}
+        for perm,old_key in zip(args['shape_permutation'],[idx for idx in range(len(original_shape))]):
+            if perm in side_info_dict_tmp:
+                side_info_dict[old_key] = side_info_dict_tmp.pop(perm)
+        shape = [original_shape[el] for el in args['shape_permutation']]
+        args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']  # ['matern_1', 'matern_2', 'matern_3', 'rbf']
+
+        print(f'USING GPU:{device}')
+        args['batch_size_a'] = 1.0 if args['full_grad'] else args['batch_size_a']
+        args['batch_size_b'] = 1.0 if args['full_grad'] else args['batch_size_b']
+        args['data_path'] = PATH + 'all_data.pt'
+        args['device'] = f'cuda:{device}'
+        args['train_loss_interval_print'] = args['sub_epoch_V'] // 2
+        args['shape'] = shape
+        tensor_component_configs = {
+                             'full_grad': args['full_grad'],
+                             'bayesian': args['bayesian'],
+                         }
+        return tensor_component_configs,args,side_info_dict
+
 
     def calculate_loss_no_grad(self, task='reg', mode='val',final=False):
         with torch.no_grad():
@@ -311,7 +246,7 @@ class job_object():
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
             print(f'{mode} loss_func_loss: {total_loss}' )
-            if task == 'reg':
+            if task == 'regression':
                 if self.bayesian and not final:
                     if self.train_means:
                         var_Y = Y.var()
@@ -359,7 +294,7 @@ class job_object():
 
     def correct_validation_loss(self,X, y,final=False ):
         with torch.no_grad():
-            if self.train_config['task'] == 'reg':
+            if self.train_config['task'] == 'regression':
                 if self.train_config['bayesian']:
                     y_pred, middle_term, reg = self.model(X)
                     if self.train_means or final:
@@ -522,15 +457,15 @@ class job_object():
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
-        t_act = get_tensor_architectures(self.architecture,self.shape,self.primal_dims)
+        t_act = get_tensor_architectures(self.architecture, self.shape)
         for dim, val in self.side_info.items():
             self.available_side_info_dims.append(dim)
-            if self.dual:
+            if self.dual: #Add periodic kernel setup here
                 self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice',self.kernels ) #self.kernels
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
         if self.bayesian:
-            self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.a, self.b)
+            self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.reg_para_a, self.reg_para_b)
             for i in range(len(t_act)):
                 if self.latent_scale:
                     self.hyperparameter_space[f'mu_prior_s_{i}'] = hp.uniform(f'mu_prior_s_{i}', self.mu_a,
@@ -550,20 +485,16 @@ class job_object():
                                                                                self.sigma_b)
         else:
             for i in range(len(t_act)):
-                self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.a, self.b)
+                self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.reg_para_a, self.reg_para_b)
                 if self.latent_scale:
-                    self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.a, self.b)
-                    self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.a, self.b)
+                    self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.reg_para_a, self.reg_para_b)
+                    self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.reg_para_a, self.reg_para_b)
                 if not self.old_setup:
-                    if self.factorize_latent:
-                        self.hyperparameter_space[f'prime_{i}'] = hp.choice(f'prime_{i}', [False,True])
-                        self.hyperparameter_space['sub_R'] = hp.choice('sub_R',
-                                                                       np.arange(self.max_R // 4, self.max_R // 2,
-                                                                                 dtype=int))
-                    if not self.dual:
-                        self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.a, self.b)
 
-        self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.a_, self.b_)
+                    if not self.dual:
+                        self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.reg_para_a, self.reg_para_b)
+
+        self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.batch_size_a, self.batch_size_b)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
@@ -571,35 +502,31 @@ class job_object():
 
     def init(self, parameters):
         print(parameters)
-        self.config['dual'] = self.dual
-        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape,self.primal_dims, parameters['R'],parameters['R_scale'] if self.latent_scale else 1)
+        self.tensor_component_configs['dual'] = self.dual
+        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'], parameters['R_scale'] if self.latent_scale else 1)
         if not self.old_setup:
             if not self.latent_scale:
                 for key, component in self.tensor_architecture.items():
-                    if self.factorize_latent:
-                        component['prime'] = parameters[f'prime_{key}']
-                        self.config['sub_R'] = parameters['sub_R']
-                    else:
-                        self.config['sub_R'] = 1
-                        component['prime'] = False
+                    self.tensor_component_configs['sub_R'] = 1
+                    component['prime'] = False
 
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         self.train_config = self.extract_training_params(parameters)
         if self.bayesian:
             if self.latent_scale:
-                self.model = varitional_KFT_scale(initialization_data=init_dict,
-                                            cuda=self.device, config=self.config, old_setup=self.old_setup,lambdas=lambdas)
+                self.model = varitional_KFT_scale(initialization_data=init_dict, shape_permutation=self.shape_permutation,
+                                                  cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
             else:
-                self.model = variational_KFT(initialization_data=init_dict,
-                                            cuda=self.device, config=self.config, old_setup=self.old_setup,lambdas=lambdas)
+                self.model = variational_KFT(initialization_data=init_dict,shape_permutation=self.shape_permutation,
+                                             cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
         else:
             if self.latent_scale:
-                self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,
-                            config=self.config, old_setup=self.old_setup,lambdas=lambdas)
+                self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
+                                       config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
             else:
-                self.model = KFT(initialization_data=init_dict, cuda=self.device,
-                            config=self.config, old_setup=self.old_setup,lambdas=lambdas)
+                self.model = KFT(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
+                                 config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
 
     def start_training(self,parameters):
         print(parameters)
@@ -653,36 +580,35 @@ class job_object():
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)
             return total_cal_error,cal_dict ,predictions
     def __call__(self, parameters):
-        for i in range(2):
-            try: #Try two times
+        # for i in range(2):
+        #     try: #Try two times
+        torch.cuda.empty_cache()
+        self.init(parameters)
+        if self.bayesian:
+            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.start_training(parameters)
+            if not np.isinf(val_loss_final):
                 torch.cuda.empty_cache()
-                get_free_gpu(10)  # should be 0 between calls..
-                self.init(parameters)
-                if self.bayesian:
-                    total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.start_training(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        if total_cal_error_test < self.best:
-                            self.best = total_cal_error_test
-                            predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
-                        return {'loss': total_cal_error_val,
-                                'status': STATUS_OK,
-                                'test_loss': total_cal_error_test,
-                                'val_cal_dict':val_cal_dict,
-                                'test_cal_dict':test_cal_dict,
-                                'val_loss_final':val_loss_final,
-                                'test_loss_final':test_loss_final}
-                else:
-                    val_loss_final, test_loss_final = self.start_training(parameters)
-                    if not np.isinf(val_loss_final):
-                        torch.cuda.empty_cache()
-                        return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            except Exception as e:
-                print(e)
+                if total_cal_error_test < self.best:
+                    self.best = total_cal_error_test
+                    predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
+                return {'loss': total_cal_error_val,
+                        'status': STATUS_OK,
+                        'test_loss': total_cal_error_test,
+                        'val_cal_dict':val_cal_dict,
+                        'test_cal_dict':test_cal_dict,
+                        'val_loss_final':val_loss_final,
+                        'test_loss_final':test_loss_final}
+        else:
+            val_loss_final, test_loss_final = self.start_training(parameters)
+            if not np.isinf(val_loss_final):
                 torch.cuda.empty_cache()
+                return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
+            # except Exception as e:
+            #     print(e)
+            #     torch.cuda.empty_cache()
         return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
 
-    def get_kernel_vals(self,desc):
+    def  get_kernel_vals(self,desc):
         if 'matern_1'== desc:
             return 'matern',0.5
         elif 'matern_2' == desc:
@@ -744,7 +670,7 @@ class job_object():
                 items['has_side_info'] = True
             else:
                 items['has_side_info'] = False
-            items['init_scale'] = self.init_range
+            items['init_scale'] = self.init_max
             if self.bayesian:
                 items['multivariate'] = self.multivariate
                 if self.latent_scale:
@@ -790,7 +716,7 @@ class job_object():
         training_params['batch_ratio'] = parameters['batch_size_ratio']
         training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
-        if not self.task=='reg':
+        if not self.task=='regression':
             training_params['pos_weight'] = self.pos_weight
         if self.bayesian:
             training_params['sigma_y'] = parameters['reg_para']

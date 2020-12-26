@@ -1,2 +1,0 @@
-sh movielens_jobs/movielens_arch_0_job_dual_bayesian_multivariate.sh
-sh movielens_jobs/movielens_arch_0_job_dual_bayesian_univariate.sh
