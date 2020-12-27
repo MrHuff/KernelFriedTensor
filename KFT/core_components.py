@@ -279,6 +279,8 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 if val is not None:
                     k = getattr(self,f'kernel_{key}')
                     k.raw_lengthscale.requires_grad = True
+                    if k.__class__.__name__=='PeriodicKernel':
+                        k.raw_period_length.requires_grad=True
             return 0
 
     def kernel_train_mode_off(self):
@@ -289,6 +291,8 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 if val is not None:
                     k = getattr(self,f'kernel_{key}')
                     k.raw_lengthscale.requires_grad = False
+                    if k.__class__.__name__=='PeriodicKernel':
+                        k.raw_period_length.requires_grad=False
                     self.set_side_info(key)
         return 0
 
@@ -321,8 +325,15 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
 
             elif kernel_para_dict['kernel_type']=='periodic':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel(ard_num_dims=ard_dims).to(self.device))
+                getattr(self, f'kernel_{key}').raw_period_length=torch.nn.Parameter(torch.tensor(0.1).to(self.device),
+                                                                                requires_grad=False)
+
+
             elif kernel_para_dict['kernel_type'] == 'local_periodic':
-                pass
+                setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel(ard_num_dims=ard_dims).to(self.device))
+                getattr(self, f'kernel_{key}').raw_period_length=torch.nn.Parameter(torch.tensor(0.1).to(self.device),
+                                                                                requires_grad=False)
+
             ls_init = self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims))
             getattr(self, f'kernel_{key}').raw_lengthscale = torch.nn.Parameter(ls_init.to(self.device),
                                                                                 requires_grad=False)
@@ -334,7 +345,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             return tmp_kernel_func.evaluate()
         else:
             X =  self.side_info_dict[key].to(self.device)
-            val = tmp_kernel_func(X,X).evaluate()
+            val = tmp_kernel_func(X).evaluate()
             return val
 
     def apply_kernels(self,T):

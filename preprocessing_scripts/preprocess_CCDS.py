@@ -16,7 +16,7 @@ if __name__ == '__main__':
     X  = torch.from_numpy(genfromtxt('../KFT_revision_benchmark_data/CCDS/X.csv', delimiter=',')-1).int()
     y  = torch.from_numpy(genfromtxt('../KFT_revision_benchmark_data/CCDS/Y.csv', delimiter=',')).float()
     loc_side_info = torch.from_numpy(genfromtxt('../KFT_revision_benchmark_data/CCDS/side_info.csv', delimiter=',')).float()
-    time_side_info = torch.unique(X[:,-1]).int()
+    time_side_info = torch.unique(X[:,-1]).float().unsqueeze(-1)
     print(time_side_info)
     print(loc_side_info)
     tensor_shape = torch.Size([17,125,156])

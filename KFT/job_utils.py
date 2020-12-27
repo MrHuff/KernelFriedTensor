@@ -12,6 +12,8 @@ import time
 import numpy as np
 import multiprocessing as mp
 import pandas as pd
+from torch.cuda.amp import autocast,GradScaler
+
 
 cal_list = [5, 15, 25, 35, 45]
 cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
@@ -187,19 +189,19 @@ class job_object():
         for dim_idx,n in enumerate(original_shape):
             for idx,s in enumerate(loaded_side_info):
                 if s.shape[0]==n:
-                    side_info_dict_tmp[dim_idx]={'data':loaded_side_info.pop(idx),'temporal':False}
+                    side_info_dict_tmp[dim_idx]={'data':loaded_side_info.pop(idx),'temporal_tag':False}
         if args['temporal_tag'] is not None:
             for i in args['temporal_tag']: # a list if passed relative to the orginal shape
-                side_info_dict_tmp[i]['temporal'] = True
-        if args['delete_side_info'] is not None: # a list if passed to the orginal shape
-            for i in args['delete_side_info']:
-                del side_info_dict_tmp[i]
+                side_info_dict_tmp[i]['temporal_tag'] = True
         if args['special_mode'] == 1:
             for i, v in side_info_dict_tmp.items():
                 side_info_dict_tmp[i]['data'] = torch.ones_like(v['data']) #relative to the orginal shape
         elif args['special_mode'] == 2:
             for i, v in side_info_dict_tmp.items():
                 side_info_dict_tmp[i]['data'] = torch.randn_like(v['data']) #relative to the orginal shape
+        if args['delete_side_info'] is not None: # a list if passed to the orginal shape
+            for i in args['delete_side_info']:
+                del side_info_dict_tmp[i]
 
         for dim_idx, n in enumerate(original_shape):
             if dim_idx in side_info_dict_tmp:
@@ -212,7 +214,6 @@ class job_object():
                 side_info_dict[old_key] = side_info_dict_tmp.pop(perm)
         shape = [original_shape[el] for el in args['shape_permutation']]
         args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']  # ['matern_1', 'matern_2', 'matern_3', 'rbf']
-
         print(f'USING GPU:{device}')
         args['batch_size_a'] = 1.0 if args['full_grad'] else args['batch_size_a']
         args['batch_size_b'] = 1.0 if args['full_grad'] else args['batch_size_b']
@@ -220,6 +221,7 @@ class job_object():
         args['device'] = f'cuda:{device}'
         args['train_loss_interval_print'] = args['sub_epoch_V'] // 2
         args['shape'] = shape
+        print(shape)
         tensor_component_configs = {
                              'full_grad': args['full_grad'],
                              'bayesian': args['bayesian'],
@@ -258,6 +260,8 @@ class job_object():
                     var_Y = Y.var()
                     ref_metric = 1. - total_loss / var_Y
                     ref_metric = ref_metric.numpy()
+                    print(f'{mode} NRSME: {total_loss**0.5/Y.abs().mean()}')
+
             else:
                 y_preds = torch.sigmoid(y_preds)
                 if task=='classification_auc':
@@ -351,6 +355,9 @@ class job_object():
 
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
+                # print('period: ',self.model.TT_cores['2'].kernel_1.period_length)
+                # print('ls: ',self.model.TT_cores['2'].kernel_1.raw_lengthscale)
+
                 torch.cuda.empty_cache()
                 l_val = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
                 torch.cuda.empty_cache()
@@ -378,7 +385,6 @@ class job_object():
             f = settings['call']
             lr = settings['para']
             f()
-            # print(lr)
             opt = opts[lr]
             if self.bayesian:
                 self.model.toggle(train_means)
@@ -461,7 +467,10 @@ class job_object():
         for dim, val in self.side_info.items():
             self.available_side_info_dims.append(dim)
             if self.dual: #Add periodic kernel setup here
-                self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice',self.kernels ) #self.kernels
+                if val['temporal_tag']:
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice',['periodic'] ) #self.kernels
+                else:
+                    self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice',self.kernels ) #self.kernels
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
 
         if self.bayesian:
@@ -527,6 +536,7 @@ class job_object():
             else:
                 self.model = KFT(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
                                  config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
+        print(self.model)
 
     def start_training(self,parameters):
         print(parameters)

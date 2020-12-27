@@ -21,10 +21,10 @@ if __name__ == '__main__':
     tensor_shape = tmp_dat.shape
     X = torch.from_numpy(X).int()
     y = torch.from_numpy(y).float()
-    time_side_info = torch.unique(X[:,0]).int()
+    time_side_info = torch.unique(X[:,0]).float().unsqueeze(-1)
     torch.save((X,y),save_dir+'all_data.pt')
 
-    torch.save((time_side_info), save_dir + 'side_info.pt')
+    torch.save([time_side_info], save_dir + 'side_info.pt')
 
     with open(save_dir + 'full_tensor_shape.pickle', 'wb') as handle:
         pickle.dump(tensor_shape, handle, protocol=pickle.HIGHEST_PROTOCOL)

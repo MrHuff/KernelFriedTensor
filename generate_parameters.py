@@ -22,6 +22,7 @@ def generate_job_params(directory='job_dir/'):
     BE CAREFUL OF WHAT YOU PUT HERE
     """
     #FIXED PARAMS
+    # PATH = ['public_data/','public_movielens_data/','tensor_data/','CCDS_data/','eletric_data/','traffic_data/']
     PATH = ['public_data/','public_movielens_data/','tensor_data/','CCDS_data/','eletric_data/','traffic_data/']
     save_path = [directory+'results_'+p for p in PATH]
     batch_size_a = [1e-3]*len(PATH)
