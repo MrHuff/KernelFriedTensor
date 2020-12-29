@@ -13,6 +13,7 @@ class variational_TT_component(TT_component):
         super(variational_TT_component, self).__init__(r_1, n_list, r_2, cuda, config, init_scale, old_setup,
                                                        double_factor=double_factor, sub_R=sub_R)
         self.variance_parameters = torch.nn.Parameter(-2*torch.ones(*self.shape_list),requires_grad=True)
+        self.train_group = ['mean','var']
         self.register_buffer('mu_prior',torch.tensor(mu_prior))
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
     def calculate_KL(self,mean,sig):
@@ -55,15 +56,35 @@ class variational_TT_component(TT_component):
             KL = self.calculate_KL(mean,sig)
         return mean,sig.exp(),KL
 
-    def toggle_mean_var(self,toggle):
-        self.core_param.requires_grad = toggle
-        self.variance_parameters = not toggle
+    def toggle_mean_var(self, train_mean): #Fix turn on and turn off mechanics being incorrect!
+        self.core_param.requires_grad = train_mean
+        self.variance_parameters.requires_grad = not train_mean
+        if train_mean:
+            self.train_group=['mean']
+        else:
+            self.train_group=['var']
+
+
+    def turn_off(self):
+        for el in self.train_group:
+            if el=='mean':
+                self.core_param.requires_grad=False
+            elif el=='var':
+                self.variance_parameters.requires_grad=False
+
+    def turn_on(self):
+        for el in self.train_group:
+            if el=='mean':
+                self.core_param.requires_grad=True
+            elif el=='var':
+                self.variance_parameters.requires_grad=True
 
 class univariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0,mu_prior=0,sigma_prior=-1):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                  kernel_para_dict, cuda, config, init_scale)
         self.variance_parameters = torch.nn.Parameter(-2*torch.ones(*self.shape_list),requires_grad=True)
+        self.train_group = ['mean','var']
         self.register_buffer('mu_prior', torch.tensor(mu_prior))
         self.register_buffer('sigma_prior', torch.tensor(sigma_prior))
 
@@ -136,9 +157,52 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 indices = indices.unbind(1)
             return T.permute(self.permutation_list)[indices]
 
-    def toggle_mean_var(self,toggle):
-        self.core_param.requires_grad = toggle
-        self.variance_parameters = not toggle
+    def toggle_mean_var(self, train_mean): #Fix turn on and turn off mechanics being incorrect!
+        self.core_param.requires_grad = train_mean
+        self.variance_parameters.requires_grad = not train_mean
+        if train_mean:
+            self.train_group=['mean']
+        else:
+            self.train_group=['var']
+
+    def turn_off(self):
+        for el in self.train_group:
+            if el=='mean':
+                self.core_param.requires_grad=False
+            elif el=='var':
+                self.variance_parameters.requires_grad=False
+
+    def turn_on(self):
+        for el in self.train_group:
+            if el=='mean':
+                self.core_param.requires_grad=True
+            elif el=='var':
+                self.variance_parameters.requires_grad=True
+
+    def kernel_train_mode_on(self):
+        self.turn_off()
+        self.kernel_eval_mode = True
+        if self.dual:
+            for key,val in self.n_dict.items():
+                if val is not None:
+                    k = getattr(self,f'kernel_{key}')
+                    k.raw_lengthscale.requires_grad = True
+                    if k.__class__.__name__=='PeriodicKernel':
+                        k.raw_period_length.requires_grad=True
+            return 0
+
+    def kernel_train_mode_off(self):
+        self.turn_on()
+        self.kernel_eval_mode = False
+        if self.dual:
+            for key,val in self.n_dict.items():
+                if val is not None:
+                    k = getattr(self,f'kernel_{key}')
+                    k.raw_lengthscale.requires_grad = False
+                    if k.__class__.__name__=='PeriodicKernel':
+                        k.raw_period_length.requires_grad=False
+                    self.set_side_info(key)
+        return 0
 
 class multivariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0, mu_prior=1):
@@ -150,21 +214,46 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
         for key,val in  self.n_dict.items():
             self.set_variational_parameters(key,val)
         self.noise_shape.append(r_2)
+        self.train_group = ['mean','var']
 
-    def toggle_mean_var(self,toggle):
-        self.core_param.requires_grad = toggle
+    def turn_off(self):
+        for el in self.train_group:
+            if el=='mean':
+                self.core_param.requires_grad=False
+            elif el=='var':
+                for key in self.n_dict.keys():
+                    getattr(self, f'D_{key}').requires_grad =False
+                    getattr(self, f'B_{key}').requires_grad = False
+
+    def turn_on(self):
+        for el in self.train_group:
+            if el=='mean':
+                self.core_param.requires_grad=True
+            elif el=='var':
+                for key in self.n_dict.keys():
+                    getattr(self, f'D_{key}').requires_grad = True
+                    getattr(self, f'B_{key}').requires_grad = True
+
+    def toggle_mean_var(self, train_mean):
+        self.core_param.requires_grad = train_mean
         for key in self.n_dict.keys():
-            getattr(self,f'D_{key}').requires_grad = not toggle
-            getattr(self, f'B_{key}').requires_grad = not toggle
+            getattr(self,f'D_{key}').requires_grad = not train_mean
+            getattr(self, f'B_{key}').requires_grad = not train_mean
+        if train_mean:
+            self.train_group=['mean']
+        else:
+            self.train_group=['var']
 
     def kernel_train_mode_off(self):
         self.turn_on()
         self.kernel_eval_mode = False
         if self.dual:
-            for key,val in self.n_dict.items():
+            for key, val in self.n_dict.items():
                 if val is not None:
-                    k = getattr(self,f'kernel_{key}')
+                    k = getattr(self, f'kernel_{key}')
                     k.raw_lengthscale.requires_grad = False
+                    if k.__class__.__name__ == 'PeriodicKernel':
+                        k.raw_period_length.requires_grad = False
                     self.set_side_info(key)
         self.recalculate_priors()
 

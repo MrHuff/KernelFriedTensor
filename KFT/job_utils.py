@@ -327,15 +327,12 @@ class job_object():
         return total_loss, reg, pred_loss, y_pred
 
 
-    def train_loop(self, opt, loss_func, warmup=False):
+    def train_loop(self, opt, loss_func):
         sub_epoch = self.train_config['sub_epoch_V']
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
         torch.cuda.empty_cache()
         for p in range(sub_epoch + 1):
-            if warmup:
-                self.dataloader.ratio = self.train_config['batch_ratio'] / 1e2
-            else:
-                self.dataloader.ratio = self.train_config['batch_ratio']
+            self.dataloader.ratio = self.train_config['batch_ratio']
             self.dataloader.set_mode('train')
             X, y = self.dataloader.get_batch()
             if self.train_config['cuda']:
@@ -378,7 +375,7 @@ class job_object():
                 return ERROR
         return False
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, warmup=False, train_means=False):
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, train_means=False):
         for i in train_list:
             settings = train_dict[i]
             f = settings['call']
@@ -389,7 +386,7 @@ class job_object():
                 self.model.toggle(train_means)
                 if not train_means and lr== 'ls_lr':
                     continue
-            ERROR = self.train_loop(opt, loss_func, warmup=warmup)
+            ERROR = self.train_loop(opt, loss_func)
 
             if ERROR=='early_stop':
                 return ERROR
@@ -401,7 +398,7 @@ class job_object():
             torch.cuda.empty_cache()
         return ERROR
 
-    def opt_reinit(self, lr_params, warmup=False):
+    def opt_reinit(self, lr_params):
 
         tmp_opt_list = []
         for lr in lr_params:
@@ -409,7 +406,7 @@ class job_object():
         opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
         return opts
 
-    def setup_runs(self, warmup):
+    def setup_runs(self):
         loss_func = get_loss_func(self.train_config)
         ERROR = False
         kernel = self.model.has_kernel_component()
@@ -423,12 +420,8 @@ class job_object():
                 train_dict[2] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
                 train_list.insert(-1, 2)
 
-        if warmup:
-            train_list = [0]
-            if not self.train_config['old_setup']:
-                train_list.append(1)
         lrs = [v['para'] for v in train_dict.values()]
-        opts = self.opt_reinit( lrs, warmup=warmup)
+        opts = self.opt_reinit( lrs)
         return  opts, loss_func, ERROR, train_list, train_dict
 
     def train(self, train_means=False):
@@ -437,9 +430,9 @@ class job_object():
         self.train_means = train_means
         self.best_val_loss = -np.inf
 
-        opts,loss_func,ERROR,train_list,train_dict = self.setup_runs(warmup=False)
+        opts,loss_func,ERROR,train_list,train_dict = self.setup_runs()
         for i in range(self.train_config['epochs']):
-            ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, warmup=False, train_means=train_means)
+            ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, train_means=train_means)
             if ERROR=='early_stop':
                 break
             if ERROR:

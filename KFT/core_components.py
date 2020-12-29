@@ -285,10 +285,6 @@ class TT_component(torch.nn.Module):
                 T = lazy_mode_product(T, ones, mode+1)
             return T
 
-    def toggle_mean_var(self,toggle):
-        self.core_param.requires_grad = toggle
-        self.variance_parameters.requires_grad = not toggle
-
 class TT_kernel_component(TT_component): #for tensors with full or "mixed" side info
     def __init__(self,r_1,n_list,r_2,side_information_dict,kernel_para_dict,cuda=None,config=None,init_scale=1.0,reg_para=0,old_setup=False):
         super(TT_kernel_component, self).__init__(r_1,n_list,r_2,cuda,config,init_scale,old_setup,reg_para)
