@@ -228,7 +228,7 @@ class job_object():
         return tensor_component_configs,args,side_info_dict
 
 
-    def calculate_loss_no_grad(self, task='reg', mode='val',final=False):
+    def calculate_loss_no_grad(self, task='regression', mode='val',final=False):
         with torch.no_grad():
             loss_list = []
             y_s = []
@@ -248,13 +248,13 @@ class job_object():
             y_preds = torch.cat(_y_preds)
             print(f'{mode} loss_func_loss: {total_loss}' )
             if task == 'regression':
-                if self.bayesian and not final:
-                    if self.train_means:
-                        var_Y = Y.var()
-                        ref_metric = 1. - total_loss / var_Y
-                        ref_metric = ref_metric.numpy()
-                    else:
-                        ref_metric = total_loss
+                if self.bayesian:
+                    mse = torch.nn.MSELoss()
+                    pred_loss = mse(y_preds,Y)
+                    var_Y = Y.var()
+                    ref_metric = 1. - pred_loss / var_Y
+                    print(f'{mode} R^2: {ref_metric}')
+                    ref_metric = total_loss
                 else:
                     var_Y = Y.var()
                     ref_metric = 1. - total_loss / var_Y
@@ -300,11 +300,7 @@ class job_object():
             if self.train_config['task'] == 'regression':
                 if self.train_config['bayesian']:
                     y_pred, middle_term, reg = self.model(X)
-                    if self.train_means or final:
-                        loss_func = torch.nn.MSELoss()
-                        pred_loss = loss_func(y_pred, y.squeeze())
-                    else:
-                        pred_loss= -(analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
+                    pred_loss= -(analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
                 else:
                     loss_func = torch.nn.MSELoss()
                     y_pred, _ = self.model(X)
@@ -316,7 +312,7 @@ class job_object():
             return pred_loss, y_pred
 
     def correct_forward_loss(self,X, y, loss_func):
-        if self.train_config['task'] == 'reg' and self.train_config['bayesian']:
+        if self.train_config['task'] == 'regression' and self.train_config['bayesian']:
             y_pred, last_term, reg = self.model(X)
             pred_loss = loss_func(y.squeeze(), y_pred, last_term)
             total_loss = pred_loss*self.train_config['sigma_y'] + reg
@@ -331,7 +327,10 @@ class job_object():
         sub_epoch = self.train_config['sub_epoch_V']
         # lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
         lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=sub_epoch//2,eta_min=1e-4)
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
+        for n, param in self.model.named_parameters():
+            if param.requires_grad:
+                print(n, param.requires_grad)
         for p in range(sub_epoch + 1):
             self.dataloader.ratio = self.train_config['batch_ratio']
             self.dataloader.set_mode('train')
@@ -339,22 +338,12 @@ class job_object():
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
-            # start = time.time()
             total_loss, reg, pred_loss, y_pred = self.correct_forward_loss(X, y,loss_func)
-            # end = time.time()
-            # print(f'forward time: {end-start}')
             opt.zero_grad()
-            # start = time.time()
             total_loss.backward()
             opt.step()
-            # end = time.time()
-            # print(f'backward time: {end-start}')
-
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
-                # print('period: ',self.model.TT_cores['2'].kernel_1.period_length)
-                # print('ls: ',self.model.TT_cores['2'].kernel_1.raw_lengthscale)
-
                 torch.cuda.empty_cache()
                 l_val = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
                 torch.cuda.empty_cache()
@@ -376,28 +365,36 @@ class job_object():
                 return ERROR
         return False
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict, train_means=False):
-        for i in train_list:
-            settings = train_dict[i]
-            f = settings['call']
-            lr = settings['para']
-            opt = opts[lr]
-            for key,items in self.model.ii.items():
-                f(key)
-                if self.bayesian:
-                    self.model.toggle(train_means)
-                    if not train_means and lr== 'ls_lr':
-                        continue
-                ERROR = self.train_loop(opt, loss_func)
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict):
+        if self.bayesian:
+            for train_mean in [True,False]:
+                self.model.toggle(train_mean)
+                for i in train_list:
+                    settings = train_dict[i]
+                    f = settings['call']
+                    lr = settings['para']
+                    opt = opts[lr]
+                    for key, items in self.model.ii.items():
+                        f(key)
+                        ERROR = self.train_loop(opt, loss_func)
+                        if ERROR == 'early_stop':
+                            return ERROR
+                        if ERROR:
+                            return ERROR
+        else:
+            for i in train_list:
+                settings = train_dict[i]
+                f = settings['call']
+                lr = settings['para']
+                opt = opts[lr]
+                for key, items in self.model.ii.items():
+                    f(key)
+                    ERROR = self.train_loop(opt, loss_func)
+                    if ERROR == 'early_stop':
+                        return ERROR
+                    if ERROR:
+                        return ERROR
 
-                if ERROR=='early_stop':
-                    return ERROR
-                if ERROR:
-                    return ERROR
-
-                # print(torch.cuda.memory_cached() / 1e6)
-                # print(torch.cuda.memory_allocated() / 1e6)
-                torch.cuda.empty_cache()
         return ERROR
 
     def opt_reinit(self, lr_params):
@@ -426,22 +423,40 @@ class job_object():
         opts = self.opt_reinit( lrs)
         return  opts, loss_func, ERROR, train_list, train_dict
 
-    def train(self, train_means=False):
+    def train(self):
         self.kill_counter = 0
         self.train_config['reset'] = 1.0
-        self.train_means = train_means
         self.best_val_loss = -np.inf
 
-        opts,loss_func,ERROR,train_list,train_dict = self.setup_runs()
+        # if self.bayesian:
+        #     for train_mean in [True,False]:
+        #         print(f'train_mean: {train_mean}')
+        #         opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
+        #         self.model.toggle(train_mean)
+        #         for i in range(self.train_config['epochs']):
+        #             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
+        #             if ERROR == 'early_stop':
+        #                 print(ERROR)
+        #                 break
+        #             if ERROR:
+        #                 if self.bayesian:
+        #                     return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
+        #                 else:
+        #                     return -np.inf, -np.inf
+        #         self.load_dumped_model(self.hyperits_i)
+        #
+        # else:
+        opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
         for i in range(self.train_config['epochs']):
-            ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict, train_means=train_means)
-            if ERROR=='early_stop':
+            ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
+            if ERROR == 'early_stop':
                 break
             if ERROR:
                 if self.bayesian:
-                    return -np.inf, -np.inf,-np.inf, -np.inf,-np.inf, -np.inf,-np.inf
+                    return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
                 else:
                     return -np.inf, -np.inf
+
         self.load_dumped_model(self.hyperits_i)
         self.model.turn_on_all()
         if self.bayesian:
@@ -544,10 +559,7 @@ class job_object():
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:
-            self.train(train_means=True)
-            print('sigma train')
-            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train(
-                train_means=False)
+            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train()
             self.hyperits_i+=1
             self.reset_model_dataloader()
             return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
@@ -563,7 +575,7 @@ class job_object():
         del self.dataloader
         torch.cuda.empty_cache()
 
-    def calculate_calibration(self,mode='val',task='reg',samples=100):
+    def calculate_calibration(self,mode='val',task='regression',samples=100):
         self.dataloader.set_mode(mode)
         with torch.no_grad():
             all_samples = []
@@ -574,7 +586,7 @@ class job_object():
                     if self.train_config['cuda']:
                         X = X.to(self.train_config['device'])
                     _y_pred_sample = self.model.sample(X)
-                    if not task=='reg':
+                    if not task=='regression':
                         _y_pred_sample = torch.sigmoid(_y_pred_sample)
                     _y_preds.append(_y_pred_sample.cpu().numpy())
                 y_sample = np.concatenate(_y_preds,axis=0)
@@ -709,9 +721,9 @@ class job_object():
         training_params = {}
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
-        training_params['prime_lr'] = parameters['lr_2']/100.
+        training_params['prime_lr'] = parameters['lr_2']/100. if not self.bayesian else parameters['lr_2']
+        training_params['ls_lr'] = parameters['lr_2']/100. if not self.bayesian else parameters['lr_2']
         training_params['V_lr'] = parameters['lr_2']
-        training_params['ls_lr'] = parameters['lr_2']/100.
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda
         training_params['train_loss_interval_print']=self.train_loss_interval_print

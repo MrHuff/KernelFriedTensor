@@ -232,7 +232,7 @@ class TT_component(torch.nn.Module):
         if self.double_factor:
             self.core_param = sub_factorization(self.shape_list,R=sub_R,init_scale=init_scale)
         else:
-            self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
+            self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True)
 
         self.init_scale = init_scale
         for i, n in enumerate(n_list):

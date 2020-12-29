@@ -18,6 +18,7 @@ class KFT(torch.nn.Module):
         tmp_dict_prime = {}
         self.full_grad = config['full_grad']
         self.ii = {}
+        self.current_update_pointer = None
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
@@ -55,7 +56,7 @@ class KFT(torch.nn.Module):
     def turn_on_all(self):
         for i, v in self.ii.items():
             if not self.old_setup:
-                self.TT_cores_prime[str(i)].turn_off()
+                self.TT_cores_prime[str(i)].turn_on()
             self.TT_cores[str(i)].turn_on()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
@@ -75,6 +76,7 @@ class KFT(torch.nn.Module):
             self.TT_cores[str(i)].cache_mode = True
 
     def turn_on_V(self,i):
+        self.current_update_pointer = i
         # for i, v in self.ii.items():
         self.turn_off_all()
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
@@ -87,6 +89,8 @@ class KFT(torch.nn.Module):
             self.TT_cores_prime[str(i)].turn_off()
 
     def turn_on_prime(self,i):
+        self.current_update_pointer = i
+
         self.turn_off_all()
         if not self.old_setup:
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
@@ -106,6 +110,7 @@ class KFT(torch.nn.Module):
         return False
 
     def turn_on_kernel_mode(self,i):
+        self.current_update_pointer = i
         self.turn_off_all()
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
             self.TT_cores[str(i)].kernel_train_mode_on()
@@ -164,26 +169,6 @@ class KFT(torch.nn.Module):
             preds = self.bmm_collate(preds_list=preds_list)
             return preds,regularization
 
-    def full_grad_debug(self,indices):
-        pred_outputs = []
-        reg_output = 0
-        for i, v in self.ii.items():
-            ix = indices[:, v]
-            tt = self.TT_cores[str(i)]
-            tt_prime = self.TT_cores_prime[str(i)]
-            tt.full_grad=True
-            tt_prime.full_grad=True
-            prime_pred, reg_prime = tt_prime(ix)
-            pred, reg = tt(ix)
-            pred_outputs.append(pred * prime_pred)
-            if self.config['dual']:
-                reg_output += torch.sum(
-                    reg  * reg_prime )  # numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
-            else:
-                reg_output += torch.mean(reg ) + torch.mean(reg_prime )  # numerical issue with fp 16 how fix,
-
-        return pred_outputs, reg_output * self.lambda_reg
-
 class KFT_forecast(KFT):
     def __init__(self, initialization_data,lambdas,shape_permutation,lags,base_ref_int,cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT_forecast, self).__init__(initialization_data,lambdas,shape_permutation, cuda, config, old_setup)
@@ -198,7 +183,18 @@ class KFT_forecast(KFT):
             lag_set_tensor=lags,
             lambda_W = lambdas['W']
         )
+    def forward(self,indices):
+        indices = indices[:,self.shape_permutation]
+        preds_list,regularization = self.collect_core_outputs(indices)
+        if self.current_update_pointer  == self.tt_core_temporal_idx:
 
+
+        if self.full_grad:
+            preds = self.edge_mode_collate(preds_list=preds_list)
+            return preds[torch.unbind(indices,dim=1)],regularization
+        else:
+            preds = self.bmm_collate(preds_list=preds_list)
+            return preds,regularization
 
     def extract_temporal_dimension(self,initialization_data):
         self.temporal_tag = self.config['temporal_tag']
@@ -221,6 +217,7 @@ class KFT_scale(torch.nn.Module):
         tmp_dict_b = {}
         self.full_grad = config['full_grad']
         self.ii = {}
+        self.current_update_pointer = None
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
 
@@ -254,28 +251,56 @@ class KFT_scale(torch.nn.Module):
         self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
         self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
 
-    def turn_on_V(self):
+    def turn_on_all(self):
         for i, v in self.ii.items():
+            if not self.old_setup:
+                self.TT_cores_b[str(i)].turn_on()
+                self.TT_cores_s[str(i)].turn_on()
+            self.TT_cores[str(i)].turn_on()
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_on()
+            self.TT_cores_s[str(i)].cache_mode = False
+            self.TT_cores_b[str(i)].cache_mode = False
+            self.TT_cores[str(i)].cache_mode = False
+
+    def turn_off_all(self):
+        for i, v in self.ii.items():
+            if not self.old_setup:
+                self.TT_cores_b[str(i)].turn_off()
+                self.TT_cores_s[str(i)].turn_off()
+            self.TT_cores[str(i)].turn_off()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
-                self.TT_cores[str(i)].turn_on()
-            else:
-                self.TT_cores[str(i)].turn_on()
-            self.TT_cores_s[str(i)].turn_off()
-            self.TT_cores_b[str(i)].turn_off()
-        return 0
+            self.TT_cores_s[str(i)].cache_results()
+            self.TT_cores_b[str(i)].cache_results()
+            self.TT_cores[str(i)].cache_results()
+            self.TT_cores_s[str(i)].cache_mode = True
+            self.TT_cores_b[str(i)].cache_mode = True
+            self.TT_cores[str(i)].cache_mode = True
 
-    def turn_on_prime(self):
-        for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_off()
-                self.TT_cores[str(i)].turn_off()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            self.TT_cores_s[str(i)].turn_on()
-            self.TT_cores_b[str(i)].turn_on()
+    def turn_on_V(self,i):
+        self.current_update_pointer = i
+        self.turn_off_all()
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+            self.TT_cores[str(i)].kernel_train_mode_off()
+            self.TT_cores[str(i)].turn_on()
+        else:
+            self.TT_cores[str(i)].turn_on()
+        self.TT_cores_s[str(i)].turn_off()
+        self.TT_cores_b[str(i)].turn_off()
+        self.TT_cores[str(i)].cache_mode=False
 
-        return 0
+    def turn_on_prime(self,i):
+        self.current_update_pointer = i
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+            self.TT_cores[str(i)].kernel_train_mode_off()
+            self.TT_cores[str(i)].turn_off()
+        else:
+            self.TT_cores[str(i)].turn_off()
+        self.TT_cores_s[str(i)].turn_on()
+        self.TT_cores_b[str(i)].turn_on()
+        self.TT_cores_s[str(i)].cache_mode = False
+        self.TT_cores_b[str(i)].cache_mode = False
 
     def has_kernel_component(self):
         for i, v in self.ii.items():
@@ -285,16 +310,16 @@ class KFT_scale(torch.nn.Module):
                         return True
         return False
 
-    def turn_on_kernel_mode(self):
-        for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_on()
-                self.TT_cores[str(i)].turn_off()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            self.TT_cores_s[str(i)].turn_off()
-            self.TT_cores_b[str(i)].turn_off()
-        return 0
+    def turn_on_kernel_mode(self,i):
+        self.current_update_pointer = i
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+            self.TT_cores[str(i)].kernel_train_mode_on()
+            self.TT_cores[str(i)].turn_off()
+        else:
+            self.TT_cores[str(i)].turn_off()
+        self.TT_cores_s[str(i)].turn_off()
+        self.TT_cores_b[str(i)].turn_off()
+        self.TT_cores[str(i)].cache_mode = False
 
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
@@ -341,6 +366,7 @@ class KFT_scale(torch.nn.Module):
             return pred,reg_output
 
     def forward(self,indices):
+        indices = indices[:,self.shape_permutation]
         pred, reg = self.collect_core_outputs(indices)
         return pred,reg
 
@@ -513,6 +539,7 @@ class variational_KFT(KFT):
         return pred_outputs
 
     def sample(self, indices):
+        indices = indices[:,self.shape_permutation]
         if self.old_setup:
             preds_list = self.collect_core_outputs_sample_old(indices)
         else:
@@ -525,6 +552,7 @@ class variational_KFT(KFT):
             return preds
 
     def forward(self, indices):
+        indices = indices[:,self.shape_permutation]
         if self.old_setup:
             middle,third, regularization = self.collect_core_outputs_old(indices)
 
@@ -533,6 +561,7 @@ class variational_KFT(KFT):
         return middle,third,regularization
 
     def mean_forward(self,indices):
+        indices = indices[:,self.shape_permutation]
         if self.old:
             preds_list = self.collect_core_outputs_mean_old(indices)
         else:
@@ -643,6 +672,7 @@ class varitional_KFT_scale(KFT_scale):
             return scale_forward*core_forward+bias_forward
 
     def sample(self,indices):
+        indices = indices[:,self.shape_permutation]
         T = self.collect_core_sample(indices)
         return T
 
@@ -689,6 +719,7 @@ class varitional_KFT_scale(KFT_scale):
             return middle, third_term, total_KL
 
     def forward(self,indices):
+        indices = indices[:,self.shape_permutation]
         middle_term,third_term,reg = self.collect_core_outputs(indices)
         return middle_term,third_term,reg
 
