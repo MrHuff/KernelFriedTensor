@@ -166,13 +166,54 @@ class RFF(torch.nn.Module):
             math.sqrt(2. / float(self.n_feat)) * torch.cos(torch.mm(self.w / self.raw_lengthscale, self.X.t()) + self.b), 0,
             1)
 
+class KFTR_temporal_regulizer(torch.nn.Module):
+    def __init__(self,r_1,n_list,r_2,time_idx,base_ref_int,lag_set_tensor,lambda_W):
+        super(KFTR_temporal_regulizer, self).__init__()
+        self.T = n_list[time_idx]
+        self.time_idx = time_idx
+        n_list[time_idx] = lag_set_tensor.shape[0]
+        W_size = [r_1,*n_list,r_2]
+        self.W = torch.nn.Parameter( torch.randn(*W_size).squeeze().float(),requires_grad=True)
+        self.base_ref = base_ref_int
+        self.lambda_W = lambda_W
+        self.lag_tensor = lag_set_tensor
+        self.loss = torch.nn.MSELoss()
+
+    def freeze_param(self):
+        self.W.requires_grad=False
+
+    def activate_param(self):
+        self.W.requires_grad=True
+
+    def forward(self,index,time_component):
+        offset = index-self.base_ref
+        if offset<0:
+            return time_component.index_select(self.time_idx,index).squeeze()
+        else:
+            lags  = self.lag_tensor + offset
+            return self.W*time_component.index_select(self.time_idx,lags).sum(dim=self.time_idx)
+
+    def calculate_square_error(self,actual_component,predicted_component):
+        return self.loss(actual_component,predicted_component)
+
+    def calculate_KFTR(self,time_component):
+        KFTR = 0
+        for idx in range(self.base_ref,self.T):
+            x_t = time_component.index_select(self.time_idx,idx)
+            x_t_pred = self.forward(idx,time_component)
+            KFTR+=self.calculate_square_error(actual_component=x_t,predicted_component=x_t_pred)
+        return KFTR
+
+    def get_reg(self):
+        return self.lambda_W*torch.mean(self.W**2)
+
 
 class TT_component(torch.nn.Module):
-    def __init__(self,r_1,n_list,r_2,cuda=None,config=None,init_scale=1.0,old_setup=False,reg_para=0,prime=False,sub_R=2):
+    def __init__(self, r_1, n_list, r_2, cuda=None, config=None, init_scale=1.0, old_setup=False, reg_para=0, double_factor=False, sub_R=2):
         super(TT_component, self).__init__()
         self.bayesian = config['bayesian']
         self.register_buffer('reg_para',torch.tensor(reg_para))
-        self.prime = prime
+        self.double_factor = double_factor
         self.r_1 = r_1
         self.r_2 = r_2
         self.n_list = n_list
@@ -185,7 +226,7 @@ class TT_component(torch.nn.Module):
         self.RFF_dict = {i + 1: False for i in range(len(n_list))}
         self.shape_list  = [r_1]+[n for n in n_list] + [r_2]
         self.permutation_list = [i + 1 for i in range(len(n_list))] + [0, -1]
-        if self.prime:
+        if self.double_factor:
             self.core_param = sub_factorization(self.shape_list,R=sub_R,init_scale=init_scale)
         else:
             self.core_param = torch.nn.Parameter(init_scale*torch.ones(*self.shape_list), requires_grad=True)
@@ -206,7 +247,7 @@ class TT_component(torch.nn.Module):
             p.requires_grad = True
 
     def forward(self,indices):
-        if self.prime:
+        if self.double_factor:
             p = self.core_param()
         else:
             p = self.core_param
@@ -233,7 +274,7 @@ class TT_component(torch.nn.Module):
         if self.old_setup:
             return 1.
         else:
-            if self.prime:
+            if self.double_factor:
                 p = self.core_param()
             else:
                 p = self.core_param
@@ -325,13 +366,13 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
 
             elif kernel_para_dict['kernel_type']=='periodic':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel(ard_num_dims=ard_dims).to(self.device))
-                getattr(self, f'kernel_{key}').raw_period_length=torch.nn.Parameter(torch.tensor(0.1).to(self.device),
+                getattr(self, f'kernel_{key}').raw_period_length=torch.nn.Parameter(torch.tensor(kernel_para_dict['p']).to(self.device),
                                                                                 requires_grad=False)
 
 
             elif kernel_para_dict['kernel_type'] == 'local_periodic':
                 setattr(self, f'kernel_{key}', gpytorch.kernels.PeriodicKernel(ard_num_dims=ard_dims).to(self.device))
-                getattr(self, f'kernel_{key}').raw_period_length=torch.nn.Parameter(torch.tensor(0.1).to(self.device),
+                getattr(self, f'kernel_{key}').raw_period_length=torch.nn.Parameter(torch.tensor(kernel_para_dict['p']).to(self.device),
                                                                                 requires_grad=False)
 
             ls_init = self.gamma_sq_init * torch.ones(*(1, 1 if ard_dims is None else ard_dims))

@@ -191,8 +191,7 @@ class job_object():
                 if s.shape[0]==n:
                     side_info_dict_tmp[dim_idx]={'data':loaded_side_info.pop(idx),'temporal_tag':False}
         if args['temporal_tag'] is not None:
-            for i in args['temporal_tag']: # a list if passed relative to the orginal shape
-                side_info_dict_tmp[i]['temporal_tag'] = True
+            side_info_dict_tmp[args['temporal_tag']]['temporal_tag'] = True
         if args['special_mode'] == 1:
             for i, v in side_info_dict_tmp.items():
                 side_info_dict_tmp[i]['data'] = torch.ones_like(v['data']) #relative to the orginal shape
@@ -517,11 +516,12 @@ class job_object():
             if not self.latent_scale:
                 for key, component in self.tensor_architecture.items():
                     self.tensor_component_configs['sub_R'] = 1
-                    component['prime'] = False
+                    component['double_factor'] = False
 
         lambdas = self.extract_reg_terms(parameters)
         init_dict = self.construct_init_dict(parameters)
         self.train_config = self.extract_training_params(parameters)
+        self.tensor_component_configs['temporal_tag'] = self.temporal_tag
         if self.bayesian:
             if self.latent_scale:
                 self.model = varitional_KFT_scale(initialization_data=init_dict, shape_permutation=self.shape_permutation,

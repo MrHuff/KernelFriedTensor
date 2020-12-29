@@ -1,7 +1,7 @@
 import torch
 import math
 import time
-from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product
+from KFT.core_components import TT_component,TT_kernel_component,edge_mode_product,KFTR_temporal_regulizer
 from KFT.core_VI_components import univariate_variational_kernel_TT,multivariate_variational_kernel_TT,variational_TT_component
 PI  = math.pi
 torch.set_printoptions(profile="full")
@@ -21,14 +21,14 @@ class KFT(torch.nn.Module):
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
-                    tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],
+                tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],
                                                           n_list=v['n_list'],
                                                           r_2=v['r_2'],
                                                           cuda=cuda,
                                                           config=config,
                                                           init_scale=v['init_scale'],
                                                           reg_para=lambdas[f'reg_para_prime_{i}'],
-                                                          prime=v['prime'],sub_R=config['sub_R'])
+                                                          double_factor=v['double_factor'], sub_R=config['sub_R'])
                     #TODO: "Mixed prime factorizations..."
             if v['has_side_info']:
                 tmp_dict[str(i)] = TT_kernel_component(r_1=v['r_1'],
@@ -115,15 +115,8 @@ class KFT(torch.nn.Module):
             if not self.old_setup:
                 tt_prime = self.TT_cores_prime[str(i)]
                 prime_pred,reg_prime = tt_prime(ix)
-                # s = time.time()
                 pred, reg = tt(ix)
-                # e = time.time()
-                # print(f'iteration {i}: {e-s}')
                 pred_outputs.append(pred * prime_pred)
-                # print(reg.shape)
-                # print(reg_prime.shape)
-                # print(pred.shape)
-                # print(prime_pred.shape)
             else:
                 pred, reg = tt(ix)
                 pred_outputs.append(pred)
@@ -181,6 +174,28 @@ class KFT(torch.nn.Module):
 
         return pred_outputs, reg_output * self.lambda_reg
 
+class KFT_forecast(KFT):
+    def __init__(self, initialization_data,lambdas,shape_permutation,lags,base_ref_int,cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
+        super(KFT_forecast, self).__init__(initialization_data,lambdas,shape_permutation, cuda, config, old_setup)
+        self.extract_temporal_dimension(initialization_data)
+        v = initialization_data[self.tt_core_temporal_idx]
+        self.KFTR = KFTR_temporal_regulizer(
+            r_1=v['r_1'],
+            n_list=v['n_list'],
+            r_2=v['r_2'],
+            time_idx= self.KFTR_time_idx,
+            base_ref_int=base_ref_int,
+            lag_set_tensor=lags,
+            lambda_W = lambdas['W']
+        )
+
+
+    def extract_temporal_dimension(self,initialization_data):
+        self.temporal_tag = self.config['temporal_tag']
+        for i,v in initialization_data.items():
+            if self.temporal_tag in self.ii[i]:
+                self.tt_core_temporal_idx = i
+                self.KFTR_time_idx = 1+  self.ii[i].index(self.temporal_tag)
 
 
 class KFT_scale(torch.nn.Module):
@@ -344,7 +359,7 @@ class variational_KFT(KFT):
                                                                   cuda=cuda,
                                                                   config=config,
                                                                   init_scale=v['init_scale'],
-                                                                  prime=v['prime'],
+                                                                  double_factor=v['double_factor'],
                                                                   sub_R=config['sub_R'],
                                                                   mu_prior=v['mu_prior_prime'],
                                                                   sigma_prior=v['sigma_prior_prime'])
