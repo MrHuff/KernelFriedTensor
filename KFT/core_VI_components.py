@@ -84,6 +84,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         super(univariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                  kernel_para_dict, cuda, config, init_scale)
         self.variance_parameters = torch.nn.Parameter(-2*torch.ones(*self.shape_list),requires_grad=True)
+        self.cached_tensor_2 = None
         self.train_group = ['mean','var']
         self.register_buffer('mu_prior', torch.tensor(mu_prior))
         self.register_buffer('sigma_prior', torch.tensor(sigma_prior))
@@ -121,21 +122,45 @@ class univariate_variational_kernel_TT(TT_kernel_component):
             return T.permute(self.permutation_list)[
                        indices]
 
+    def cache_results(self):
+        with torch.no_grad():
+            self.cached_tensor = self.apply_kernels(self.core_param)
+            self.cached_tensor_2 = self.apply_square_kernel(self.variance_parameters.exp())
+            if self.full_grad or not self.dual:
+                self.cached_reg = self.calculate_KL(self.core_param, self.variance_parameters)
+
     def forward(self,indices):
-        T = self.apply_kernels(self.core_param)
-        T_additional = self.apply_square_kernel(self.variance_parameters.exp())
-        if self.full_grad or not self.dual:
-            KL = self.calculate_KL(self.core_param, self.variance_parameters)
+        if not self.cache_mode:
+            T = self.apply_kernels(self.core_param)
+            T_additional = self.apply_square_kernel(self.variance_parameters.exp())
+            if self.full_grad or not self.dual:
+                KL = self.calculate_KL(self.core_param, self.variance_parameters)
+            else:
+                mean = self.core_param.permute(self.permutation_list)[indices]
+                sig = self.variance_parameters.permute(self.permutation_list)[indices]
+                KL = self.calculate_KL(mean, sig)
+            if self.full_grad:
+                return T,T_additional, KL
+            else:
+                if len(indices.shape) > 1:
+                    indices = indices.unbind(1)
+                return T.permute(self.permutation_list)[indices],T_additional.permute(self.permutation_list)[indices], KL
         else:
-            mean = self.core_param.permute(self.permutation_list)[indices]
-            sig = self.variance_parameters.permute(self.permutation_list)[indices]
-            KL = self.calculate_KL(mean, sig)
-        if self.full_grad:
-            return T,T_additional, KL
-        else:
-            if len(indices.shape) > 1:
-                indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices],T_additional.permute(self.permutation_list)[indices], KL
+
+            if self.full_grad or not self.dual:
+                pass
+            else:
+                with torch.no_grad():
+                    mean = self.core_param.permute(self.permutation_list)[indices]
+                    sig = self.variance_parameters.permute(self.permutation_list)[indices]
+                    self.cached_reg = self.calculate_KL(mean, sig)
+            if self.full_grad:
+                return self.cached_tensor,self.cached_tensor_2,self.cached_reg
+            else:
+                if len(indices.shape) > 1:
+                    indices = indices.unbind(1)
+                return self.cached_tensor.permute(self.permutation_list)[indices], self.cached_tensor_2.permute(self.permutation_list)[
+                    indices], self.cached_reg
 
     def mean_forward(self,indices):
         """Do tensor ops"""
@@ -206,6 +231,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
     def __init__(self, r_1, n_list, r_2, side_information_dict, kernel_para_dict, cuda=None,config=None,init_scale=1.0, mu_prior=1):
         super(multivariate_variational_kernel_TT, self).__init__(r_1, n_list, r_2, side_information_dict,
                                                                  kernel_para_dict, cuda, config, init_scale)
+        self.cached_tensor_2=None
         self.register_buffer('mu_prior', torch.tensor(mu_prior))
         self.register_buffer('ones',torch.ones_like(self.core_param))
         self.noise_shape = [r_1]
@@ -417,17 +443,32 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             return T.permute(self.permutation_list)[indices]
 
     def forward(self,indices):
-        T = self.apply_kernels(self.core_param)
-        T_cross_sigma = self.apply_cross_kernel() #Fundamental error, think about kronecker product and flattening sigma_p instead
-        if self.kernel_eval_mode:
-            self.recalculate_priors()
-        KL = self.calculate_KL()
-        if self.full_grad:
-            return T,T_cross_sigma, KL
+        if not self.cache_mode:
+            T = self.apply_kernels(self.core_param)
+            T_cross_sigma = self.apply_cross_kernel() #Fundamental error, think about kronecker product and flattening sigma_p instead
+            if self.kernel_eval_mode:
+                self.recalculate_priors()
+            KL = self.calculate_KL()
+            if self.full_grad:
+                return T,T_cross_sigma, KL
+            else:
+                if len(indices.shape) > 1:
+                    indices = indices.unbind(1)
+                return T.permute(self.permutation_list)[indices],T_cross_sigma.permute(self.permutation_list)[indices], KL
         else:
-            if len(indices.shape) > 1:
-                indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices],T_cross_sigma.permute(self.permutation_list)[indices], KL
+            if self.full_grad:
+                return self.cached_tensor, self.cached_tensor_2, self.cached_reg
+            else:
+                if len(indices.shape) > 1:
+                    indices = indices.unbind(1)
+                return self.cached_tensor.permute(self.permutation_list)[indices], elf.cached_tensor_2.permute(self.permutation_list)[
+                    indices], self.cached_reg
+
+    def cache_results(self):
+        with torch.no_grad():
+            self.cached_tensor = self.apply_kernels(self.core_param)
+            self.cached_tensor_2 = self.apply_cross_kernel()
+            self.cached_reg = self.calculate_KL()
 
     def apply_cross_kernel(self):
         T = self.ones

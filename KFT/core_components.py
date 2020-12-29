@@ -211,6 +211,9 @@ class KFTR_temporal_regulizer(torch.nn.Module):
 class TT_component(torch.nn.Module):
     def __init__(self, r_1, n_list, r_2, cuda=None, config=None, init_scale=1.0, old_setup=False, reg_para=0, double_factor=False, sub_R=2):
         super(TT_component, self).__init__()
+        self.cache_mode = False
+        self.cached_tensor = None
+        self.cached_reg =  None
         self.bayesian = config['bayesian']
         self.register_buffer('reg_para',torch.tensor(reg_para))
         self.double_factor = double_factor
@@ -244,21 +247,40 @@ class TT_component(torch.nn.Module):
     def turn_on(self):
         self.core_param.requires_grad = True
 
+    def cache_results(self):
+        with torch.no_grad():
+            if self.double_factor:
+                self.cached_tensor = self.core_param()
+            else:
+                self.cached_tensor = self.core_param
+            if self.dual and not self.old_setup:
+                self.cached_reg = self.get_aux_reg_term()
+            else:
+                self.cached_reg = self.cached_tensor ** 2
+
     def forward(self,indices):
-        if self.double_factor:
-            p = self.core_param()
+        if not self.cache_mode:
+            if self.double_factor:
+                p = self.core_param()
+            else:
+                p = self.core_param
+            if self.dual and not self.old_setup:
+                reg = self.get_aux_reg_term()
+            else:
+                reg = p**2
+            if self.full_grad:
+                return p, reg
+            else:
+                if len(indices.shape)>1:
+                    indices = indices.unbind(1)
+                return p.permute(self.permutation_list)[indices], reg
         else:
-            p = self.core_param
-        if self.dual and not self.old_setup:
-            reg = self.get_aux_reg_term()
-        else:
-            reg = p**2
-        if self.full_grad:
-            return p, reg
-        else:
-            if len(indices.shape)>1:
-                indices = indices.unbind(1)
-            return p.permute(self.permutation_list)[indices], reg
+            if self.full_grad:
+                return self.cached_tensor, self.cached_reg
+            else:
+                if len(indices.shape) > 1:
+                    indices = indices.unbind(1)
+                return self.cached_tensor.permute(self.permutation_list)[indices], self.cached_reg
 
     def forward_scale(self,indices):
         if self.full_grad:
@@ -396,19 +418,36 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     T = lazy_mode_product(T, val, key)
         return T
 
+    def cache_results(self):
+        with torch.no_grad():
+            self.cached_tensor = self.apply_kernels(self.core_param)
+            if self.dual:
+                self.cached_reg = self.cached_tensor * self.core_param
+            else:
+                self.cached_reg = self.core_param ** 2
+
+
     def forward(self,indices):
         """Do tensor ops"""
-        T = self.apply_kernels(self.core_param)
-        if self.dual:
-            reg = T*self.core_param
+        if not self.cache_mode:
+            T = self.apply_kernels(self.core_param)
+            if self.dual:
+                reg = T*self.core_param
+            else:
+                reg = self.core_param**2
+            if self.full_grad:
+                return T,reg
+            else:
+                if len(indices.shape)>1:
+                    indices = indices.unbind(1)
+                return T.permute(self.permutation_list)[indices], reg  #return both to calculate regularization when doing frequentist
         else:
-            reg = self.core_param**2
-        if self.full_grad:
-            return T,reg
-        else:
-            if len(indices.shape)>1:
-                indices = indices.unbind(1)
-            return T.permute(self.permutation_list)[indices], reg  #return both to calculate regularization when doing frequentist
+            if self.full_grad:
+                return self.cached_tensor,self.cached_reg
+            else:
+                if len(indices.shape)>1:
+                    indices = indices.unbind(1)
+                return self.cached_tensor.permute(self.permutation_list)[indices], self.cached_reg  #return both to calculate regulariz
 
 class sub_factorization(torch.nn.Module):
     def __init__(self,tensor_shape,R=2,init_scale=1):

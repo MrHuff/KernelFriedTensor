@@ -329,7 +329,8 @@ class job_object():
 
     def train_loop(self, opt, loss_func):
         sub_epoch = self.train_config['sub_epoch_V']
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
+        # lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
+        lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=sub_epoch//2,eta_min=1e-4)
         torch.cuda.empty_cache()
         for p in range(sub_epoch + 1):
             self.dataloader.ratio = self.train_config['batch_ratio']
@@ -442,6 +443,7 @@ class job_object():
                 else:
                     return -np.inf, -np.inf
         self.load_dumped_model(self.hyperits_i)
+        self.model.turn_on_all()
         if self.bayesian:
             val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'],final=True)
             test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'],final=True)

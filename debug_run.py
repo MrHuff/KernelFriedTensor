@@ -33,7 +33,7 @@ base_dict = {
     'mu_b': 0,
     'sigma_b': 0,
     'split_mode': 0,
-    'seed': 1337,
+    'seed': 1,
     'temporal_tag': 2,
     'delete_side_info':None,
     'special_mode': 0,

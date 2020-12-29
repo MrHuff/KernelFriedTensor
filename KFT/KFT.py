@@ -54,17 +54,25 @@ class KFT(torch.nn.Module):
 
     def turn_on_all(self):
         for i, v in self.ii.items():
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
             self.TT_cores[str(i)].turn_on()
-            self.TT_cores_prime[str(i)].turn_on()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
+            self.TT_cores_prime[str(i)].cache_mode = False
+            self.TT_cores[str(i)].cache_mode = False
 
     def turn_off_all(self):
         for i, v in self.ii.items():
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
             self.TT_cores[str(i)].turn_off()
-            self.TT_cores_prime[str(i)].turn_off()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
+            self.TT_cores_prime[str(i)].cache_results()
+            self.TT_cores[str(i)].cache_results()
+            self.TT_cores_prime[str(i)].cache_mode = True
+            self.TT_cores[str(i)].cache_mode = True
 
     def turn_on_V(self,i):
         # for i, v in self.ii.items():
@@ -74,6 +82,7 @@ class KFT(torch.nn.Module):
             self.TT_cores[str(i)].turn_on()
         else:
             self.TT_cores[str(i)].turn_on()
+        self.TT_cores[str(i)].cache_mode = False
         if not self.old_setup:
             self.TT_cores_prime[str(i)].turn_off()
 
@@ -86,7 +95,7 @@ class KFT(torch.nn.Module):
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_prime[str(i)].turn_on()
-        return 0
+            self.TT_cores_prime[str(i)].cache_mode = False
 
     def has_kernel_component(self):
         for i, v in self.ii.items():
@@ -105,6 +114,7 @@ class KFT(torch.nn.Module):
             self.TT_cores[str(i)].turn_off()
         if not self.old_setup:
             self.TT_cores_prime[str(i)].turn_off()
+        self.TT_cores[str(i)].cache_mode = False
 
     def collect_core_outputs(self,indices):
         pred_outputs = []
