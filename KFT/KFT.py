@@ -56,26 +56,36 @@ class KFT(torch.nn.Module):
         for i, v in self.ii.items():
             self.TT_cores[str(i)].turn_on()
             self.TT_cores_prime[str(i)].turn_on()
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_on()
 
-    def turn_on_V(self):
+    def turn_off_all(self):
         for i, v in self.ii.items():
+            self.TT_cores[str(i)].turn_off()
+            self.TT_cores_prime[str(i)].turn_off()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
-            else:
-                self.TT_cores[str(i)].turn_on()
-            if not self.old_setup:
-                self.TT_cores_prime[str(i)].turn_off()
-        return 0
 
-    def turn_on_prime(self):
+    def turn_on_V(self,i):
+        # for i, v in self.ii.items():
+        self.turn_off_all()
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+            self.TT_cores[str(i)].kernel_train_mode_off()
+            self.TT_cores[str(i)].turn_on()
+        else:
+            self.TT_cores[str(i)].turn_on()
         if not self.old_setup:
-            for i, v in self.ii.items():
-                if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                    self.TT_cores[str(i)].kernel_train_mode_off()
-                    self.TT_cores[str(i)].turn_off()
-                else:
-                    self.TT_cores[str(i)].turn_off()
-                self.TT_cores_prime[str(i)].turn_on()
+            self.TT_cores_prime[str(i)].turn_off()
+
+    def turn_on_prime(self,i):
+        self.turn_off_all()
+        if not self.old_setup:
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            self.TT_cores_prime[str(i)].turn_on()
         return 0
 
     def has_kernel_component(self):
@@ -86,25 +96,15 @@ class KFT(torch.nn.Module):
                         return True
         return False
 
-    def turn_on_kernel_mode(self):
-        for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_on()
-            else:
-                self.TT_cores[str(i)].turn_off()
-            if not self.old_setup:
-                self.TT_cores_prime[str(i)].turn_off()
-        return 0
-
-    def turn_off_kernel_mode(self):
-        for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_off()
-            else:
-                self.TT_cores[str(i)].turn_on()
-            if not self.old_setup:
-                self.TT_cores_prime[str(i)].turn_off()
-        return 0
+    def turn_on_kernel_mode(self,i):
+        self.turn_off_all()
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+            self.TT_cores[str(i)].kernel_train_mode_on()
+            self.TT_cores[str(i)].turn_off()
+        else:
+            self.TT_cores[str(i)].turn_off()
+        if not self.old_setup:
+            self.TT_cores_prime[str(i)].turn_off()
 
     def collect_core_outputs(self,indices):
         pred_outputs = []
@@ -248,6 +248,7 @@ class KFT_scale(torch.nn.Module):
         for i, v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_on()
             else:
                 self.TT_cores[str(i)].turn_on()
             self.TT_cores_s[str(i)].turn_off()
@@ -278,20 +279,11 @@ class KFT_scale(torch.nn.Module):
         for i,v in self.ii.items():
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
+                self.TT_cores[str(i)].turn_off()
             else:
                 self.TT_cores[str(i)].turn_off()
             self.TT_cores_s[str(i)].turn_off()
             self.TT_cores_b[str(i)].turn_off()
-        return 0
-
-    def turn_off_kernel_mode(self):
-        for i,v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                self.TT_cores[str(i)].kernel_train_mode_off()
-            else:
-                self.TT_cores[str(i)].turn_on()
-            self.TT_cores_s[str(i)].turn_on()
-            self.TT_cores_b[str(i)].turn_on()
         return 0
 
     def bmm_collate(self, preds_list):

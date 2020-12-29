@@ -180,7 +180,6 @@ class univariate_variational_kernel_TT(TT_kernel_component):
                 self.variance_parameters.requires_grad=True
 
     def kernel_train_mode_on(self):
-        self.turn_off()
         self.kernel_eval_mode = True
         if self.dual:
             for key,val in self.n_dict.items():
@@ -192,7 +191,6 @@ class univariate_variational_kernel_TT(TT_kernel_component):
             return 0
 
     def kernel_train_mode_off(self):
-        self.turn_on()
         self.kernel_eval_mode = False
         if self.dual:
             for key,val in self.n_dict.items():
@@ -245,7 +243,6 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             self.train_group=['var']
 
     def kernel_train_mode_off(self):
-        self.turn_on()
         self.kernel_eval_mode = False
         if self.dual:
             for key, val in self.n_dict.items():

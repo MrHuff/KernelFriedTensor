@@ -239,12 +239,10 @@ class TT_component(torch.nn.Module):
         return T.permute(self.permutation_list)[indices]
 
     def turn_off(self):
-        for p in self.parameters():
-            p.requires_grad = False
+        self.core_param.requires_grad = False
 
     def turn_on(self):
-        for p in self.parameters():
-            p.requires_grad = True
+        self.core_param.requires_grad = True
 
     def forward(self,indices):
         if self.double_factor:
@@ -309,7 +307,6 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                 self.n_dict[key] = self.side_info_dict[key]
 
     def kernel_train_mode_on(self):
-        self.turn_off()
         self.kernel_eval_mode = True
         if self.dual:
             for key,val in self.n_dict.items():
@@ -321,7 +318,6 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             return 0
 
     def kernel_train_mode_off(self):
-        self.turn_on()
         self.kernel_eval_mode = False
         if self.dual:
             for key,val in self.n_dict.items():

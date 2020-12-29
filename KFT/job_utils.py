@@ -361,7 +361,7 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-                if self.kill_counter==10:
+                if self.kill_counter==100:
                     print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
                     return 'early_stop'
                 if -l_val < -self.best_val_loss:
@@ -380,22 +380,23 @@ class job_object():
             settings = train_dict[i]
             f = settings['call']
             lr = settings['para']
-            f()
             opt = opts[lr]
-            if self.bayesian:
-                self.model.toggle(train_means)
-                if not train_means and lr== 'ls_lr':
-                    continue
-            ERROR = self.train_loop(opt, loss_func)
+            for key,items in self.model.ii.items():
+                f(key)
+                if self.bayesian:
+                    self.model.toggle(train_means)
+                    if not train_means and lr== 'ls_lr':
+                        continue
+                ERROR = self.train_loop(opt, loss_func)
 
-            if ERROR=='early_stop':
-                return ERROR
-            if ERROR:
-                return ERROR
+                if ERROR=='early_stop':
+                    return ERROR
+                if ERROR:
+                    return ERROR
 
-            # print(torch.cuda.memory_cached() / 1e6)
-            # print(torch.cuda.memory_allocated() / 1e6)
-            torch.cuda.empty_cache()
+                # print(torch.cuda.memory_cached() / 1e6)
+                # print(torch.cuda.memory_allocated() / 1e6)
+                torch.cuda.empty_cache()
         return ERROR
 
     def opt_reinit(self, lr_params):

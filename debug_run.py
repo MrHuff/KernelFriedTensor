@@ -5,7 +5,7 @@ from KFT.job_utils import run_job_func
 
 # PATH = ['public_data/' ,'public_movielens_data/' ,'tensor_data/' ,'CCDS_data/' ,'eletric_data/' ,'traffic_data/']
 PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t_fixed/' ,'CCDS_data/' ,'electric_data/' ,'traffic_data/']
-dataset = 5
+dataset = 0
 base_dict = {
     'PATH': PATH[dataset],
     'reg_para_a': 0,
@@ -19,7 +19,7 @@ base_dict = {
     'epochs': 400,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
-    'max_R': 150,
+    'max_R': 25,
     'max_lr': 1e-1,
     'old_setup': False,
     'latent_scale': False,
@@ -32,12 +32,12 @@ base_dict = {
     'sigma_a': -1,
     'mu_b': 0,
     'sigma_b': 0,
-    'split_mode': 2,
+    'split_mode': 0,
     'seed': 1337,
-    'temporal_tag': 0,
+    'temporal_tag': 2,
     'delete_side_info':None,
     'special_mode': 0,
-    'shape_permutation': [0,1],
+    'shape_permutation': [0,1,2],
     'full_grad': False,
     'sub_epoch_V': 100,
 }
