@@ -185,7 +185,7 @@ class KFTR_temporal_regulizer(torch.nn.Module):
     def activate_param(self):
         self.W.requires_grad=True
 
-    def forward(self,index,time_component):
+    def forward(self,time_component,index):
         offset = index-self.base_ref
         if offset<0:
             return time_component.index_select(self.time_idx,index).squeeze()
@@ -426,6 +426,8 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
             else:
                 self.cached_reg = self.core_param ** 2
 
+    def get_temporal_compoment(self):
+        return self.apply_kernels(self.core_param)
 
     def forward(self,indices):
         """Do tensor ops"""

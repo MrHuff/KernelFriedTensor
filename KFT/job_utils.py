@@ -322,7 +322,7 @@ class job_object():
             total_loss = pred_loss + reg
         return total_loss, reg, pred_loss, y_pred
 
-
+    #Write another train loop to train W specifically!
     def train_loop(self, opt, loss_func):
         sub_epoch = self.train_config['sub_epoch_V']
         # lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
@@ -437,8 +437,9 @@ class job_object():
         #             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
         #             if ERROR == 'early_stop':
         #                 print(ERROR)
+        #                 self.load_dumped_model(self.hyperits_i)
         #                 break
-        #             if ERROR:
+        #             if ERROR==True:
         #                 if self.bayesian:
         #                     return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
         #                 else:
@@ -451,7 +452,7 @@ class job_object():
             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
             if ERROR == 'early_stop':
                 break
-            if ERROR:
+            if ERROR==True:
                 if self.bayesian:
                     return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
                 else:

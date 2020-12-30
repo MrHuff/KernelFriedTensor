@@ -183,18 +183,30 @@ class KFT_forecast(KFT):
             lag_set_tensor=lags,
             lambda_W = lambdas['W']
         )
+
+    def get_time_component(self):
+        tt = self.TT_cores[str(self.tt_core_temporal_idx)]
+        if not self.old_setup:
+            tt_prime = self.TT_cores_prime[str(self.tt_core_temporal_idx)]
+            temporal_comp = tt_prime.core_param * tt.get_temporal_compoment()
+        else:
+            temporal_comp = tt.get_temporal_compoment()
+        return temporal_comp
+
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         preds_list,regularization = self.collect_core_outputs(indices)
         if self.current_update_pointer  == self.tt_core_temporal_idx:
-
-
+            temporal_reg = self.get_time_component()
+            T_reg = self.KFTR(temporal_reg,indices)
+        else:
+            T_reg = 0.
         if self.full_grad:
             preds = self.edge_mode_collate(preds_list=preds_list)
-            return preds[torch.unbind(indices,dim=1)],regularization
+            return preds[torch.unbind(indices,dim=1)],regularization+T_reg
         else:
             preds = self.bmm_collate(preds_list=preds_list)
-            return preds,regularization
+            return preds,regularization+T_reg
 
     def extract_temporal_dimension(self,initialization_data):
         self.temporal_tag = self.config['temporal_tag']
