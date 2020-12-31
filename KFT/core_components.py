@@ -167,42 +167,41 @@ class RFF(torch.nn.Module):
             1)
 
 class KFTR_temporal_regulizer(torch.nn.Module):
-    def __init__(self,r_1,n_list,r_2,time_idx,base_ref_int,lag_set_tensor,lambda_W):
+    def __init__(self,r_1,n_list,r_2,time_idx,base_ref_int,lag_set_tensor,lambda_W,lambda_T_x):
         super(KFTR_temporal_regulizer, self).__init__()
         self.T = n_list[time_idx]
         self.time_idx = time_idx
+        self.lag_size  = lag_set_tensor.shape[0]
         n_list[time_idx] = lag_set_tensor.shape[0]
         W_size = [r_1,*n_list,r_2]
         self.W = torch.nn.Parameter( torch.randn(*W_size).squeeze().float(),requires_grad=True)
         self.base_ref = base_ref_int
         self.lambda_W = lambda_W
-        self.lag_tensor = lag_set_tensor
-        self.loss = torch.nn.MSELoss()
+        self.lambda_T_x = lambda_T_x
+        self.register_buffer('indices_iterate',torch.arange(self.base_ref,self.T).unsqueeze(-1).long())
+        self.register_buffer('lag_tensor', lag_set_tensor)
+        self.register_buffer('idx_extractor', self.lag_tensor.unsqueeze(0) + self.indices_iterate-self.base_ref)
 
-    def freeze_param(self):
-        self.W.requires_grad=False
-
-    def activate_param(self):
-        self.W.requires_grad=True
-
-    def forward(self,time_component,index):
-        offset = index-self.base_ref
-        if offset<0:
-            return time_component.index_select(self.time_idx,index).squeeze()
-        else:
-            lags  = self.lag_tensor + offset
-            return self.W*time_component.index_select(self.time_idx,lags).sum(dim=self.time_idx)
+    def loss(self,x,y):
+        return torch.mean((x-y)**2)
+    # def forward(self,time_component,index):
+    #     offset = index-self.base_ref
+    #     if offset<0:
+    #         return time_component.index_select(self.time_idx,index).squeeze()
+    #     else:
+    #         lags  = self.lag_tensor + offset
+    #         return (self.W*time_component.index_select(self.time_idx,lags)).sum(dim=self.time_idx)
 
     def calculate_square_error(self,actual_component,predicted_component):
         return self.loss(actual_component,predicted_component)
 
     def calculate_KFTR(self,time_component):
-        KFTR = 0
-        for idx in range(self.base_ref,self.T):
-            x_t = time_component.index_select(self.time_idx,idx)
-            x_t_pred = self.forward(idx,time_component)
-            KFTR+=self.calculate_square_error(actual_component=x_t,predicted_component=x_t_pred)
-        return KFTR
+        x_data = time_component.index_select(self.time_idx,self.idx_extractor.flatten())
+        x_data = torch.stack(x_data.chunk(x_data.shape[0]//self.lag_size,dim=0))
+        x_data = x_data.sum(dim=1)
+        x_ref  =  time_component.index_select(self.time_idx,self.indices_iterate.squeeze())
+        KFTR=self.calculate_square_error(actual_component=x_ref,predicted_component=x_data)
+        return KFTR*self.lambda_T_x
 
     def get_reg(self):
         return self.lambda_W*torch.mean(self.W**2)
@@ -337,7 +336,7 @@ class TT_kernel_component(TT_component): #for tensors with full or "mixed" side 
                     k.raw_lengthscale.requires_grad = True
                     if k.__class__.__name__=='PeriodicKernel':
                         k.raw_period_length.requires_grad=True
-            return 0
+        return 0
 
     def kernel_train_mode_off(self):
         self.kernel_eval_mode = False

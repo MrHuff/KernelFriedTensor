@@ -151,13 +151,13 @@ class xl_FFM(job_object):
                         return val, test
 
         self.load_dumped_model(i=0)
-        val = self.calculate_loss_no_grad( task=self.task,mode='val')
-        test =  self.calculate_loss_no_grad( task=self.task,mode='test')
+        val = self.calculate_loss_no_grad(task=self.task, mode='val')
+        test = self.calculate_loss_no_grad(task=self.task, mode='test')
         print(val)
         print(test)
         return val,test
 
-    def calculate_loss_no_grad(self, task='reg', mode='val'):
+    def calculate_loss_no_grad(self, task='regression', mode='val'):
         with torch.no_grad():
             loss_list = []
             y_s = []

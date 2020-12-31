@@ -461,7 +461,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             else:
                 if len(indices.shape) > 1:
                     indices = indices.unbind(1)
-                return self.cached_tensor.permute(self.permutation_list)[indices], elf.cached_tensor_2.permute(self.permutation_list)[
+                return self.cached_tensor.permute(self.permutation_list)[indices], self.cached_tensor_2.permute(self.permutation_list)[
                     indices], self.cached_reg
 
     def cache_results(self):

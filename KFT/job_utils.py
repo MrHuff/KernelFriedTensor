@@ -1,5 +1,5 @@
 import torch
-from KFT.KFT import KFT, variational_KFT,KFT_scale,varitional_KFT_scale
+from KFT.KFT import *
 from torch.nn.modules.loss import _Loss
 import gc
 import pickle
@@ -220,6 +220,7 @@ class job_object():
         args['device'] = f'cuda:{device}'
         args['train_loss_interval_print'] = args['sub_epoch_V'] // 2
         args['shape'] = shape
+        args['lags'] = torch.tensor(args['lags']).long()
         print(shape)
         tensor_component_configs = {
                              'full_grad': args['full_grad'],
@@ -228,7 +229,7 @@ class job_object():
         return tensor_component_configs,args,side_info_dict
 
 
-    def calculate_loss_no_grad(self, task='regression', mode='val',final=False):
+    def calculate_loss_no_grad(self, task='regression', mode='val'):
         with torch.no_grad():
             loss_list = []
             y_s = []
@@ -239,7 +240,7 @@ class job_object():
                 if self.train_config['cuda']:
                     X = X.to(self.train_config['device'])
                     y = y.to(self.train_config['device'])
-                loss, y_pred = self.correct_validation_loss(X, y,final)
+                loss, y_pred = self.correct_validation_loss(X, y)
                 loss_list.append(loss)
                 y_s.append(y.cpu())
                 _y_preds.append(y_pred.cpu())
@@ -295,7 +296,7 @@ class job_object():
         self.train_config['reset'] = self.train_config['reset'] * 1.1
         self.train_config['V_lr'] = self.train_config['V_lr']/10
 
-    def correct_validation_loss(self,X, y,final=False ):
+    def correct_validation_loss(self,X, y ):
         with torch.no_grad():
             if self.train_config['task'] == 'regression':
                 if self.train_config['bayesian']:
@@ -325,9 +326,11 @@ class job_object():
     #Write another train loop to train W specifically!
     def train_loop(self, opt, loss_func):
         sub_epoch = self.train_config['sub_epoch_V']
-        # lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
-        lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=sub_epoch//2,eta_min=1e-4)
-        # torch.cuda.empty_cache()
+        # if self.bayesian:
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.95)
+        # else:
+        #     lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=sub_epoch//2,eta_min=1e-4)
+
         for n, param in self.model.named_parameters():
             if param.requires_grad:
                 print(n, param.requires_grad)
@@ -345,9 +348,9 @@ class job_object():
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
                 torch.cuda.empty_cache()
-                l_val = self.calculate_loss_no_grad(mode='val',task=self.train_config['task'])
+                l_val = self.calculate_loss_no_grad(task=self.train_config['task'], mode='val')
                 torch.cuda.empty_cache()
-                l_test = self.calculate_loss_no_grad(mode='test',task=self.train_config['task'])
+                l_test = self.calculate_loss_no_grad(task=self.train_config['task'], mode='test')
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
@@ -377,6 +380,12 @@ class job_object():
                     for key, items in self.model.ii.items():
                         f(key)
                         ERROR = self.train_loop(opt, loss_func)
+                        if self.forecast:
+                            if key == self.model.self.tt_core_temporal_idx:
+                                # activate W training
+                                self.model.activate_W_mode()
+                                ERROR = self.train_loop(opt, loss_func)
+                                self.model.deactivate_W_mode()
                         if ERROR == 'early_stop':
                             return ERROR
                         if ERROR:
@@ -388,8 +397,18 @@ class job_object():
                 lr = settings['para']
                 opt = opts[lr]
                 for key, items in self.model.ii.items():
-                    f(key)
-                    ERROR = self.train_loop(opt, loss_func)
+                    if not self.model.has_dual_kernel_component(key) and f.__name__=='turn_on_kernel_mode':
+                        continue
+                    else:
+                        f(key)
+                        ERROR = self.train_loop(opt, loss_func)
+                    if self.forecast:
+                        if key==self.model.tt_core_temporal_idx:
+                            #activate W training
+                            self.model.activate_W_mode()
+                            ERROR = self.train_loop(opt,loss_func)
+                            self.model.deactivate_W_mode()
+
                     if ERROR == 'early_stop':
                         return ERROR
                     if ERROR:
@@ -408,16 +427,14 @@ class job_object():
     def setup_runs(self):
         loss_func = get_loss_func(self.train_config)
         ERROR = False
-        kernel = self.model.has_kernel_component()
         train_dict = {0: {'para': 'V_lr', 'call': self.model.turn_on_V}}
         train_list = [0]
         if not self.train_config['old_setup']:
             train_dict[1] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
             train_list.append(1)
         if self.train_config['dual']:
-            if kernel:
-                train_dict[2] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
-                train_list.insert(-1, 2)
+            train_dict[2] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
+            train_list.insert(-1, 2)
 
         lrs = [v['para'] for v in train_dict.values()]
         opts = self.opt_reinit( lrs)
@@ -427,26 +444,6 @@ class job_object():
         self.kill_counter = 0
         self.train_config['reset'] = 1.0
         self.best_val_loss = -np.inf
-
-        # if self.bayesian:
-        #     for train_mean in [True,False]:
-        #         print(f'train_mean: {train_mean}')
-        #         opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
-        #         self.model.toggle(train_mean)
-        #         for i in range(self.train_config['epochs']):
-        #             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
-        #             if ERROR == 'early_stop':
-        #                 print(ERROR)
-        #                 self.load_dumped_model(self.hyperits_i)
-        #                 break
-        #             if ERROR==True:
-        #                 if self.bayesian:
-        #                     return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
-        #                 else:
-        #                     return -np.inf, -np.inf
-        #         self.load_dumped_model(self.hyperits_i)
-        #
-        # else:
         opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
         for i in range(self.train_config['epochs']):
             ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
@@ -457,18 +454,17 @@ class job_object():
                     return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
                 else:
                     return -np.inf, -np.inf
-
-        self.load_dumped_model(self.hyperits_i)
         self.model.turn_on_all()
+        self.load_dumped_model(self.hyperits_i)
         if self.bayesian:
-            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'],final=True)
-            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'],final=True)
+            val_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='val')
+            test_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='test')
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
             return total_cal_error_val-val_loss_final,total_cal_error_test-test_loss_final,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
         else:
-            val_loss_final = self.calculate_loss_no_grad(mode='val', task=self.train_config['task'],final=True)
-            test_loss_final = self.calculate_loss_no_grad(mode='test', task=self.train_config['task'],final=True)
+            val_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='val')
+            test_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='test')
             return val_loss_final,test_loss_final
 
     def define_hyperparameter_space(self):
@@ -504,13 +500,15 @@ class job_object():
                     self.hyperparameter_space[f'sigma_prior_{i}'] = hp.uniform(f'sigma_prior_{i}', self.sigma_a,
                                                                                self.sigma_b)
         else:
+            if self.forecast:
+                self.hyperparameter_space[f'lambda_W'] = hp.uniform(f'lambda_W',self.lambda_W_a ,self.lambda_W_b )
+                self.hyperparameter_space[f'lambda_T_x'] = hp.uniform(f'lambda_T_x',self.lambda_T_x_a ,self.lambda_T_x_b )
             for i in range(len(t_act)):
                 self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.reg_para_a, self.reg_para_b)
                 if self.latent_scale:
                     self.hyperparameter_space[f'reg_para_s_{i}'] = hp.uniform(f'reg_para_s_{i}', self.reg_para_a, self.reg_para_b)
                     self.hyperparameter_space[f'reg_para_b_{i}'] = hp.uniform(f'reg_para_b_{i}', self.reg_para_a, self.reg_para_b)
                 if not self.old_setup:
-
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.reg_para_a, self.reg_para_b)
 
@@ -546,8 +544,14 @@ class job_object():
                 self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
                                        config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
             else:
-                self.model = KFT(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
-                                 config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
+                if self.forecast:
+                    self.model = KFT_forecast(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
+                                     config=self.tensor_component_configs, old_setup=self.old_setup,
+                                              lambdas=lambdas,lags=self.lags,base_ref_int=self.base_ref_int)
+                    self.model.deactivate_W_mode()
+                else:
+                    self.model = KFT(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
+                                     config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
         print(self.model)
 
     def start_training(self,parameters):
@@ -566,7 +570,7 @@ class job_object():
             return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
 
         else:
-            val_loss_final, test_loss_final = self.train(train_means=True)
+            val_loss_final, test_loss_final = self.train()
             self.hyperits_i+=1
             self.reset_model_dataloader()
             return val_loss_final, test_loss_final
@@ -655,6 +659,9 @@ class job_object():
                     reg_params[f'reg_para_prime_{i}'] = parameters[f'reg_para_prime_{i}']
                 else:
                     reg_params[f'reg_para_prime_{i}'] = 1.0
+            if self.forecast:
+                reg_params['lambda_W'] = parameters['lambda_W']
+                reg_params['lambda_T_x'] = parameters['lambda_T_x']
         return reg_params
 
     def construct_kernel_params(self,side_info_dims,parameters):
@@ -716,6 +723,10 @@ class job_object():
 
     def load_dumped_model(self,i):
         model_dict = torch.load(f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
+        E_val_loss = model_dict['val_loss']
+        E_test_loss = model_dict['test_loss']
+        print(f'Expected val loss: {E_val_loss}')
+        print(f'Expected test loss: {E_test_loss}')
         self.model.load_state_dict(model_dict['model_state_dict'])
 
     def extract_training_params(self,parameters):
@@ -751,7 +762,7 @@ class job_object():
                     algo=tpe.suggest,
                     max_evals=self.hyperits,
                     trials=self.trials,
-                    verbose=1)
+                    verbose=True)
         print(space_eval(self.hyperparameter_space, best))
         pickle.dump(self.trials,
                     open(self.save_path +'/'+ self.name + '.p',

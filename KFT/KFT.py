@@ -101,13 +101,9 @@ class KFT(torch.nn.Module):
             self.TT_cores_prime[str(i)].turn_on()
             self.TT_cores_prime[str(i)].cache_mode = False
 
-    def has_kernel_component(self):
-        for i, v in self.ii.items():
-            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
-                for v in self.TT_cores[str(i)].n_dict.values():
-                    if v is not None:
-                        return True
-        return False
+    def has_dual_kernel_component(self,i):
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name and self.TT_cores[str(i)].dual:
+            return True
 
     def turn_on_kernel_mode(self,i):
         self.current_update_pointer = i
@@ -181,7 +177,8 @@ class KFT_forecast(KFT):
             time_idx= self.KFTR_time_idx,
             base_ref_int=base_ref_int,
             lag_set_tensor=lags,
-            lambda_W = lambdas['W']
+            lambda_W = lambdas['lambda_W'],
+            lambda_T_x = lambdas['lambda_T_x']
         )
 
     def get_time_component(self):
@@ -191,14 +188,20 @@ class KFT_forecast(KFT):
             temporal_comp = tt_prime.core_param * tt.get_temporal_compoment()
         else:
             temporal_comp = tt.get_temporal_compoment()
-        return temporal_comp
+        return temporal_comp.squeeze()
+
+    def activate_W_mode(self):
+        self.turn_off_all()
+        self.KFTR.W.requires_grad=True
+    def deactivate_W_mode(self):
+        self.KFTR.W.requires_grad=False
 
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         preds_list,regularization = self.collect_core_outputs(indices)
         if self.current_update_pointer  == self.tt_core_temporal_idx:
             temporal_reg = self.get_time_component()
-            T_reg = self.KFTR(temporal_reg,indices)
+            T_reg = self.KFTR.calculate_KFTR(temporal_reg) + self.KFTR.get_reg()
         else:
             T_reg = 0.
         if self.full_grad:
@@ -213,7 +216,7 @@ class KFT_forecast(KFT):
         for i,v in initialization_data.items():
             if self.temporal_tag in self.ii[i]:
                 self.tt_core_temporal_idx = i
-                self.KFTR_time_idx = 1+  self.ii[i].index(self.temporal_tag)
+                self.KFTR_time_idx = self.ii[i].index(self.temporal_tag)
 
 
 class KFT_scale(torch.nn.Module):
@@ -441,8 +444,7 @@ class variational_KFT(KFT):
                                                             )
 
         self.TT_cores = torch.nn.ModuleDict(tmp_dict)
-        if not old_setup:
-            self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
+        self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
     def get_norms(self):
         with torch.no_grad():
