@@ -184,7 +184,7 @@ class job_object():
         torch.cuda.set_device(int(device))
         PATH = args['PATH']
         original_shape = list(pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb')))
-        loaded_side_info = list(load_side_info(side_info_path=PATH+'side_info.pt', shape=original_shape))
+        loaded_side_info = list(load_side_info(side_info_path=PATH + 'side_info.pt'))
         side_info_dict_tmp = {} #'dim_idx':{'side_info_for_that_dim':0,'temporal':False}
         for dim_idx,n in enumerate(original_shape):
             for idx,s in enumerate(loaded_side_info):
@@ -559,8 +559,8 @@ class job_object():
         self.parameters = parameters
         if self.cuda:
             self.model = self.model.to(self.device)
-        self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, mode='train',
-                                                 bs_ratio=parameters['batch_size_ratio'],split_mode=self.split_mode)
+        self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, bs_ratio=parameters['batch_size_ratio'],
+                                                split_mode=self.split_mode,forecast=self.forecast,ref_idx=self.base_ref_int,T_dim=self.temporal_tag)
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:

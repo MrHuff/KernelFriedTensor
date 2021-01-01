@@ -57,23 +57,24 @@ class KFT(torch.nn.Module):
         for i, v in self.ii.items():
             if not self.old_setup:
                 self.TT_cores_prime[str(i)].turn_on()
+                self.TT_cores_prime[str(i)].cache_mode = False
             self.TT_cores[str(i)].turn_on()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_on()
-            self.TT_cores_prime[str(i)].cache_mode = False
             self.TT_cores[str(i)].cache_mode = False
 
     def turn_off_all(self):
         for i, v in self.ii.items():
             if not self.old_setup:
                 self.TT_cores_prime[str(i)].turn_off()
+                self.TT_cores_prime[str(i)].cache_results()
+                self.TT_cores_prime[str(i)].cache_mode = True
             self.TT_cores[str(i)].turn_off()
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
-            self.TT_cores_prime[str(i)].cache_results()
             self.TT_cores[str(i)].cache_results()
-            self.TT_cores_prime[str(i)].cache_mode = True
             self.TT_cores[str(i)].cache_mode = True
+
 
     def turn_on_V(self,i):
         self.current_update_pointer = i
@@ -180,14 +181,18 @@ class KFT_forecast(KFT):
             lambda_W = lambdas['lambda_W'],
             lambda_T_x = lambdas['lambda_T_x']
         )
+        self.deactivate_W_mode()
 
     def get_time_component(self):
-        tt = self.TT_cores[str(self.tt_core_temporal_idx)]
         if not self.old_setup:
-            tt_prime = self.TT_cores_prime[str(self.tt_core_temporal_idx)]
-            temporal_comp = tt_prime.core_param * tt.get_temporal_compoment()
+            temporal_comp = self.TT_cores_prime[str(self.tt_core_temporal_idx)].core_param
         else:
-            temporal_comp = tt.get_temporal_compoment()
+            tt = self.TT_cores[str(self.tt_core_temporal_idx)]
+            if self.has_dual_kernel_component(self.tt_core_temporal_idx):
+                temporal_comp = tt.get_temporal_compoment()
+            else:
+                temporal_comp = tt.core_param
+
         return temporal_comp.squeeze()
 
     def activate_W_mode(self):

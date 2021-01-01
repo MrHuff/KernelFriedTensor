@@ -184,6 +184,7 @@ class KFTR_temporal_regulizer(torch.nn.Module):
 
     def loss(self,x,y):
         return torch.mean((x-y)**2)
+
     # def forward(self,time_component,index):
     #     offset = index-self.base_ref
     #     if offset<0:
@@ -198,7 +199,7 @@ class KFTR_temporal_regulizer(torch.nn.Module):
     def calculate_KFTR(self,time_component):
         x_data = time_component.index_select(self.time_idx,self.idx_extractor.flatten())
         x_data = torch.stack(x_data.chunk(x_data.shape[0]//self.lag_size,dim=0))
-        x_data = x_data.sum(dim=1)
+        x_data = (x_data*self.W).sum(dim=1)
         x_ref  =  time_component.index_select(self.time_idx,self.indices_iterate.squeeze())
         KFTR=self.calculate_square_error(actual_component=x_ref,predicted_component=x_data)
         return KFTR*self.lambda_T_x
