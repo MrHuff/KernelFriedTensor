@@ -22,7 +22,7 @@ base_dict = {
     'cuda': True,
     'max_R': 50,
     'max_lr': 1e-1,
-    'old_setup': True,
+    'old_setup': False,
     'latent_scale': False,
     'chunks': 10,
     'dual': True,

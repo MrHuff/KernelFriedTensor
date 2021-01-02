@@ -233,46 +233,70 @@ class job_object():
         return tensor_component_configs,args,side_info_dict
 
 
-    def calculate_loss_no_grad(self, task='regression', mode='val'):
+    def get_preds(self):
+        loss_list = []
+        y_s = []
+        _y_preds = []
+        for i in range(self.dataloader.chunks):
+            X, y = self.dataloader.get_chunk(i)
+            if self.train_config['cuda']:
+                X = X.to(self.train_config['device'])
+                y = y.to(self.train_config['device'])
+            loss, y_pred = self.correct_validation_loss(X, y)
+            loss_list.append(loss)
+            y_s.append(y.cpu())
+            _y_preds.append(y_pred.cpu())
+        total_loss = torch.tensor(loss_list).sum().item() / self.dataloader.Y.shape[0]
+        Y = torch.cat(y_s, dim=0)
+        y_preds = torch.cat(_y_preds)
+        return total_loss,Y,y_preds
+
+    def calc_NRMSE(self,y_pred,Y):
+        yhat = self.dataloader.transformer.inverse_transform(y_pred.cpu().numpy())
+        y = self.dataloader.transformer.inverse_transform(Y)
+        NRSME = np.mean(((y-yhat)**2))**0.5/np.abs(y).mean()
+        return NRSME
+
+    def calculate_validation_metrics(self, task='regression', mode='val'):
+        self.dataloader.set_mode(mode)
         with torch.no_grad():
-            loss_list = []
-            y_s = []
-            _y_preds = []
-            self.dataloader.set_mode(mode)
-            for i in range(self.dataloader.chunks):
-                X, y = self.dataloader.get_chunk(i)
-                if self.train_config['cuda']:
-                    X = X.to(self.train_config['device'])
-                    y = y.to(self.train_config['device'])
-                loss, y_pred = self.correct_validation_loss(X, y)
-                loss_list.append(loss)
-                y_s.append(y.cpu())
-                _y_preds.append(y_pred.cpu())
-            total_loss = torch.tensor(loss_list).sum().item()/self.dataloader.Y.shape[0]
-            Y = torch.cat(y_s, dim=0)
-            y_preds = torch.cat(_y_preds)
+            total_loss,Y,y_preds = self.get_preds()
             print(f'{mode} loss_func_loss: {total_loss}' )
             if task == 'regression':
                 if self.bayesian:
                     mse = torch.nn.MSELoss()
                     pred_loss = mse(y_preds,Y)
                     var_Y = Y.var()
-                    ref_metric = 1. - pred_loss / var_Y
-                    print(f'{mode} R^2: {ref_metric}')
-                    ref_metric = total_loss
+                    metrics = {
+                        'eval': total_loss.item(),
+                        'MSE': pred_loss,
+                        'RMSE': pred_loss**0.5,
+                        'R2': (1. - pred_loss / var_Y).item(),
+                        'ELBO':total_loss
+                    }
                 else:
                     var_Y = Y.var()
                     ref_metric = 1. - total_loss / var_Y
-                    ref_metric = ref_metric.numpy()
-                    print(f'{mode} NRSME: {total_loss**0.5/(Y.abs().mean())}')
-
+                    if self.PATH in ['electric_data/', 'traffic_data/']:
+                        NRSME = self.calc_NRMSE(y_pred=y_preds,Y=Y.squeeze())
+                    else:
+                        NRSME = 0.
+                    metrics = {
+                        'eval':ref_metric.item(),
+                        'MSE': total_loss,
+                        'RMSE': total_loss**0.5,
+                        'R2': ref_metric.item(),
+                        'NRMSE': NRSME
+                    }
             else:
                 y_preds = torch.sigmoid(y_preds)
-                if task=='classification_auc':
-                    ref_metric = auc_check(y_preds, Y)
-                elif task=='classification_acc':
-                    ref_metric = accuracy_check(y_preds, Y)
-        return ref_metric
+                metrics = {
+                    'eval': auc_check(y_preds, Y),
+                    'AUC': auc_check(y_preds, Y),
+                    'ACC': accuracy_check(y_preds, Y)
+                }
+
+        return metrics
 
     def train_monitor(self,total_loss, reg, pred_loss, y_pred, p):
         with torch.no_grad():
@@ -311,30 +335,30 @@ class job_object():
                     y_pred, _ = self.model(X)
                     pred_loss = loss_func(y_pred, y.squeeze())
             else:
-                loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
+                loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=self.pos_weight,reduction='sum')
                 y_pred, reg = self.model(X)
                 pred_loss = loss_func(y_pred, y)
             return pred_loss, y_pred
 
-    def correct_forward_loss(self,X, y, loss_func):
+    def correct_forward_loss(self, X, y):
         if self.train_config['task'] == 'regression' and self.train_config['bayesian']:
             y_pred, last_term, reg = self.model(X)
-            pred_loss = loss_func(y.squeeze(), y_pred, last_term)
+            pred_loss = self.loss_func(y.squeeze(), y_pred, last_term)
             total_loss = pred_loss*self.train_config['sigma_y'] + reg
         else:
             y_pred, reg = self.model(X)
-            pred_loss = loss_func(y_pred, y.squeeze())
+            pred_loss = self.loss_func(y_pred, y.squeeze())
             total_loss = pred_loss + reg
         return total_loss, reg, pred_loss, y_pred
 
     #Write another train loop to train W specifically!
-    def train_loop(self, opt, loss_func):
+    def train_loop(self, opt):
         sub_epoch = self.train_config['sub_epoch_V']
-        if self.bayesian or (not self.forecast):
-            lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.95)
-        else:
-            lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=sub_epoch//2,eta_min=1e-4)
-
+        # if self.bayesian or (not self.forecast):
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.95)
+        # else:
+        #     lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=sub_epoch//2,eta_min=1e-4)
+        #
         for n, param in self.model.named_parameters():
             if param.requires_grad:
                 print(n, param.requires_grad)
@@ -345,26 +369,26 @@ class job_object():
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
-            total_loss, reg, pred_loss, y_pred = self.correct_forward_loss(X, y,loss_func)
+            total_loss, reg, pred_loss, y_pred = self.correct_forward_loss(X, y)
             opt.zero_grad()
             total_loss.backward()
             opt.step()
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
                 torch.cuda.empty_cache()
-                l_val = self.calculate_loss_no_grad(task=self.train_config['task'], mode='val')
+                l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
                 torch.cuda.empty_cache()
-                l_test = self.calculate_loss_no_grad(task=self.train_config['task'], mode='test')
+                l_test = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
                 if self.kill_counter==100:
                     print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
                     return 'early_stop'
-                if -l_val < -self.best_val_loss:
+                if -l_val['eval'] < -self.best_val_loss:
                     self.kill_counter = 0
-                    self.best_val_loss = l_val
-                    self.dump_model(val_loss=l_val, test_loss=l_test, i=self.hyperits_i, parameters=self.parameters) #think carefully here!
+                    self.best_val_loss = l_val['eval']
+                    self.dump_model(val_loss=l_val['eval'], test_loss=l_test['eval'], i=self.hyperits_i, parameters=self.parameters) #think carefully here!
                 else:
                     self.kill_counter+=1
             ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
@@ -373,7 +397,7 @@ class job_object():
         return False
 
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict):
+    def outer_train_loop(self, opts, ERROR, train_list, train_dict):
 
         for i in train_list:
             settings = train_dict[i]
@@ -385,12 +409,12 @@ class job_object():
                     continue
                 else:
                     f(key)
-                    ERROR = self.train_loop(opt, loss_func)
+                    ERROR = self.train_loop(opt)
                     if self.forecast:
                         if key == self.model.tt_core_temporal_idx:
                             # activate W training
                             self.model.activate_W_mode()
-                            ERROR = self.train_loop(opt, loss_func)
+                            ERROR = self.train_loop(opt)
                             self.model.deactivate_W_mode()
                 if ERROR == 'early_stop':
                     return ERROR
@@ -407,7 +431,7 @@ class job_object():
         return opts
 
     def setup_runs(self):
-        loss_func = get_loss_func(self.train_config)
+        self.loss_func = get_loss_func(self.train_config)
         ERROR = False
         train_dict = {0: {'para': 'V_lr', 'call': self.model.turn_on_V}}
         train_list = [0]
@@ -420,17 +444,17 @@ class job_object():
 
         lrs = [v['para'] for v in train_dict.values()]
         opts = self.opt_reinit( lrs)
-        return  opts, loss_func, ERROR, train_list, train_dict
+        return  opts, ERROR, train_list, train_dict
 
     def train_epoch_loop(self):
-        opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
+        opts, ERROR, train_list, train_dict = self.setup_runs()
         for i in range(self.train_config['epochs']):
             if self.bayesian:
                 for train_mean in [True, False]:
                     self.model.toggle(train_mean)
-                    ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
+                    ERROR = self.outer_train_loop(opts, ERROR, train_list, train_dict)
             else:
-                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
+                ERROR = self.outer_train_loop(opts, ERROR, train_list, train_dict)
             if ERROR == 'early_stop':
                 break
         return ERROR
@@ -447,32 +471,79 @@ class job_object():
         else:
             ERROR = self.train_epoch_loop()
 
-        if self.bayesian:
-            if ERROR == True:
-                return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
-        else:
-            if ERROR == True:
-                return -np.inf, -np.inf
+        if ERROR == True:
+            return {'loss': np.inf ,
+                        'status': STATUS_FAIL,
+                        'test_loss': np.inf}
+
         if self.PATH in ['electric_data/', 'traffic_data/']:
-            self.post_train_eval_special()
+            return self.post_train_eval_special()
         else:
-            self.post_train_eval()
+            return self.post_train_eval()
+
+    def predict_period(self):
+        self.model.turn_on_all()
+        self.load_dumped_model(self.hyperits_i)
+        with torch.no_grad():
+            total_loss,Y,y_preds = self.get_preds()
+            self.dataloader.append_pred_Y(y_preds,Y)
+
     def post_train_eval_special(self):
-        pass
+        if self.bayesian:
+            raise Exception
+        else:
+            loss_func = torch.nn.MSELoss(reduction='sum')
+            preds = torch.cat(self.dataloader.pred_test_Y)
+            true_y = torch.cat(self.dataloader.true_test_Y)
+            mse = loss_func(preds,true_y.squeeze())
+            r_2 = 1-mse/true_y.var()
+            NRMSE = mse.sqrt()/(true_y.abs().mean())
+            val_loss_final = {'R2':r_2,
+                              'RMSE': mse**0.5,
+                              'MSE': mse,
+                              'NRMSE': NRMSE
+                        }
+
+            result_dict =  {
+                'loss': r_2,
+                'status': STATUS_OK,
+                'test_loss': r_2,
+                'other_val': val_loss_final,
+                'other_test': val_loss_final,
+                            }
+            return result_dict
 
     def post_train_eval(self):
         self.model.turn_on_all()
         self.load_dumped_model(self.hyperits_i)
         if self.bayesian:
-            val_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='val')
-            test_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='test')
+            val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
+            test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
-            return total_cal_error_val-val_loss_final,total_cal_error_test-test_loss_final,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
+            result_dict =  {'results':{'loss': total_cal_error_val-val_loss_final['R2'],
+                            'status': STATUS_OK,
+                            'test_loss': total_cal_error_test-test_loss_final['R2'],
+                            'val_cal_dict': val_cal_dict,
+                            'test_cal_dict': test_cal_dict,
+                            'val_loss_final': val_loss_final,
+                            'test_loss_final': test_loss_final,
+                            'other_val':val_loss_final,
+                            'other_test':test_loss_final},
+                            'predictions': predictions
+            }
+            return result_dict
         else:
-            val_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='val')
-            test_loss_final = self.calculate_loss_no_grad(task=self.train_config['task'], mode='test')
-            return val_loss_final,test_loss_final
+            val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
+            test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
+            result_dict =  {
+                            'loss': val_loss_final['R2'],
+                        'status': STATUS_OK,
+                        'test_loss': test_loss_final['R2'],
+                            'other_val': val_loss_final,
+                            'other_test': test_loss_final
+                            }
+            return result_dict
 
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
@@ -570,18 +641,11 @@ class job_object():
                                                 split_mode=self.split_mode, forecast=self.forecast,
                                                 T_dim=self.temporal_tag, normalize=self.normalize_Y)
         self.dataloader.chunks = self.train_config['chunks']
-        torch.cuda.empty_cache()
-        if self.bayesian:
-            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.train()
-            self.hyperits_i+=1
-            self.reset_model_dataloader()
-            return total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions
+        result_dict = self.train()
+        self.hyperits_i+=1
+        self.reset_model_dataloader()
+        return result_dict
 
-        else:
-            val_loss_final, test_loss_final = self.train()
-            self.hyperits_i+=1
-            self.reset_model_dataloader()
-            return val_loss_final, test_loss_final
 
     def reset_model_dataloader(self):
         del self.model
@@ -617,29 +681,18 @@ class job_object():
         torch.cuda.empty_cache()
         self.init(parameters)
         if self.bayesian:
-            total_cal_error_val,total_cal_error_test,val_cal_dict,test_cal_dict,val_loss_final,test_loss_final,predictions = self.start_training(parameters)
-            if not np.isinf(val_loss_final):
+            output_dict = self.start_training(parameters)
+            predictions = output_dict['predictions']
+            results = output_dict['results']
+            if not np.isinf(results['val_loss_final']):
                 torch.cuda.empty_cache()
-                if total_cal_error_test < self.best:
-                    self.best = total_cal_error_test
+                if results['test_loss'] < self.best:
+                    self.best = results['test_loss']
                     predictions.to_parquet(self.save_path + '/'+f'VI_predictions_{self.seed}', engine='fastparquet')
-                return {'loss': total_cal_error_val,
-                        'status': STATUS_OK,
-                        'test_loss': total_cal_error_test,
-                        'val_cal_dict':val_cal_dict,
-                        'test_cal_dict':test_cal_dict,
-                        'val_loss_final':val_loss_final,
-                        'test_loss_final':test_loss_final}
+                return results
         else:
-            val_loss_final, test_loss_final = self.start_training(parameters)
-            if not np.isinf(val_loss_final):
-                torch.cuda.empty_cache()
-                return {'loss': -val_loss_final, 'status': STATUS_OK, 'test_loss': -test_loss_final}
-            # except Exception as e:
-            #     print(e)
-            #     torch.cuda.empty_cache()
-        return {'loss': np.inf, 'status': STATUS_FAIL, 'test_loss': np.inf}
-
+            results = self.start_training(parameters)
+            return results
     def  get_kernel_vals(self,desc):
         if 'matern_1'== desc:
             return 'matern',0.5

@@ -133,8 +133,8 @@ class xl_FFM(job_object):
                 opt.step()
                 lrs.step(l)
                 if j % (self.its // 2) == 0:
-                    val = self.calculate_loss_no_grad(task=self.task, mode='val')
-                    test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                    val = self.calculate_validation_metrics(task=self.task, mode='val')
+                    test = self.calculate_validation_metrics(task=self.task, mode='test')
                     print(f'val_loss: {val} test_loss: {test}')
                     if -val < self.best:
                         self.best = -val
@@ -144,20 +144,20 @@ class xl_FFM(job_object):
                         self.kill_counter += 1
                     if self.kill_counter == 10:
                         self.load_dumped_model(i=0)
-                        val = self.calculate_loss_no_grad(task=self.task, mode='val')
-                        test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                        val = self.calculate_validation_metrics(task=self.task, mode='val')
+                        test = self.calculate_validation_metrics(task=self.task, mode='test')
                         print(val)
                         print(test)
                         return val, test
 
         self.load_dumped_model(i=0)
-        val = self.calculate_loss_no_grad(task=self.task, mode='val')
-        test = self.calculate_loss_no_grad(task=self.task, mode='test')
+        val = self.calculate_validation_metrics(task=self.task, mode='val')
+        test = self.calculate_validation_metrics(task=self.task, mode='test')
         print(val)
         print(test)
         return val,test
 
-    def calculate_loss_no_grad(self, task='regression', mode='val'):
+    def calculate_validation_metrics(self, task='regression', mode='val'):
         with torch.no_grad():
             loss_list = []
             y_s = []

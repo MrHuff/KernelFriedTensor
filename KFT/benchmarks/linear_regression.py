@@ -114,8 +114,8 @@ class linear_job_class(xl_FFM):
                 e = time.time()
                 print(e-s)
                 if j % (self.its // 2) == 0:
-                    val = self.calculate_loss_no_grad(task=self.task, mode='val')
-                    test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                    val = self.calculate_validation_metrics(task=self.task, mode='val')
+                    test = self.calculate_validation_metrics(task=self.task, mode='test')
                     print(f'val_loss: {val} test_loss: {test}')
                     if -val < self.best:
                         self.best = -val
@@ -125,14 +125,14 @@ class linear_job_class(xl_FFM):
                         self.kill_counter += 1
                     if self.kill_counter == 10:
                         self.load_dumped_model(i=0)
-                        val = self.calculate_loss_no_grad(task=self.task, mode='val')
-                        test = self.calculate_loss_no_grad(task=self.task, mode='test')
+                        val = self.calculate_validation_metrics(task=self.task, mode='val')
+                        test = self.calculate_validation_metrics(task=self.task, mode='test')
                         print(val)
                         print(test)
                         return val, test
         self.load_dumped_model(i=0)
-        val = self.calculate_loss_no_grad(task=self.task, mode='val')
-        test = self.calculate_loss_no_grad(task=self.task, mode='test')
+        val = self.calculate_validation_metrics(task=self.task, mode='val')
+        test = self.calculate_validation_metrics(task=self.task, mode='test')
         return val,test
 
     def __call__(self, params):

@@ -272,10 +272,10 @@ class forecast_dataset(Dataset):
             else:
                 setattr(self,f'Y_{name}', torch.from_numpy(self.Y[el,:]).float())
         self.set_mode('train')
-        self.true_test_Y.append(self.Y_te)
 
-    def append_pred_Y(self,pred_Y):
-        self.pred_test_Y.append(pred_Y)
+    def append_pred_Y(self,pred_Y,true_Y):
+        self.pred_test_Y.append(self.transformer.inverse_transform(pred_Y.cpu().numpy()))
+        self.true_test_Y.append(self.transformer.inverse_transform(true_Y.cpu().numpy()))
 
     def set_mode(self, mode):
         if mode == 'train':
