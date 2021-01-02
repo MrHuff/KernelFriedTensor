@@ -244,9 +244,9 @@ class forecast_dataset(Dataset):
         n_last_test = periods*period_size
         self.chunks = 1
         self.ratio = bs_ratio
-        self.indices, self.Y = torch.load(tensor_path)
+        self.indices, self.Y_base = torch.load(tensor_path)
         self.indices = self.indices.numpy()
-        self.Y = self.Y.numpy()
+        self.Y_base = self.Y_base.numpy()
         self.time_indices = self.indices[:,T_dim]
         max_time = self.time_indices.max()
         self.test_begin = max_time-n_last_test
@@ -263,19 +263,21 @@ class forecast_dataset(Dataset):
         self.val_indices = np.isin(self.time_indices,test_indices)
         self.test_indices = self.val_indices
         self.transformer = StandardScaler()
-        self.transformer.fit(self.Y[self.train_indices, :])
+        self.transformer.fit(self.Y_base[self.train_indices, :])
 
         for el,name in zip([self.train_indices,self.val_indices,self.test_indices],['tr','v','te']):
             setattr(self,f'X_{name}', torch.from_numpy(self.indices[el,:]).long())
             if self.normalize:
-                setattr(self,f'Y_{name}', torch.from_numpy(self.transformer.transform(self.Y[el,:])).float())
+                setattr(self,f'Y_{name}', torch.from_numpy(self.transformer.transform(self.Y_base[el,:])).float())
             else:
-                setattr(self,f'Y_{name}', torch.from_numpy(self.Y[el,:]).float())
+                setattr(self,f'Y_{name}', torch.from_numpy(self.Y_base[el,:]).float())
         self.set_mode('train')
 
     def append_pred_Y(self,pred_Y,true_Y):
-        self.pred_test_Y.append(self.transformer.inverse_transform(pred_Y.cpu().numpy()))
-        self.true_test_Y.append(self.transformer.inverse_transform(true_Y.cpu().numpy()))
+        new_pred_Y = self.transformer.inverse_transform(pred_Y.squeeze().cpu().numpy())
+        new_Y = self.transformer.inverse_transform(true_Y.squeeze().cpu().numpy())
+        self.pred_test_Y.append(new_pred_Y)
+        self.true_test_Y.append(new_Y)
 
     def set_mode(self, mode):
         if mode == 'train':

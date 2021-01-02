@@ -171,7 +171,7 @@ class job_object():
             setattr(self,key,val)
 
         self.device = args['device'] if self.cuda else 'cpu'
-        self.lrs = [self.max_lr/10**i for i in range(2)]
+        self.lrs = [self.max_lr]
         self.name = f'bayesian_{self.seed}' if args['bayesian'] else f'frequentist_{self.seed}'
         if not self.task=='regression':
             self.pos_weight =torch.tensor(args['pos_weight']).to(self.device) if self.cuda else torch.tensor(args['pos_weight'])
@@ -355,10 +355,9 @@ class job_object():
     def train_loop(self, opt):
         sub_epoch = self.train_config['sub_epoch_V']
         # if self.bayesian or (not self.forecast):
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.95)
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
         # else:
-        #     lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=sub_epoch//2,eta_min=1e-4)
-        #
+        #     lrs = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt,T_0=sub_epoch//2,eta_min=1e-4)
         for n, param in self.model.named_parameters():
             if param.requires_grad:
                 print(n, param.requires_grad)
@@ -460,15 +459,20 @@ class job_object():
         return ERROR
 
     def train(self):
-        self.kill_counter = 0
-        self.train_config['reset'] = 1.0
-        self.best_val_loss = -np.inf
-
         if self.PATH in ['electric_data/', 'traffic_data/']:
             for i in range(len(self.dataloader.test_periods)):
+                self.kill_counter = 0
+                self.train_config['reset'] = 1.0
+                self.best_val_loss = -np.inf
+                print(f"########################### NEW PERIOD {i} ############################")
                 self.dataloader.set_data(i)
                 ERROR = self.train_epoch_loop()
+                self.load_dumped_model(self.hyperits_i)
+                self.predict_period()
         else:
+            self.kill_counter = 0
+            self.train_config['reset'] = 1.0
+            self.best_val_loss = -np.inf
             ERROR = self.train_epoch_loop()
 
         if ERROR == True:
@@ -492,12 +496,11 @@ class job_object():
         if self.bayesian:
             raise Exception
         else:
-            loss_func = torch.nn.MSELoss(reduction='sum')
-            preds = torch.cat(self.dataloader.pred_test_Y)
-            true_y = torch.cat(self.dataloader.true_test_Y)
-            mse = loss_func(preds,true_y.squeeze())
+            preds = np.concatenate(self.dataloader.pred_test_Y)
+            true_y = np.concatenate(self.dataloader.true_test_Y)
+            mse = np.mean((preds-true_y)**2)
             r_2 = 1-mse/true_y.var()
-            NRMSE = mse.sqrt()/(true_y.abs().mean())
+            NRMSE = mse**0.5/(np.abs(true_y).mean())
             val_loss_final = {'R2':r_2,
                               'RMSE': mse**0.5,
                               'MSE': mse,
@@ -797,10 +800,9 @@ class job_object():
         training_params['epochs'] = self.epochs
         if self.bayesian or self.forecast:
             training_params['prime_lr'] = parameters['lr_2']
-            training_params['ls_lr'] = parameters['lr_2']
         else:
             training_params['prime_lr'] = parameters['lr_2']/100.
-            training_params['ls_lr'] = parameters['lr_2']/100.
+        training_params['ls_lr'] = parameters['lr_2']/100.
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda

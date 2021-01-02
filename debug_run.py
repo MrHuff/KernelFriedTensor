@@ -17,7 +17,7 @@ base_dict = {
     'save_path': 'test_run',
     'architecture': 0,
     'task': 'regression',
-    'epochs': 400,
+    'epochs': 50,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
     'max_R': 50,
@@ -36,20 +36,23 @@ base_dict = {
     'split_mode': 0,
     'seed': 1,
     'temporal_tag': 0,
-    'delete_side_info':[0],
+    'delete_side_info':[0],#None,
     'special_mode': 0,
     'shape_permutation': [0,1],
     'full_grad': False,
-    'sub_epoch_V': 100,
+    'sub_epoch_V': 10,
     'forecast':True,
     'lags':lags,
     'base_ref_int':lags[-1]+1,
     'lambda_W_a':2.0,
     'lambda_W_b':2.1,
-    'lambda_T_x_a': 625.,
-    'lambda_T_x_b': 625.1,
+    'lambda_T_x_a': 625,#625., for none kernel approach
+    'lambda_T_x_b': 625.1,#625.1,
     'normalize_Y':True
 }
+#Do some hyperparameter optimization for kernels...
+#Confirming both methods have high potential...
+#Fix the transition and convergence rate...
 if __name__ == '__main__':
     warnings.simplefilter("ignore")
     run_job_func(base_dict)
