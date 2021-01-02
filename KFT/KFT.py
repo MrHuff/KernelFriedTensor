@@ -185,7 +185,11 @@ class KFT_forecast(KFT):
 
     def get_time_component(self):
         if not self.old_setup:
-            temporal_comp = self.TT_cores_prime[str(self.tt_core_temporal_idx)].core_param
+            tt = self.TT_cores[str(self.tt_core_temporal_idx)]
+            if self.has_dual_kernel_component(self.tt_core_temporal_idx):
+                temporal_comp = self.TT_cores_prime[str(self.tt_core_temporal_idx)].core_param *  tt.get_temporal_compoment()
+            else:
+                temporal_comp = self.TT_cores_prime[str(self.tt_core_temporal_idx)].core_param *  tt.core_param
         else:
             tt = self.TT_cores[str(self.tt_core_temporal_idx)]
             if self.has_dual_kernel_component(self.tt_core_temporal_idx):

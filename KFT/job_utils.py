@@ -94,6 +94,10 @@ def analytical_reconstruction_error_VI(y,middle_term,last_term):
     loss = torch.mean(y**2 -2*y*middle_term+last_term)
     return loss
 
+def analytical_reconstruction_error_VI_sum(y,middle_term,last_term):
+    loss = torch.sum(y**2 -2*y*middle_term+last_term)
+    return loss
+
 def auc_check(y_pred,Y):
     with torch.no_grad():
         y_pred = (y_pred.float() > 0.5).cpu().float().numpy()
@@ -244,7 +248,7 @@ class job_object():
                 loss_list.append(loss)
                 y_s.append(y.cpu())
                 _y_preds.append(y_pred.cpu())
-            total_loss = torch.tensor(loss_list).mean().item()
+            total_loss = torch.tensor(loss_list).sum().item()/self.dataloader.Y.shape[0]
             Y = torch.cat(y_s, dim=0)
             y_preds = torch.cat(_y_preds)
             print(f'{mode} loss_func_loss: {total_loss}' )
@@ -260,7 +264,7 @@ class job_object():
                     var_Y = Y.var()
                     ref_metric = 1. - total_loss / var_Y
                     ref_metric = ref_metric.numpy()
-                    print(f'{mode} NRSME: {total_loss**0.5/Y.abs().mean()}')
+                    print(f'{mode} NRSME: {total_loss**0.5/(Y.abs().mean())}')
 
             else:
                 y_preds = torch.sigmoid(y_preds)
@@ -301,9 +305,9 @@ class job_object():
             if self.train_config['task'] == 'regression':
                 if self.train_config['bayesian']:
                     y_pred, middle_term, reg = self.model(X)
-                    pred_loss= -(analytical_reconstruction_error_VI(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
+                    pred_loss= -(analytical_reconstruction_error_VI_sum(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
                 else:
-                    loss_func = torch.nn.MSELoss()
+                    loss_func = torch.nn.MSELoss(reduction='sum')
                     y_pred, _ = self.model(X)
                     pred_loss = loss_func(y_pred, y.squeeze())
             else:
@@ -326,10 +330,10 @@ class job_object():
     #Write another train loop to train W specifically!
     def train_loop(self, opt, loss_func):
         sub_epoch = self.train_config['sub_epoch_V']
-        # if self.bayesian:
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.95)
-        # else:
-        #     lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=sub_epoch//2,eta_min=1e-4)
+        if self.bayesian or (not self.forecast):
+            lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.95)
+        else:
+            lrs = torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=sub_epoch//2,eta_min=1e-4)
 
         for n, param in self.model.named_parameters():
             if param.requires_grad:
@@ -368,56 +372,34 @@ class job_object():
                 return ERROR
         return False
 
-    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict):
-        if self.bayesian:
-            for train_mean in [True,False]:
-                self.model.toggle(train_mean)
-                for i in train_list:
-                    settings = train_dict[i]
-                    f = settings['call']
-                    lr = settings['para']
-                    opt = opts[lr]
-                    for key, items in self.model.ii.items():
-                        f(key)
-                        ERROR = self.train_loop(opt, loss_func)
-                        if self.forecast:
-                            if key == self.model.self.tt_core_temporal_idx:
-                                # activate W training
-                                self.model.activate_W_mode()
-                                ERROR = self.train_loop(opt, loss_func)
-                                self.model.deactivate_W_mode()
-                        if ERROR == 'early_stop':
-                            return ERROR
-                        if ERROR:
-                            return ERROR
-        else:
-            for i in train_list:
-                settings = train_dict[i]
-                f = settings['call']
-                lr = settings['para']
-                opt = opts[lr]
-                for key, items in self.model.ii.items():
-                    if not self.model.has_dual_kernel_component(key) and f.__name__=='turn_on_kernel_mode':
-                        continue
-                    else:
-                        f(key)
-                        ERROR = self.train_loop(opt, loss_func)
-                    if self.forecast:
-                        if key==self.model.tt_core_temporal_idx:
-                            #activate W training
-                            self.model.activate_W_mode()
-                            ERROR = self.train_loop(opt,loss_func)
-                            self.model.deactivate_W_mode()
 
-                    if ERROR == 'early_stop':
-                        return ERROR
-                    if ERROR:
-                        return ERROR
+    def outer_train_loop(self, opts, loss_func, ERROR, train_list, train_dict):
+
+        for i in train_list:
+            settings = train_dict[i]
+            f = settings['call']
+            lr = settings['para']
+            opt = opts[lr]
+            for key, items in self.model.ii.items():
+                if not self.model.has_dual_kernel_component(key) and f.__name__=='turn_on_kernel_mode':
+                    continue
+                else:
+                    f(key)
+                    ERROR = self.train_loop(opt, loss_func)
+                    if self.forecast:
+                        if key == self.model.tt_core_temporal_idx:
+                            # activate W training
+                            self.model.activate_W_mode()
+                            ERROR = self.train_loop(opt, loss_func)
+                            self.model.deactivate_W_mode()
+                if ERROR == 'early_stop':
+                    return ERROR
+                if ERROR:
+                    return ERROR
 
         return ERROR
 
     def opt_reinit(self, lr_params):
-
         tmp_opt_list = []
         for lr in lr_params:
             tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
@@ -440,20 +422,45 @@ class job_object():
         opts = self.opt_reinit( lrs)
         return  opts, loss_func, ERROR, train_list, train_dict
 
+    def train_epoch_loop(self):
+        opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
+        for i in range(self.train_config['epochs']):
+            if self.bayesian:
+                for train_mean in [True, False]:
+                    self.model.toggle(train_mean)
+                    ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
+            else:
+                ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
+            if ERROR == 'early_stop':
+                break
+        return ERROR
+
     def train(self):
         self.kill_counter = 0
         self.train_config['reset'] = 1.0
         self.best_val_loss = -np.inf
-        opts, loss_func, ERROR, train_list, train_dict = self.setup_runs()
-        for i in range(self.train_config['epochs']):
-            ERROR = self.outer_train_loop(opts, loss_func, ERROR, train_list, train_dict)
-            if ERROR == 'early_stop':
-                break
-            if ERROR==True:
-                if self.bayesian:
-                    return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
-                else:
-                    return -np.inf, -np.inf
+
+        if self.PATH in ['electric_data/', 'traffic_data/']:
+            for i in range(len(self.dataloader.test_periods)):
+                self.dataloader.set_data(i)
+                ERROR = self.train_epoch_loop()
+        else:
+            ERROR = self.train_epoch_loop()
+
+        if self.bayesian:
+            if ERROR == True:
+                return -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf
+        else:
+            if ERROR == True:
+                return -np.inf, -np.inf
+        if self.PATH in ['electric_data/', 'traffic_data/']:
+            self.post_train_eval_special()
+        else:
+            self.post_train_eval()
+    def post_train_eval_special(self):
+        pass
+
+    def post_train_eval(self):
         self.model.turn_on_all()
         self.load_dumped_model(self.hyperits_i)
         if self.bayesian:
@@ -560,7 +567,8 @@ class job_object():
         if self.cuda:
             self.model = self.model.to(self.device)
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, bs_ratio=parameters['batch_size_ratio'],
-                                                split_mode=self.split_mode,forecast=self.forecast,ref_idx=self.base_ref_int,T_dim=self.temporal_tag)
+                                                split_mode=self.split_mode, forecast=self.forecast,
+                                                T_dim=self.temporal_tag, normalize=self.normalize_Y)
         self.dataloader.chunks = self.train_config['chunks']
         torch.cuda.empty_cache()
         if self.bayesian:
@@ -602,6 +610,7 @@ class job_object():
             df['y_true'] = self.dataloader.Y.numpy()
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)
             return total_cal_error,cal_dict ,predictions
+
     def __call__(self, parameters):
         # for i in range(2):
         #     try: #Try two times
@@ -733,8 +742,12 @@ class job_object():
         training_params = {}
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
-        training_params['prime_lr'] = parameters['lr_2']/100. if not self.bayesian else parameters['lr_2']
-        training_params['ls_lr'] = parameters['lr_2']/100. if not self.bayesian else parameters['lr_2']
+        if self.bayesian or self.forecast:
+            training_params['prime_lr'] = parameters['lr_2']
+            training_params['ls_lr'] = parameters['lr_2']
+        else:
+            training_params['prime_lr'] = parameters['lr_2']/100.
+            training_params['ls_lr'] = parameters['lr_2']/100.
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda

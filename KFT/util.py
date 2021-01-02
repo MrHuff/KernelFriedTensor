@@ -239,31 +239,43 @@ def load_side_info(side_info_path):
     return side_info
 
 class forecast_dataset(Dataset):
-    def __init__(self, tensor_path, ref_index,T_dim,seed, bs_ratio=1., split_mode=0):
+    def __init__(self, tensor_path,T_dim,seed, bs_ratio=1.,periods=7,period_size=24,normalize=False):
         np.random.seed(seed)
-        if split_mode == 0:
-            n_last_test = 7*24
-            n_val_size = 2*n_last_test
+        n_last_test = periods*period_size
         self.chunks = 1
         self.ratio = bs_ratio
         self.indices, self.Y = torch.load(tensor_path)
         self.indices = self.indices.numpy()
         self.Y = self.Y.numpy()
-        time_indices = self.indices[:,T_dim]
-        max_time = time_indices.max()
-        test_begin = max_time-n_last_test
-        test_times = np.arange(test_begin,max_time)
-        val_times=np.random.choice(list(range(ref_index+1,test_begin)),n_val_size,False)
+        self.time_indices = self.indices[:,T_dim]
+        max_time = self.time_indices.max()
+        self.test_begin = max_time-n_last_test
+        self.test_times = np.arange(self.test_begin,max_time)
+        self.test_periods=np.array_split(self.test_times,periods)
+        self.normalize = normalize
+        self.true_test_Y = []
+        self.pred_test_Y = []
 
-        self.val_indices = np.isin(time_indices,val_times)
-        self.test_indices = np.isin(time_indices,test_times)
-        self.train_indices = ~(self.val_indices+self.test_indices)
+    def set_data(self,i):
+        test_indices = self.test_periods[i]
+        max_train_ind = test_indices.min()
+        self.train_indices = np.isin(self.time_indices,np.arange(0,max_train_ind))
+        self.val_indices = np.isin(self.time_indices,test_indices)
+        self.test_indices = self.val_indices
+        self.transformer = StandardScaler()
+        self.transformer.fit(self.Y[self.train_indices, :])
 
         for el,name in zip([self.train_indices,self.val_indices,self.test_indices],['tr','v','te']):
             setattr(self,f'X_{name}', torch.from_numpy(self.indices[el,:]).long())
-            setattr(self,f'Y_{name}', torch.from_numpy(self.Y[el,:]).float())
+            if self.normalize:
+                setattr(self,f'Y_{name}', torch.from_numpy(self.transformer.transform(self.Y[el,:])).float())
+            else:
+                setattr(self,f'Y_{name}', torch.from_numpy(self.Y[el,:]).float())
         self.set_mode('train')
+        self.true_test_Y.append(self.Y_te)
 
+    def append_pred_Y(self,pred_Y):
+        self.pred_test_Y.append(pred_Y)
 
     def set_mode(self, mode):
         if mode == 'train':
@@ -372,9 +384,13 @@ class tensor_dataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx,:],self.Y[idx]
 
-def get_dataloader_tensor(tensor_path, seed, bs_ratio, split_mode,forecast=False,ref_idx=0,T_dim=0):
+def get_dataloader_tensor(tensor_path, seed, bs_ratio, split_mode, forecast=False, T_dim=0, normalize=False, periods=7,
+                          period_size=24):
     if forecast:
-        ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, split_mode=split_mode,ref_index=ref_idx,T_dim=T_dim)
+        if tensor_path in ['electric_data/all_data.pt' ,'traffic_data/all_data.pt']:
+            ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=periods,period_size=period_size,T_dim=T_dim,normalize=normalize)
+        else:
+            ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=7,period_size=24,T_dim=T_dim,normalize=normalize)
     else:
         ds = tensor_dataset(tensor_path, seed, bs_ratio=bs_ratio, split_mode=split_mode)
     return ds
