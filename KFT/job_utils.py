@@ -355,7 +355,7 @@ class job_object():
     def train_loop(self, opt):
         sub_epoch = self.train_config['sub_epoch_V']
         # if self.bayesian or (not self.forecast):
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9)
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9,min_lr=1e-3)
         # else:
         #     lrs = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt,T_0=sub_epoch//2,eta_min=1e-4)
         for n, param in self.model.named_parameters():
@@ -381,7 +381,7 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-                if self.kill_counter==100:
+                if self.kill_counter==self.train_config['epochs']//2:
                     print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
                     return 'early_stop'
                 if -l_val['eval'] < -self.best_val_loss:
@@ -448,6 +448,7 @@ class job_object():
     def train_epoch_loop(self):
         opts, ERROR, train_list, train_dict = self.setup_runs()
         for i in range(self.train_config['epochs']):
+            print(f'----------epoch: {i}')
             if self.bayesian:
                 for train_mean in [True, False]:
                     self.model.toggle(train_mean)
@@ -469,6 +470,9 @@ class job_object():
                 ERROR = self.train_epoch_loop()
                 self.load_dumped_model(self.hyperits_i)
                 self.predict_period()
+                self.init(self.parameters)
+                if self.cuda:
+                    self.model = self.model.to(self.device)
         else:
             self.kill_counter = 0
             self.train_config['reset'] = 1.0
