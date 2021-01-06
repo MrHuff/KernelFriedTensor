@@ -18,7 +18,9 @@ from torch.cuda.amp import autocast,GradScaler
 cal_list = [5, 15, 25, 35, 45]
 cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
 
-
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 def run_job_func(args):
     torch.cuda.empty_cache()
     j = job_object(args)
@@ -150,7 +152,7 @@ def para_summary(df):
     mean = df.mean(axis=1)
     std = df.std(axis=1)
     inputs = np.array_split(df,10)
-    p = mp.Pool(2)
+    p = mp.Pool(mp.cpu_count())
     results = np.concatenate(p.map(para_func,inputs),axis=0)
     data = np.concatenate([mean.reshape(-1, 1), std.reshape(-1, 1),results], axis=1)
     print(["mean", "std"]+ cal_string_list)
@@ -251,11 +253,22 @@ class job_object():
         y_preds = torch.cat(_y_preds)
         return total_loss,Y,y_preds
 
-    def calc_NRMSE(self,y_pred,Y):
-        yhat = self.dataloader.transformer.inverse_transform(y_pred.cpu().numpy())
-        y = self.dataloader.transformer.inverse_transform(Y)
-        NRSME = np.mean(((y-yhat)**2))**0.5/np.abs(y).mean()
+    def calc_NRMSE(self,MSE,Y):
+        NRSME = MSE**0.5/np.abs(Y).mean()
         return NRSME
+
+    def calc_MSE(self,y_pred,Y):
+        MSE = np.mean(((Y-y_pred)**2))
+        return MSE
+
+    def calc_R_2(self,MSE,Y):
+        R_2 = 1.-MSE/np.var(Y)
+        return R_2
+
+    def inverse_transform(self,y_pred,Y):
+        yhat = self.dataloader.transformer.inverse_transform(y_pred.cpu().numpy())
+        y = self.dataloader.transformer.inverse_transform(Y.squeeze().cpu().numpy())
+        return yhat,y
 
     def calculate_validation_metrics(self, task='regression', mode='val'):
         self.dataloader.set_mode(mode)
@@ -263,31 +276,23 @@ class job_object():
             total_loss,Y,y_preds = self.get_preds()
             print(f'{mode} loss_func_loss: {total_loss}' )
             if task == 'regression':
-                if self.bayesian:
-                    mse = torch.nn.MSELoss()
-                    pred_loss = mse(y_preds,Y)
-                    var_Y = Y.var()
-                    metrics = {
-                        'eval': total_loss.item(),
-                        'MSE': pred_loss,
-                        'RMSE': pred_loss**0.5,
-                        'R2': (1. - pred_loss / var_Y).item(),
-                        'ELBO':total_loss
-                    }
+                if self.normalize_Y:
+                    y_preds,Y = self.inverse_transform(y_preds,Y)
                 else:
-                    var_Y = Y.var()
-                    ref_metric = 1. - total_loss / var_Y
-                    if self.PATH in ['electric_data/', 'traffic_data/']:
-                        NRSME = self.calc_NRMSE(y_pred=y_preds,Y=Y.squeeze())
-                    else:
-                        NRSME = 0.
-                    metrics = {
-                        'eval':ref_metric.item(),
-                        'MSE': total_loss,
-                        'RMSE': total_loss**0.5,
-                        'R2': ref_metric.item(),
-                        'NRMSE': NRSME
-                    }
+                    Y = Y.cpu().numpy()
+                    y_preds = y_preds.cpu().numpy()
+                MSE = self.calc_MSE(y_preds,Y)
+                NRMSE = self.calc_NRMSE(MSE,Y)
+                R2 = self.calc_R_2(MSE,Y)
+                metrics = {
+                    'eval': total_loss.item() if self.bayesian else R2,
+                    'MSE': MSE,
+                    'RMSE': MSE**0.5,
+                    'R2': R2,
+                    'NRMSE':NRMSE,
+                    'ELBO':total_loss.item() if self.bayesian else False
+                }
+
             else:
                 y_preds = torch.sigmoid(y_preds)
                 metrics = {
@@ -374,6 +379,7 @@ class job_object():
             opt.step()
             lrs.step(total_loss)
             if p % (sub_epoch // 2) == 0:
+                print(f'learning rate: {get_lr(opt)}')
                 torch.cuda.empty_cache()
                 l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
                 torch.cuda.empty_cache()
@@ -381,7 +387,7 @@ class job_object():
                 torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
-                if self.kill_counter==self.train_config['epochs']//2:
+                if self.kill_counter==self.patience:
                     print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
                     return 'early_stop'
                 if -l_val['eval'] < -self.best_val_loss:
@@ -653,7 +659,6 @@ class job_object():
         self.reset_model_dataloader()
         return result_dict
 
-
     def reset_model_dataloader(self):
         del self.model
         del self.dataloader
@@ -663,6 +668,7 @@ class job_object():
         self.dataloader.set_mode(mode)
         with torch.no_grad():
             all_samples = []
+            Y = []
             for i in range(samples):
                 _y_preds = []
                 for i in range(self.dataloader.chunks):
@@ -670,15 +676,21 @@ class job_object():
                     if self.train_config['cuda']:
                         X = X.to(self.train_config['device'])
                     _y_pred_sample = self.model.sample(X)
+                    if self.normalize_Y:
+                        _y_pred_sample,y = self.inverse_transform(_y_pred_sample,y)
+                    else:
+                        _y_pred_sample = _y_pred_sample.cpu().numpy()
+                        y = y.squeeze().cpu().numpy()
                     if not task=='regression':
                         _y_pred_sample = torch.sigmoid(_y_pred_sample)
-                    _y_preds.append(_y_pred_sample.cpu().numpy())
+                    _y_preds.append(_y_pred_sample)
+                    if i==0:
+                        Y.append(y)
                 y_sample = np.concatenate(_y_preds,axis=0)
                 all_samples.append(y_sample)
             Y_preds = np.stack(all_samples,axis=1)
-            # print(Y_preds.shape)
             df = para_summary(Y_preds)
-            df['y_true'] = self.dataloader.Y.numpy()
+            df['y_true'] = np.concatenate(Y,axis=0)
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)
             return total_cal_error,cal_dict ,predictions
 
@@ -700,6 +712,7 @@ class job_object():
         else:
             results = self.start_training(parameters)
             return results
+
     def  get_kernel_vals(self,desc):
         if 'matern_1'== desc:
             return 'matern',0.5

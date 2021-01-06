@@ -319,7 +319,7 @@ class forecast_dataset(Dataset):
 
 
 class tensor_dataset(Dataset):
-    def __init__(self, tensor_path, seed, bs_ratio=1., split_mode=0):
+    def __init__(self, tensor_path, seed, bs_ratio=1., split_mode=0,normalize=False):
         if split_mode==0:
             test_size = 0.2
             val_size = 0.25
@@ -329,7 +329,7 @@ class tensor_dataset(Dataset):
         if split_mode ==2:
             test_size = 0.1
             val_size = 0.05
-
+        self.normalize = normalize
         self.chunks = 1
         self.ratio = bs_ratio
         self.indices,self.Y = torch.load(tensor_path)
@@ -342,15 +342,19 @@ class tensor_dataset(Dataset):
                                                                               self.Y_train,
                                                                               test_size=val_size,
                                                                               random_state=seed)
+        if self.normalize:
+            self.transformer = StandardScaler()
+            self.Y_train = self.transformer.fit_transform(self.Y_train.reshape(-1,1))
+            self.Y_val = self.transformer.transform(self.Y_val.reshape(-1,1))
+            self.Y_test = self.transformer.transform(self.Y_test.reshape(-1,1))
+
         self.X_tr = torch.from_numpy(self.X_train).long()
-        self.Y_tr = torch.from_numpy(self.Y_train).float()
+        self.Y_tr = torch.from_numpy(self.Y_train.squeeze()).float()
         self.X_v = torch.from_numpy(self.X_val).long()
-        self.Y_v = torch.from_numpy(self.Y_val).float()
+        self.Y_v = torch.from_numpy(self.Y_val.squeeze()).float()
         self.X_te = torch.from_numpy(self.X_test).long()
-        self.Y_te = torch.from_numpy(self.Y_test).float()
+        self.Y_te = torch.from_numpy(self.Y_test.squeeze()).float()
         self.set_mode('train')
-
-
 
     def set_mode(self,mode):
         if mode == 'train':
@@ -394,6 +398,6 @@ def get_dataloader_tensor(tensor_path, seed, bs_ratio, split_mode, forecast=Fals
         else:
             ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=7,period_size=24,T_dim=T_dim,normalize=normalize)
     else:
-        ds = tensor_dataset(tensor_path, seed, bs_ratio=bs_ratio, split_mode=split_mode)
+        ds = tensor_dataset(tensor_path, seed, bs_ratio=bs_ratio, split_mode=split_mode,normalize=normalize)
     return ds
 

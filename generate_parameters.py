@@ -16,23 +16,25 @@ def generate_job_params(directory='job_dir/'):
     else:
         shutil.rmtree(directory)
         os.makedirs(directory)
-
+    lags_base = list(range(1, 25)) + list(range(7 * 24, 8 * 24))
 
     """
     BE CAREFUL OF WHAT YOU PUT HERE
     """
     #FIXED PARAMS
     # PATH = ['public_data/','public_movielens_data/','tensor_data/','CCDS_data/','eletric_data/','traffic_data/']
-    PATH = ['public_data/','public_movielens_data/','tensor_data/','CCDS_data/','eletric_data/','traffic_data/']
+    PATH = ['public_data_t_fixed/', 'public_movielens_data_t_fixed/', 'tensor_data_t_fixed/', 'CCDS_data/',
+            'electric_data/', 'traffic_data/']
     save_path = [directory+'results_'+p for p in PATH]
+    hyperits = [10]*len(PATH)
     batch_size_a = [1e-3]*len(PATH)
     batch_size_b = [1e-1]*len(PATH)
     reg_para_a = [1e-6]*len(PATH)
     reg_para_b = [1e-1]*len(PATH)
-    max_lr = [1e-1]*len(PATH)
-    max_R = [20]*len(PATH)
+    max_lr = [1e-2]*len(PATH)
+    max_R = [200]*len(PATH)
     architecture = [0]*len(PATH)
-    temporal_tags = [[2]]*len(PATH) #First find the temporal dim mark it if not None
+    temporal_tags = [0]*len(PATH) #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
     special_mode = [0]*len(PATH)
     split_mode = [0]*len(PATH)
@@ -48,8 +50,16 @@ def generate_job_params(directory='job_dir/'):
     bayesian = [False]*len(PATH)
     task = ['regression']*len(PATH)
     init_max = [1e-2]*len(PATH)
-    shape_permutation = [[1,0,2]]*len(PATH) #Remove this swap this for dimension order
-
+    shape_permutation = [[0,1,2],[0,1,2],[0,1,2],[0,1,2],[0,1],[0,1]] #Remove this swap this for dimension order
+    patience = [50]*len(PATH)
+    forecast = [False,False,False,False,True,True]
+    lags = [lags_base]*len(PATH)
+    base_ref_int=[lags[-1]+1]*len(PATH)
+    lambda_W_a=[1e-3]
+    lambda_W_b=[10]
+    lambda_T_x_a=[10]
+    lambda_T_x_b=[1000]
+    normalize_Y = [True]*len(PATH)
     """
     BAYESIAN PARAMS
     """
@@ -93,6 +103,16 @@ def generate_job_params(directory='job_dir/'):
         'shape_permutation': 0,
         'full_grad':0,
         'sub_epoch_V':0,
+        'forecast':True,
+        'lags':lags,
+        'base_ref_int':lags[-1]+1,
+        'lambda_W_a':2.0,
+        'lambda_W_b':2.1,
+        'lambda_T_x_a': 150.,#625., for none kernel approach
+        'lambda_T_x_b': 150.1,#625.1,
+        'normalize_Y':True,
+        'patience': 100,
+
     }
     counter = 0
 
