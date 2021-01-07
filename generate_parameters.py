@@ -28,11 +28,10 @@ def generate_job_params(directory='job_dir/'):
             'traffic_data/']
     data_path = [dataset+ 'all_data.pt' for dataset in PATH]
     seed = [1337]*len(PATH)
-    hyperits = [10]*len(PATH)
     batch_size_a = [1e-3]*len(PATH)
-    batch_size_b = [1e-1]*len(PATH)
+    batch_size_b = [1e-2]*len(PATH)
     reg_para_a = [0]*len(PATH)
-    reg_para_b = [1e-6]*len(PATH)
+    reg_para_b = [0]*len(PATH)
     max_lr = [1e-2]*len(PATH)
     max_R = [200,12,5,100,200,150]
     architecture = [0,0,0,0,0,0]
@@ -57,8 +56,8 @@ def generate_job_params(directory='job_dir/'):
     forecast = [False,False,False,True,False,True]
     lags = [lags_base]*len(PATH)
     base_ref_int=[lags_base[-1]+1]*len(PATH)
-    lambda_W_a=[1]*len(PATH)
-    lambda_W_b=[3]*len(PATH)
+    lambda_W_a=[0.5]*len(PATH)
+    lambda_W_b=[2.5]*len(PATH)
     lambda_T_x_a=[50]*len(PATH)
     lambda_T_x_b=[500]*len(PATH)
     normalize_Y = [False,False,False,True,True,True]
@@ -120,14 +119,14 @@ def generate_job_params(directory='job_dir/'):
     }
     counter = 0
 
-    for i,datasets in enumerate([5]):
+    for i,datasets in enumerate([0]):
         for key in base_dict.keys():
             base_dict[key]=locals()[key][datasets]
-        for seed in range(1):
+        for seed in range(5):
             base_dict['seed']=seed
             print(base_dict)
             save_obj(base_dict,f'job_{counter}',directory)
             counter += 1
 
 if __name__ == '__main__':
-    generate_job_params(directory='job_dir_traffic/')
+    generate_job_params(directory='job_dir_frequentist_alcohol_normal_perm/')

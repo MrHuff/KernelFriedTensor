@@ -319,7 +319,6 @@ class forecast_dataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx, :], self.Y[idx]
 
-
 class tensor_dataset(Dataset):
     def __init__(self, tensor_path, seed, bs_ratio=1., split_mode=0,normalize=False):
         if split_mode==0:
@@ -412,11 +411,62 @@ class tensor_dataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx,:],self.Y[idx]
 
+class chunk_iterator():
+    def __init__(self,X,y,shuffle,batch_size):
+        self.X = X
+        self.y = y
+        self.shuffle = shuffle
+        self.batch_size = batch_size
+        self.n = self.X.shape[0]
+        self.chunks=self.n//batch_size+1
+        self.perm = torch.randperm(self.n)
+        if self.shuffle:
+            self.X = self.X[self.perm,:]
+            self.y = self.y[self.perm]
+        self._index = 0
+        self.it_X = torch.chunk(self.X,self.chunks)
+        self.it_y = torch.chunk(self.y,self.chunks)
+        self.true_chunks = len(self.it_X)
+
+    def __next__(self):
+        ''''Returns the next value from team object's lists '''
+        if self._index < self.true_chunks:
+            result = (self.it_X[self._index],self.it_y[self._index],)
+            self._index += 1
+            return result
+        # End of Iteration
+        raise StopIteration
+
+    def __len__(self):
+        return len(self.it_X)
+
+class custom_dataloader():
+    def __init__(self,dataset,bs_ratio,shuffle=False):
+        self.dataset = dataset
+        self.bs_ratio = bs_ratio
+        self.batch_size = round(bs_ratio*self.dataset.X.shape[0])
+        self.shuffle = shuffle
+        self.n = self.dataset.X.shape[0]
+        self.len=self.n//self.batch_size+1
+    def __iter__(self):
+        self.batch_size = round(self.bs_ratio*self.dataset.X.shape[0])
+        return chunk_iterator(X =self.dataset.X,
+                              y = self.dataset.Y,
+                              shuffle = self.shuffle,
+                              batch_size=self.batch_size)
+    def __len__(self):
+        self.n = self.dataset.X.shape[0]
+        self.batch_size = round(self.bs_ratio*self.dataset.X.shape[0])
+        self.len = self.n // self.batch_size + 1
+        return self.len
+
+
 def get_dataloader_tensor(tensor_path, seed, bs_ratio, split_mode, forecast=False, T_dim=0, normalize=False, periods=7,
                           period_size=24):
     if forecast:
         ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=periods,period_size=period_size,T_dim=T_dim,normalize=normalize)
     else:
         ds = tensor_dataset(tensor_path, seed, bs_ratio=bs_ratio, split_mode=split_mode,normalize=normalize)
-    return ds
+    dat = custom_dataloader(dataset=ds,bs_ratio=bs_ratio,shuffle=True)
+    return dat
 

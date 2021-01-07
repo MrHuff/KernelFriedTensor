@@ -12,6 +12,7 @@ import time
 import numpy as np
 import multiprocessing as mp
 import pandas as pd
+from tqdm import tqdm
 from torch.cuda.amp import autocast,GradScaler
 
 
@@ -225,7 +226,6 @@ class job_object():
         args['batch_size_b'] = 1.0 if args['full_grad'] else args['batch_size_b']
         args['data_path'] = PATH + 'all_data.pt'
         args['device'] = f'cuda:{device}'
-        args['train_loss_interval_print'] = args['sub_epoch_V'] // 2
         args['shape'] = shape
         args['lags'] = torch.tensor(args['lags']).long()
         print(shape)
@@ -240,8 +240,7 @@ class job_object():
         loss_list = []
         y_s = []
         _y_preds = []
-        for i in range(self.dataloader.chunks):
-            X, y = self.dataloader.get_chunk(i)
+        for i, (X, y) in enumerate(self.dataloader):
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
@@ -249,7 +248,7 @@ class job_object():
             loss_list.append(loss)
             y_s.append(y.cpu())
             _y_preds.append(y_pred.cpu())
-        total_loss = torch.tensor(loss_list).sum().item() / self.dataloader.Y.shape[0]
+        total_loss = torch.tensor(loss_list).sum().item() / self.dataloader.dataset.Y.shape[0]
         Y = torch.cat(y_s, dim=0)
         y_preds = torch.cat(_y_preds)
         return total_loss,Y,y_preds
@@ -267,12 +266,12 @@ class job_object():
         return R_2
 
     def inverse_transform(self,y_pred,Y):
-        yhat = self.dataloader.transformer.inverse_transform(y_pred.cpu().numpy())
-        y = self.dataloader.transformer.inverse_transform(Y.squeeze().cpu().numpy())
+        yhat = self.dataloader.dataset.transformer.inverse_transform(y_pred.cpu().numpy())
+        y = self.dataloader.dataset.transformer.inverse_transform(Y.squeeze().cpu().numpy())
         return yhat,y
 
     def calculate_validation_metrics(self, task='regression', mode='val'):
-        self.dataloader.set_mode(mode)
+        self.dataloader.dataset.set_mode(mode)
         with torch.no_grad():
             total_loss,Y,y_preds = self.get_preds()
             print(f'{mode} loss_func_loss: {total_loss}' )
@@ -316,7 +315,7 @@ class job_object():
                 ERROR = True
             if (y_pred == 0).all():
                 self.reset_()
-            if p % self.train_config['train_loss_interval_print'] == 0:
+            if p % self.validation_per_epoch == 0:
                 print(f'reg_term it {p}: {reg.data}')
                 print(f'train_loss it {p}: {pred_loss.data}')
         return ERROR
@@ -359,18 +358,14 @@ class job_object():
 
     #Write another train loop to train W specifically!
     def train_loop(self, opt):
-        sub_epoch = self.train_config['sub_epoch_V']
-        # if self.bayesian or (not self.forecast):
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=sub_epoch//2, factor=0.9,min_lr=1e-3)
-        # else:
-        #     lrs = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt,T_0=sub_epoch//2,eta_min=1e-4)
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.validation_patience, factor=0.75,min_lr=1e-3)
         for n, param in self.model.named_parameters():
             if param.requires_grad:
                 print(n, param.requires_grad)
-        for p in range(sub_epoch + 1):
-            self.dataloader.ratio = self.train_config['batch_ratio']
-            self.dataloader.set_mode('train')
-            X, y = self.dataloader.get_batch()
+        self.dataloader.dataset.set_mode('train')
+        val_interval = len(self.dataloader)//self.validation_per_epoch
+
+        for i, (X, y) in enumerate(self.dataloader):
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
@@ -378,28 +373,24 @@ class job_object():
             opt.zero_grad()
             total_loss.backward()
             opt.step()
-            lrs.step(total_loss)
-            if p % (sub_epoch // 2) == 0:
+            if i % val_interval == 0:
                 print(f'learning rate: {get_lr(opt)}')
-                torch.cuda.empty_cache()
                 l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
-                torch.cuda.empty_cache()
                 l_test = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
-                torch.cuda.empty_cache()
                 print(f'val_error= {l_val}')
                 print(f'test_error= {l_test}')
                 if self.kill_counter==self.patience:
                     print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
                     return 'early_stop'
+                lrs.step(-l_val['eval'])
                 if -l_val['eval'] < -self.best_val_loss:
                     self.kill_counter = 0
                     self.best_val_loss = l_val['eval']
                     self.dump_model(val_loss=l_val['eval'], test_loss=l_test['eval'], i=self.hyperits_i, parameters=self.parameters) #think carefully here!
                 else:
                     self.kill_counter+=1
-            ERROR = self.train_monitor(total_loss, reg, pred_loss, y_pred,  p)
-            if ERROR:
-                return ERROR
+                self.dataloader.dataset.set_mode('train')
+
         return False
 
 
@@ -468,12 +459,12 @@ class job_object():
 
     def train(self):
         if self.forecast:
-            for i in range(len(self.dataloader.test_periods)):
+            for i in range(len(self.dataloader.dataset.test_periods)):
                 self.kill_counter = 0
                 self.train_config['reset'] = 1.0
                 self.best_val_loss = -np.inf
                 print(f"########################### NEW PERIOD {i} ############################")
-                self.dataloader.set_data(i)
+                self.dataloader.dataset.set_data(i)
                 ERROR = self.train_epoch_loop()
                 self.load_dumped_model(self.hyperits_i)
                 self.predict_period()
@@ -501,14 +492,14 @@ class job_object():
         self.load_dumped_model(self.hyperits_i)
         with torch.no_grad():
             total_loss,Y,y_preds = self.get_preds()
-            self.dataloader.append_pred_Y(y_preds,Y)
+            self.dataloader.dataset.append_pred_Y(y_preds,Y)
 
     def post_train_eval_special(self):
         if self.bayesian:
             raise Exception
         else:
-            preds = np.concatenate(self.dataloader.pred_test_Y)
-            true_y = np.concatenate(self.dataloader.true_test_Y)
+            preds = np.concatenate(self.dataloader.dataset.pred_test_Y)
+            true_y = np.concatenate(self.dataloader.dataset.true_test_Y)
             mse = np.mean((preds-true_y)**2)
             r_2 = 1-mse/true_y.var()
             NRMSE = mse**0.5/(np.abs(true_y).mean())
@@ -654,7 +645,6 @@ class job_object():
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, bs_ratio=parameters['batch_size_ratio'],
                                                 split_mode=self.split_mode, forecast=self.forecast,
                                                 T_dim=self.temporal_tag, normalize=self.normalize_Y,periods=self.periods,period_size=self.period_size)
-        self.dataloader.chunks = self.train_config['chunks']
         result_dict = self.train()
         self.hyperits_i+=1
         self.reset_model_dataloader()
@@ -666,14 +656,13 @@ class job_object():
         torch.cuda.empty_cache()
 
     def calculate_calibration(self,mode='val',task='regression',samples=100):
-        self.dataloader.set_mode(mode)
+        self.dataloader.dataset.set_mode(mode)
         with torch.no_grad():
             all_samples = []
             Y = []
             for i in range(samples):
                 _y_preds = []
-                for i in range(self.dataloader.chunks):
-                    X, y = self.dataloader.get_chunk(i)
+                for i, (X, y) in enumerate(self.dataloader):
                     if self.train_config['cuda']:
                         X = X.to(self.train_config['device'])
                     _y_pred_sample = self.model.sample(X)
@@ -692,7 +681,7 @@ class job_object():
             Y_preds = np.stack(all_samples,axis=1)
             df = para_summary(Y_preds)
             df['y_true'] = np.concatenate(Y,axis=0)
-            total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.X)
+            total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.dataset.X)
             return total_cal_error,cal_dict ,predictions
 
     def __call__(self, parameters):
@@ -816,21 +805,20 @@ class job_object():
         training_params = {}
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
-        if self.bayesian or self.forecast:
-            training_params['prime_lr'] = parameters['lr_2']
-        else:
-            training_params['prime_lr'] = parameters['lr_2']/100.
+        # if self.bayesian or self.forecast:
+        #     training_params['prime_lr'] = parameters['lr_2']
+        # else:
+        #     training_params['prime_lr'] = parameters['lr_2']/100.
+        training_params['prime_lr'] = parameters['lr_2']
+
         training_params['ls_lr'] = parameters['lr_2']/100.
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda
-        training_params['train_loss_interval_print']=self.train_loss_interval_print
-        training_params['sub_epoch_V']=self.sub_epoch_V
         training_params['bayesian'] = self.bayesian
         training_params['old_setup'] = self.old_setup
         training_params['architecture'] = self.architecture
         training_params['batch_ratio'] = parameters['batch_size_ratio']
-        training_params['chunks'] = self.chunks
         training_params['dual'] = self.dual
         if not self.task=='regression':
             training_params['pos_weight'] = self.pos_weight
