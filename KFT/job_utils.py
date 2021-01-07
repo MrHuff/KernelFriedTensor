@@ -25,6 +25,7 @@ def run_job_func(args):
     torch.cuda.empty_cache()
     j = job_object(args)
     j.run_hyperparam_opt()
+    j.eval_result()
 
 def get_loss_func(train_config):
     if train_config['task']=='regression':
@@ -466,7 +467,7 @@ class job_object():
         return ERROR
 
     def train(self):
-        if self.PATH in ['electric_data/', 'traffic_data/']:
+        if self.forecast:
             for i in range(len(self.dataloader.test_periods)):
                 self.kill_counter = 0
                 self.train_config['reset'] = 1.0
@@ -490,7 +491,7 @@ class job_object():
                         'status': STATUS_FAIL,
                         'test_loss': np.inf}
 
-        if self.PATH in ['electric_data/', 'traffic_data/']:
+        if self.forecast:
             return self.post_train_eval_special()
         else:
             return self.post_train_eval()
@@ -652,7 +653,7 @@ class job_object():
             self.model = self.model.to(self.device)
         self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, bs_ratio=parameters['batch_size_ratio'],
                                                 split_mode=self.split_mode, forecast=self.forecast,
-                                                T_dim=self.temporal_tag, normalize=self.normalize_Y)
+                                                T_dim=self.temporal_tag, normalize=self.normalize_Y,periods=self.periods,period_size=self.period_size)
         self.dataloader.chunks = self.train_config['chunks']
         result_dict = self.train()
         self.hyperits_i+=1
@@ -852,4 +853,22 @@ class job_object():
         pickle.dump(self.trials,
                     open(self.save_path +'/'+ self.name + '.p',
                          "wb"))
+
+    def eval_result(self):
+        trials = pickle.load(open(self.save_path +'/'+ self.name + '.p',
+                         "rb"))
+        results = trials.results
+        val_df = []
+        test_df = []
+        for el in results:
+            val_df.append(el['other_test'])
+            test_df.append(el['other_val'])
+        val_df = pd.DataFrame(val_df)
+        test_df = pd.DataFrame(test_df)
+        val_df = val_df.sort_values(by=['R2'], ascending=False)
+        test_df = test_df.sort_values(by=['R2'], ascending=False)
+        val_df.to_csv(self.save_path +'/'+ 'val_df.csv')
+        test_df.to_csv(self.save_path +'/'+ 'test_df.csv')
+
+
 

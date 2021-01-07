@@ -247,6 +247,8 @@ class forecast_dataset(Dataset):
         self.indices, self.Y_base = torch.load(tensor_path)
         self.indices = self.indices.numpy()
         self.Y_base = self.Y_base.numpy()
+        if self.Y_base.ndim==1:
+            self.Y_base=self.Y_base.reshape(-1,1)
         self.time_indices = self.indices[:,T_dim]
         max_time = self.time_indices.max()
         self.test_begin = max_time-n_last_test
@@ -329,10 +331,29 @@ class tensor_dataset(Dataset):
         if split_mode ==2:
             test_size = 0.1
             val_size = 0.05
+        if split_mode ==3:
+            test_size = 0.1
+            val_size = 0.1
         self.normalize = normalize
         self.chunks = 1
         self.ratio = bs_ratio
         self.indices,self.Y = torch.load(tensor_path)
+        #Make a comment on some subleties, that this is akin to forecasting issue...
+        # if tensor_path=='CCDS_data/all_data.pt':
+        #     self.location_indices= self.indices[:, 1]
+        #     max_ind = self.location_indices.max().item()
+        #     unique_indices = np.array(list(range(max_ind)))
+        #     val_indices = np.random.choice(unique_indices,round(max_ind*0.1)+1,replace=False)
+        #     train_indices = np.setdiff1d(unique_indices,val_indices)
+        #     self.train_indices = np.isin(self.location_indices,train_indices )
+        #     self.val_indices = np.isin(self.location_indices, val_indices)
+        #     self.X_train = self.indices[self.train_indices,:].numpy()
+        #     self.Y_train = self.Y[self.train_indices].numpy()
+        #     self.X_val = self.indices[self.val_indices,:].numpy()
+        #     self.Y_val = self.Y[self.val_indices].numpy()
+        #     self.Y_test = self.Y_val
+        #     self.X_test = self.X_val
+        # else:
         self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(self.indices.numpy(),
                                                                                 self.Y.numpy(),
                                                                                 test_size=test_size,
@@ -342,6 +363,7 @@ class tensor_dataset(Dataset):
                                                                               self.Y_train,
                                                                               test_size=val_size,
                                                                               random_state=seed)
+
         if self.normalize:
             self.transformer = StandardScaler()
             self.Y_train = self.transformer.fit_transform(self.Y_train.reshape(-1,1))
@@ -393,10 +415,7 @@ class tensor_dataset(Dataset):
 def get_dataloader_tensor(tensor_path, seed, bs_ratio, split_mode, forecast=False, T_dim=0, normalize=False, periods=7,
                           period_size=24):
     if forecast:
-        if tensor_path in ['electric_data/all_data.pt' ,'traffic_data/all_data.pt']:
-            ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=periods,period_size=period_size,T_dim=T_dim,normalize=normalize)
-        else:
-            ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=7,period_size=24,T_dim=T_dim,normalize=normalize)
+        ds = forecast_dataset(tensor_path=tensor_path, seed=seed, bs_ratio=bs_ratio, periods=periods,period_size=period_size,T_dim=T_dim,normalize=normalize)
     else:
         ds = tensor_dataset(tensor_path, seed, bs_ratio=bs_ratio, split_mode=split_mode,normalize=normalize)
     return ds

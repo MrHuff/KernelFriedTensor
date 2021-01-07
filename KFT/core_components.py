@@ -9,7 +9,7 @@ from torch.distributions import StudentT
 from pykeops.torch import LazyTensor,Genred
 PI  = math.pi
 torch.set_printoptions(profile="full")
-
+import copy
 class keops_RBFkernel(torch.nn.Module):
     def __init__(self,ls,x,y=None,device_id=0):
         super(keops_RBFkernel, self).__init__()
@@ -172,9 +172,11 @@ class KFTR_temporal_regulizer(torch.nn.Module):
         self.T = n_list[time_idx]
         self.time_idx = time_idx
         self.lag_size  = lag_set_tensor.shape[0]
-        n_list[time_idx] = lag_set_tensor.shape[0]
-        W_size = [r_1,*n_list,r_2]
-        self.W = torch.nn.Parameter( torch.randn(*W_size).squeeze().float(),requires_grad=True)
+        self.n_list = copy.deepcopy(n_list)
+        self.n_list[time_idx] = lag_set_tensor.shape[0]
+        self.n_list.insert(time_idx,1)
+        W_size = [r_1,*self.n_list,r_2]
+        self.W = torch.nn.Parameter( torch.randn(*W_size).float(),requires_grad=True)
         self.base_ref = base_ref_int
         self.lambda_W = lambda_W
         self.lambda_T_x = lambda_T_x
@@ -197,11 +199,11 @@ class KFTR_temporal_regulizer(torch.nn.Module):
         return self.loss(actual_component,predicted_component)
 
     def calculate_KFTR(self,time_component):
-        x_data = time_component.index_select(self.time_idx,self.idx_extractor.flatten())
-        x_data = torch.stack(x_data.chunk(x_data.shape[0]//self.lag_size,dim=0))
-        x_data = (x_data*self.W).sum(dim=1)
-        x_ref  =  time_component.index_select(self.time_idx,self.indices_iterate.squeeze())
-        KFTR=self.calculate_square_error(actual_component=x_ref,predicted_component=x_data)
+        x_data = time_component.index_select(self.time_idx+1,self.idx_extractor.flatten())
+        x_data = torch.stack(x_data.chunk(x_data.shape[self.time_idx+1]//self.lag_size,dim=self.time_idx+1),dim=self.time_idx+1)
+        x_data = (x_data*self.W).sum(dim=self.time_idx+2)
+        x_ref  =  time_component.index_select(self.time_idx+1,self.indices_iterate.squeeze())
+        KFTR=self.calculate_square_error(actual_component=x_ref.squeeze(),predicted_component=x_data.squeeze())
         return KFTR*self.lambda_T_x
 
     def get_reg(self):

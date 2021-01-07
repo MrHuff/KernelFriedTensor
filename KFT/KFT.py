@@ -197,7 +197,7 @@ class KFT_forecast(KFT):
             else:
                 temporal_comp = tt.core_param
 
-        return temporal_comp.squeeze()
+        return temporal_comp
 
     def activate_W_mode(self):
         self.turn_off_all()
