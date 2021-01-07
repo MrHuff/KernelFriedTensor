@@ -394,65 +394,65 @@ class job_object():
         return False
 
 
-    def outer_train_loop(self, opts, ERROR, train_list, train_dict):
-
-        for i in train_list:
-            settings = train_dict[i]
-            f = settings['call']
-            lr = settings['para']
-            opt = opts[lr]
-            for key, items in self.model.ii.items():
-                if not self.model.has_dual_kernel_component(key) and f.__name__=='turn_on_kernel_mode':
-                    continue
-                else:
-                    f(key)
-                    ERROR = self.train_loop(opt)
-                    if self.forecast:
-                        if key == self.model.tt_core_temporal_idx:
-                            # activate W training
-                            self.model.activate_W_mode()
-                            ERROR = self.train_loop(opt)
-                            self.model.deactivate_W_mode()
+    def outer_train_loop(self, train_dict):
+        for val in train_dict.values():
+            for k,v in val.items():
+                freezer_func = v['call']
+                opt = v['opt']
+                freezer_func(k)
+                ERROR = self.train_loop(opt)
+                if self.forecast:
+                    if k == self.model.tt_core_temporal_idx:
+                        # activate W training
+                        self.model.activate_W_mode()
+                        ERROR = self.train_loop(opt)
+                        self.model.deactivate_W_mode()
                 if ERROR == 'early_stop':
                     return ERROR
                 if ERROR:
                     return ERROR
+        return False
 
-        return ERROR
-
-    def opt_reinit(self, lr_params):
-        tmp_opt_list = []
-        for lr in lr_params:
-            tmp_opt_list.append(torch.optim.Adam(self.model.parameters(), lr=self.train_config[lr], amsgrad=False))
-        opts = {x: y for x, y in zip(lr_params, tmp_opt_list)}
-        return opts
 
     def setup_runs(self):
         self.loss_func = get_loss_func(self.train_config)
-        ERROR = False
-        train_dict = {0: {'para': 'V_lr', 'call': self.model.turn_on_V}}
-        train_list = [0]
-        if not self.train_config['old_setup']:
-            train_dict[1] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
-            train_list.append(1)
-        if self.train_config['dual']:
-            train_dict[2] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
-            train_list.insert(-1, 2)
+        train_dict = {}
+        core_dict = {}
+        for key, items in self.model.ii.items():
+            core_dict[key] =  {'para': 'V_lr', 'call': self.model.turn_on_V}
+        train_dict['V'] = core_dict
 
-        lrs = [v['para'] for v in train_dict.values()]
-        opts = self.opt_reinit( lrs)
-        return  opts, ERROR, train_list, train_dict
+        if not self.train_config['old_setup']:
+            prime_dict = {}
+            for key, items in self.model.ii.items():
+                prime_dict[key] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
+            train_dict['V_prime'] = prime_dict
+
+        if self.train_config['dual']:
+            kernel_dict = {}
+            for key, items in self.model.ii.items():
+                if self.model.has_dual_kernel_component(key):
+                    kernel_dict[key] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
+            train_dict['kernel'] = kernel_dict
+
+        for values in train_dict.values():
+            for val in values.values():
+                opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
+                val['opt'] = opt
+
+        return train_dict
 
     def train_epoch_loop(self):
-        opts, ERROR, train_list, train_dict = self.setup_runs()
+        train_dict = self.setup_runs()
+        ERROR = False
         for i in range(self.train_config['epochs']):
             print(f'----------epoch: {i}')
             if self.bayesian:
                 for train_mean in [True, False]:
                     self.model.toggle(train_mean)
-                    ERROR = self.outer_train_loop(opts, ERROR, train_list, train_dict)
+                    ERROR = self.outer_train_loop( train_dict)
             else:
-                ERROR = self.outer_train_loop(opts, ERROR, train_list, train_dict)
+                ERROR = self.outer_train_loop( train_dict)
             if ERROR == 'early_stop':
                 break
         return ERROR
@@ -811,7 +811,7 @@ class job_object():
         #     training_params['prime_lr'] = parameters['lr_2']/100.
         training_params['prime_lr'] = parameters['lr_2']
 
-        training_params['ls_lr'] = parameters['lr_2']/100.
+        training_params['ls_lr'] = 1e-2
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda

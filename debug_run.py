@@ -10,8 +10,8 @@ PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t
 dataset = 0
 base_dict = {
     'PATH': PATH[dataset],
-    'reg_para_a': 0,
-    'reg_para_b': 0,
+    'reg_para_a':1e-4,
+    'reg_para_b': 1e-2,
     'batch_size_a': 1e-3,
     'batch_size_b': 1e-2,
     'hyperits': 1,
@@ -21,7 +21,7 @@ base_dict = {
     'epochs': 50,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
-    'max_R': 50,
+    'max_R': 70,
     'max_lr': 1e-2,
     'old_setup': False,
     'latent_scale': False,
@@ -38,7 +38,7 @@ base_dict = {
     'temporal_tag': 2,
     'delete_side_info':None,#None,
     'special_mode': 0,
-    'shape_permutation': [0,1,2],
+    'shape_permutation': [0,2,1],
     'full_grad': False,
     'forecast':False,
     'lags':lags,
