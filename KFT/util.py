@@ -257,6 +257,7 @@ class forecast_dataset(Dataset):
         self.normalize = normalize
         self.true_test_Y = []
         self.pred_test_Y = []
+        self.set_data(0)
 
     def set_data(self,i):
         test_indices = self.test_periods[i]

@@ -12,6 +12,6 @@ if __name__ == '__main__':
     job_list = os.listdir(job_path)
     job_name_args = job_list[idx]
     job_args = load_obj(job_name_args,job_path+'/')
-    job_args['save_path'] = job_path+'/'+f'job_{idx}'
+    job_args['save_path'] = job_path+'_results/'+f'job_{idx}'
     run_job_func(job_args)
 

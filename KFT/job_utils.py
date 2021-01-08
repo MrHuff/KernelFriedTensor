@@ -303,7 +303,7 @@ class job_object():
 
         return metrics
 
-    def train_monitor(self,total_loss, reg, pred_loss, y_pred, p):
+    def train_monitor(self,total_loss, reg, pred_loss, y_pred, p,val_interval):
         with torch.no_grad():
             ERROR = False
             if torch.isnan(total_loss) or torch.isinf(total_loss):
@@ -315,7 +315,7 @@ class job_object():
                 ERROR = True
             if (y_pred == 0).all():
                 self.reset_()
-            if p % self.validation_per_epoch == 0:
+            if p % val_interval== 0:
                 print(f'reg_term it {p}: {reg.data}')
                 print(f'train_loss it {p}: {pred_loss.data}')
         return ERROR
@@ -373,6 +373,7 @@ class job_object():
             opt.zero_grad()
             total_loss.backward()
             opt.step()
+            self.train_monitor(total_loss, reg, pred_loss,y_pred,i,val_interval)
             if i % val_interval == 0:
                 print(f'learning rate: {get_lr(opt)}')
                 l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
@@ -405,7 +406,7 @@ class job_object():
                     if k == self.model.tt_core_temporal_idx:
                         # activate W training
                         self.model.activate_W_mode()
-                        ERROR = self.train_loop(opt)
+                        ERROR = self.train_loop(self.forecast_opt)
                         self.model.deactivate_W_mode()
                 if ERROR == 'early_stop':
                     return ERROR
@@ -421,13 +422,6 @@ class job_object():
         for key, items in self.model.ii.items():
             core_dict[key] =  {'para': 'V_lr', 'call': self.model.turn_on_V}
         train_dict['V'] = core_dict
-
-        if not self.train_config['old_setup']:
-            prime_dict = {}
-            for key, items in self.model.ii.items():
-                prime_dict[key] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
-            train_dict['V_prime'] = prime_dict
-
         if self.train_config['dual']:
             kernel_dict = {}
             for key, items in self.model.ii.items():
@@ -435,11 +429,21 @@ class job_object():
                     kernel_dict[key] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
             train_dict['kernel'] = kernel_dict
 
+
+        if not self.train_config['old_setup']:
+            prime_dict = {}
+            for key, items in self.model.ii.items():
+                prime_dict[key] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
+            train_dict['V_prime'] = prime_dict
+
         for values in train_dict.values():
             for val in values.values():
                 opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
                 val['opt'] = opt
+        if self.forecast:
+            self.forecast_opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config['V_lr'])
 
+            
         return train_dict
 
     def train_epoch_loop(self):
@@ -810,7 +814,6 @@ class job_object():
         # else:
         #     training_params['prime_lr'] = parameters['lr_2']/100.
         training_params['prime_lr'] = parameters['lr_2']
-
         training_params['ls_lr'] = 1e-2
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device

@@ -33,7 +33,7 @@ def generate_job_params(directory='job_dir/'):
     reg_para_a = [0]*len(PATH)
     reg_para_b = [1e-2]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [100,12,5,100,200,150]
+    max_R = [70,12,5,100,200,150]
     architecture = [0,0,0,0,0,0]
     temporal_tag = [2,2,2,0,2,0] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
@@ -63,6 +63,8 @@ def generate_job_params(directory='job_dir/'):
     normalize_Y = [False,False,False,True,True,True]
     periods=[7,7,7,7,1,7]
     period_size=[24,24,24,24,16,24]
+    validation_per_epoch=[4,4,4,4,4,4]
+    validation_patience = [2,2,2,2,2,2]
     """
     BAYESIAN PARAMS
     """
@@ -116,6 +118,8 @@ def generate_job_params(directory='job_dir/'):
         'patience': 100,
         'periods':7,
         'period_size':24,
+    'validation_per_epoch': 3,
+    'validation_patience': 2,
     }
     counter = 0
 
