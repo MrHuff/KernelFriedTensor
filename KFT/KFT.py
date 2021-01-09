@@ -18,7 +18,7 @@ class KFT(torch.nn.Module):
         tmp_dict_prime = {}
         self.full_grad = config['full_grad']
         self.ii = {}
-        self.current_update_pointer = None
+        self.current_update_pointers = []
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
             if not self.old_setup:
@@ -54,7 +54,9 @@ class KFT(torch.nn.Module):
         self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
 
     def turn_on_all(self):
+        self.current_update_pointers = []
         for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
             if not self.old_setup:
                 self.TT_cores_prime[str(i)].turn_on()
                 self.TT_cores_prime[str(i)].cache_mode = False
@@ -64,6 +66,7 @@ class KFT(torch.nn.Module):
             self.TT_cores[str(i)].cache_mode = False
 
     def turn_off_all(self):
+        self.current_update_pointers = []
         for i, v in self.ii.items():
             if not self.old_setup:
                 self.TT_cores_prime[str(i)].turn_off()
@@ -76,10 +79,48 @@ class KFT(torch.nn.Module):
             self.TT_cores[str(i)].cache_mode = True
 
 
-    def turn_on_V(self,i):
-        self.current_update_pointer = i
-        # for i, v in self.ii.items():
+    def turn_on_all_V(self,placeholder=None):
         self.turn_off_all()
+        for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_on()
+            else:
+                self.TT_cores[str(i)].turn_on()
+            self.TT_cores[str(i)].cache_mode = False
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
+
+    def turn_on_all_prime(self,placeholder=None):
+        self.turn_off_all()
+        for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
+            if not self.old_setup:
+                if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                    self.TT_cores[str(i)].kernel_train_mode_off()
+                    self.TT_cores[str(i)].turn_off()
+                else:
+                    self.TT_cores[str(i)].turn_off()
+                self.TT_cores_prime[str(i)].turn_on()
+                self.TT_cores_prime[str(i)].cache_mode = False
+
+    def turn_on_all_kernels(self,placeholder=None):
+        self.turn_off_all()
+        for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_on()
+                self.TT_cores[str(i)].turn_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            if not self.old_setup:
+                self.TT_cores_prime[str(i)].turn_off()
+            self.TT_cores[str(i)].cache_mode = False
+
+    def turn_on_V(self,i):
+        self.turn_off_all()
+        self.current_update_pointers.append(i)
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
             self.TT_cores[str(i)].kernel_train_mode_off()
             self.TT_cores[str(i)].turn_on()
@@ -90,9 +131,8 @@ class KFT(torch.nn.Module):
             self.TT_cores_prime[str(i)].turn_off()
 
     def turn_on_prime(self,i):
-        self.current_update_pointer = i
-
         self.turn_off_all()
+        self.current_update_pointers.append(i)
         if not self.old_setup:
             if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
                 self.TT_cores[str(i)].kernel_train_mode_off()
@@ -107,8 +147,8 @@ class KFT(torch.nn.Module):
             return True
 
     def turn_on_kernel_mode(self,i):
-        self.current_update_pointer = i
         self.turn_off_all()
+        self.current_update_pointers.append(i)
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
             self.TT_cores[str(i)].kernel_train_mode_on()
             self.TT_cores[str(i)].turn_off()
@@ -201,6 +241,7 @@ class KFT_forecast(KFT):
 
     def activate_W_mode(self):
         self.turn_off_all()
+        self.current_update_pointers = [i for i in self.ii.keys()]
         self.KFTR.W.requires_grad=True
     def deactivate_W_mode(self):
         self.KFTR.W.requires_grad=False
@@ -208,7 +249,7 @@ class KFT_forecast(KFT):
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         preds_list,regularization = self.collect_core_outputs(indices)
-        if self.current_update_pointer  == self.tt_core_temporal_idx:
+        if self.tt_core_temporal_idx in self.current_update_pointers :
             temporal_reg = self.get_time_component()
             T_reg = self.KFTR.calculate_KFTR(temporal_reg) + self.KFTR.get_reg()
         else:

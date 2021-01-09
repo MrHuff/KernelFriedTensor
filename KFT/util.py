@@ -283,6 +283,7 @@ class forecast_dataset(Dataset):
         self.true_test_Y.append(new_Y)
 
     def set_mode(self, mode):
+        self.mode = mode
         if mode == 'train':
             self.X = self.X_tr
             self.Y = self.Y_tr
@@ -379,6 +380,7 @@ class tensor_dataset(Dataset):
         self.set_mode('train')
 
     def set_mode(self,mode):
+        self.mode = mode
         if mode == 'train':
             self.X = self.X_tr
             self.Y = self.Y_tr
@@ -441,25 +443,57 @@ class chunk_iterator():
     def __len__(self):
         return len(self.it_X)
 
+class super_fast_iterator():
+    def __init__(self,X,y,batch_size):
+        self.X = X
+        self.y = y
+        self.batch_size = batch_size
+        self.n = self.X.shape[0]
+        self.chunks=100#self.n//batch_size+1
+        self._index = 0
+        self.rand_range = self.n - self.batch_size - 1
+        if self.rand_range<0:
+            self.rand_range=1
+
+    def __next__(self):
+        ''''Returns the next value from team object's lists '''
+        if self._index < self.chunks:
+            i = np.random.randint(0, self.rand_range)
+            i_end = i+self.batch_size
+            result = (self.X[i:i_end,:],self.y[i:i_end])
+            self._index += 1
+            return result
+        # End of Iteration
+        raise StopIteration
+
 class custom_dataloader():
     def __init__(self,dataset,bs_ratio,shuffle=False):
         self.dataset = dataset
         self.bs_ratio = bs_ratio
-        self.batch_size = round(bs_ratio*self.dataset.X.shape[0])
+        self.batch_size = int(round(self.dataset.X.shape[0] * bs_ratio))
         self.shuffle = shuffle
         self.n = self.dataset.X.shape[0]
         self.len=self.n//self.batch_size+1
     def __iter__(self):
-        self.batch_size = round(self.bs_ratio*self.dataset.X.shape[0])
+        if self.dataset.mode=='train':
+            self.batch_size = int(round(self.dataset.X.shape[0] * self.bs_ratio))
+        else:
+            self.batch_size = self.dataset.X.shape[0]//5
         return chunk_iterator(X =self.dataset.X,
                               y = self.dataset.Y,
                               shuffle = self.shuffle,
                               batch_size=self.batch_size)
     def __len__(self):
-        self.n = self.dataset.X.shape[0]
-        self.batch_size = round(self.bs_ratio*self.dataset.X.shape[0])
-        self.len = self.n // self.batch_size + 1
-        return self.len
+        if self.dataset.mode=='train':
+            self.batch_size = int(round(self.dataset.X.shape[0] * self.bs_ratio))
+        else:
+            self.batch_size = self.dataset.X.shape[0]//5
+
+        return chunk_iterator(X =self.dataset.X,
+                              y = self.dataset.Y,
+                              shuffle = self.shuffle,
+                              batch_size=self.batch_size).chunks
+
 
 
 def get_dataloader_tensor(tensor_path, seed, bs_ratio, split_mode, forecast=False, T_dim=0, normalize=False, periods=7,

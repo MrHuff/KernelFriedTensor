@@ -358,13 +358,12 @@ class job_object():
 
     #Write another train loop to train W specifically!
     def train_loop(self, opt):
-        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.validation_patience, factor=0.75,min_lr=1e-3)
         for n, param in self.model.named_parameters():
             if param.requires_grad:
                 print(n, param.requires_grad)
         self.dataloader.dataset.set_mode('train')
         val_interval = len(self.dataloader)//self.validation_per_epoch
-
+        lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.validation_patience, factor=0.9,min_lr=1e-3)
         for i, (X, y) in enumerate(self.dataloader):
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
@@ -373,6 +372,7 @@ class job_object():
             opt.zero_grad()
             total_loss.backward()
             opt.step()
+            # lrs.step(total_loss)
             self.train_monitor(total_loss, reg, pred_loss,y_pred,i,val_interval)
             if i % val_interval == 0:
                 print(f'learning rate: {get_lr(opt)}')
@@ -418,32 +418,48 @@ class job_object():
     def setup_runs(self):
         self.loss_func = get_loss_func(self.train_config)
         train_dict = {}
-        core_dict = {}
-        for key, items in self.model.ii.items():
-            core_dict[key] =  {'para': 'V_lr', 'call': self.model.turn_on_V}
-        train_dict['V'] = core_dict
-        if self.train_config['dual']:
-            kernel_dict = {}
+        if self.train_core_separate:
+            core_dict = {}
             for key, items in self.model.ii.items():
-                if self.model.has_dual_kernel_component(key):
-                    kernel_dict[key] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
-            train_dict['kernel'] = kernel_dict
+                core_dict[key] =  {'para': 'V_lr', 'call': self.model.turn_on_V}
+            train_dict['V'] = core_dict
+            if self.train_config['dual']:
+                kernel_dict = {}
+                for key, items in self.model.ii.items():
+                    if self.model.has_dual_kernel_component(key):
+                        kernel_dict[key] = {'para': 'ls_lr', 'call': self.model.turn_on_kernel_mode}
+                train_dict['kernel'] = kernel_dict
 
+            if not self.train_config['old_setup']:
+                prime_dict = {}
+                for key, items in self.model.ii.items():
+                    prime_dict[key] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
+                train_dict['V_prime'] = prime_dict
 
-        if not self.train_config['old_setup']:
-            prime_dict = {}
-            for key, items in self.model.ii.items():
-                prime_dict[key] = {'para': 'prime_lr', 'call': self.model.turn_on_prime}
-            train_dict['V_prime'] = prime_dict
+            for values in train_dict.values():
+                for val in values.values():
+                    opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
+                    val['opt'] = opt
+        else:
+            core_dict = {}
+            core_dict[0] = {'para': 'V_lr', 'call': self.model.turn_on_all_V}
+            train_dict['V'] = core_dict
+            if self.train_config['dual']:
+                kernel_dict = {}
+                kernel_dict[0] = {'para': 'ls_lr', 'call': self.model.turn_on_all_kernels}
+                train_dict['kernel'] = kernel_dict
 
-        for values in train_dict.values():
-            for val in values.values():
-                opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
-                val['opt'] = opt
+            if not self.train_config['old_setup']:
+                prime_dict = {}
+                prime_dict[0] = {'para': 'prime_lr', 'call': self.model.turn_on_all_prime}
+                train_dict['V_prime'] = prime_dict
+
+            for values in train_dict.values():
+                for val in values.values():
+                    opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
+                    val['opt'] = opt
         if self.forecast:
             self.forecast_opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config['V_lr'])
-
-            
         return train_dict
 
     def train_epoch_loop(self):
@@ -463,7 +479,7 @@ class job_object():
 
     def train(self):
         if self.forecast:
-            for i in range(len(self.dataloader.dataset.test_periods)):
+            for i in self.temporal_folds:
                 self.kill_counter = 0
                 self.train_config['reset'] = 1.0
                 self.best_val_loss = -np.inf
