@@ -250,7 +250,7 @@ class forecast_dataset(Dataset):
         if self.Y_base.ndim==1:
             self.Y_base=self.Y_base.reshape(-1,1)
         self.time_indices = self.indices[:,T_dim]
-        max_time = self.time_indices.max()
+        max_time = self.time_indices.max()+1
         self.test_begin = max_time-n_last_test
         self.test_times = np.arange(self.test_begin,max_time)
         self.test_periods=np.array_split(self.test_times,periods)

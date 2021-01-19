@@ -110,10 +110,10 @@ def generate_job_params(directory='job_dir/'):
         'forecast':True,
         'lags':0,
         'base_ref_int':0,
-        'lambda_W_a':2.0,
-        'lambda_W_b':2.1,
-        'lambda_T_x_a': 150.,#625., for none kernel approach
-        'lambda_T_x_b': 150.1,#625.1,
+        'lambda_W_a':0.0,
+        'lambda_W_b':0.5,
+        'lambda_T_x_a': 100.,#625., for none kernel approach
+        'lambda_T_x_b': 100.1,#625.1,
         'normalize_Y':True,
         'patience': 100,
         'periods':7,

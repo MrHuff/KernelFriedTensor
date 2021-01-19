@@ -284,12 +284,14 @@ class job_object():
                 MSE = self.calc_MSE(y_preds,Y)
                 NRMSE = self.calc_NRMSE(MSE,Y)
                 R2 = self.calc_R_2(MSE,Y)
+                ND = np.abs(y_preds-Y).mean()/np.abs(Y).mean()
                 metrics = {
                     'eval': total_loss.item() if self.bayesian else R2,
                     'MSE': MSE,
                     'RMSE': MSE**0.5,
                     'R2': R2,
                     'NRMSE':NRMSE,
+                    'ND':ND,
                     'ELBO':total_loss.item() if self.bayesian else False
                 }
 
@@ -486,7 +488,6 @@ class job_object():
                 print(f"########################### NEW PERIOD {i} ############################")
                 self.dataloader.dataset.set_data(i)
                 ERROR = self.train_epoch_loop()
-                self.load_dumped_model(self.hyperits_i)
                 self.predict_period()
                 self.init(self.parameters)
                 if self.cuda:
@@ -520,13 +521,16 @@ class job_object():
         else:
             preds = np.concatenate(self.dataloader.dataset.pred_test_Y)
             true_y = np.concatenate(self.dataloader.dataset.true_test_Y)
-            mse = np.mean((preds-true_y)**2)
+            dif_abs = np.abs(preds-true_y)
+            mse = np.mean(dif_abs**2)
             r_2 = 1-mse/true_y.var()
             NRMSE = mse**0.5/(np.abs(true_y).mean())
+            ND = dif_abs.mean()/np.abs(true_y).mean()
             val_loss_final = {'R2':r_2,
                               'RMSE': mse**0.5,
                               'MSE': mse,
-                              'NRMSE': NRMSE
+                              'NRMSE': NRMSE,
+                              'ND':ND,
                         }
 
             result_dict =  {
@@ -536,6 +540,7 @@ class job_object():
                 'other_val': val_loss_final,
                 'other_test': val_loss_final,
                             }
+            np.save(self.save_path+f'/preds_and_Y_{self.forecast}.npy', (preds,true_y))
             return result_dict
 
     def post_train_eval(self):

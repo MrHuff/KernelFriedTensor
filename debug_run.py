@@ -2,7 +2,8 @@
 import warnings
 from KFT.job_utils import run_job_func
 
-lags = list(range(1, 25)) + list(range(7 * 24, 8 * 24))
+lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24))
+# lags = list(range(0, 8 * 24))# + list(range(7 * 24, 8 * 24))
 lags_2 = [0,1,2,]
 print(lags)
 # PATH = ['public_data/' ,'public_movielens_data/' ,'tensor_data/' ,'CCDS_data/' ,'eletric_data/' ,'traffic_data/']
@@ -14,7 +15,7 @@ dataset = -1
 base_dict = {
     'PATH': PATH[dataset],
     'reg_para_a':0,
-    'reg_para_b': 0,
+    'reg_para_b': 0, #regularization sets all params to 0? Does not work, figure out why...
     'batch_size_a': 9*1e-3, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
     'batch_size_b': 1.1e-2,#1.1e-2,
     'hyperits': 1,
@@ -24,12 +25,12 @@ base_dict = {
     'epochs': 50,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
-    'max_R': 50,
+    'max_R': 200,
     'max_lr': 1e-2,
     'old_setup': False,
     'latent_scale': False,
     'dual': True,
-    'init_max': 1e-1,
+    'init_max': 1e-1, #fixes regularization issues...
     'bayesian': False,
     'multivariate': False,
     'mu_a': 0,
@@ -39,7 +40,7 @@ base_dict = {
     'split_mode': 0,
     'seed': 1,
     'temporal_tag': 0,
-    'delete_side_info':None,#None,
+    'delete_side_info':None,#[0],
     'special_mode': 0,
     'shape_permutation': [0,1],
     'full_grad': False,
@@ -49,15 +50,15 @@ base_dict = {
     'forecast':True,
     'lags':lags,
     'base_ref_int':lags[-1]+1,
-    'lambda_W_a':2.0,
-    'lambda_W_b':2.1,
-    'lambda_T_x_a': 100.,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
-    'lambda_T_x_b': 100.1,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
+    'lambda_W_a':0.0,
+    'lambda_W_b':0.01,
+    'lambda_T_x_a': 1000.,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
+    'lambda_T_x_b': 1000.1,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
     'patience': 100,
     'periods':7,
     'period_size':24,
     'train_core_separate':True,
-    'temporal_folds': [6]
+    'temporal_folds': [1]
 }
 #Do some hyperparameter optimization for kernels...
 #Confirming both methods have high potential...
