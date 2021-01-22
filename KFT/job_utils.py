@@ -13,7 +13,6 @@ import numpy as np
 import multiprocessing as mp
 import pandas as pd
 from tqdm import tqdm
-from torch.cuda.amp import autocast,GradScaler
 
 
 cal_list = [5, 15, 25, 35, 45]
@@ -162,7 +161,6 @@ def para_summary(df):
     p.close()
     return dataframe
 
-
 class job_object():
     def __init__(self, args):
         """
@@ -240,7 +238,9 @@ class job_object():
         loss_list = []
         y_s = []
         _y_preds = []
+        X_s= []
         for i, (X, y) in enumerate(self.dataloader):
+            X_s.append(X)
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
                 y = y.to(self.train_config['device'])
@@ -251,7 +251,8 @@ class job_object():
         total_loss = torch.tensor(loss_list).sum().item() / self.dataloader.dataset.Y.shape[0]
         Y = torch.cat(y_s, dim=0)
         y_preds = torch.cat(_y_preds)
-        return total_loss,Y,y_preds
+        X_s  =torch.cat(X_s,dim=0)
+        return total_loss,Y,y_preds,X_s
 
     def calc_NRMSE(self,MSE,Y):
         NRSME = MSE**0.5/np.abs(Y).mean()
@@ -273,7 +274,7 @@ class job_object():
     def calculate_validation_metrics(self, task='regression', mode='val'):
         self.dataloader.dataset.set_mode(mode)
         with torch.no_grad():
-            total_loss,Y,y_preds = self.get_preds()
+            total_loss,Y,y_preds,_ = self.get_preds()
             print(f'{mode} loss_func_loss: {total_loss}' )
             if task == 'regression':
                 if self.normalize_Y:
@@ -366,6 +367,7 @@ class job_object():
         self.dataloader.dataset.set_mode('train')
         val_interval = len(self.dataloader)//self.validation_per_epoch
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.validation_patience, factor=0.9,min_lr=1e-3)
+        total_pred_loss = 0.
         for i, (X, y) in enumerate(self.dataloader):
             if self.train_config['cuda']:
                 X = X.to(self.train_config['device'])
@@ -375,7 +377,7 @@ class job_object():
             total_loss.backward()
             opt.step()
             # lrs.step(total_loss)
-            self.train_monitor(total_loss, reg, pred_loss,y_pred,i,val_interval)
+            # self.train_monitor(total_loss, reg, pred_loss,y_pred,i,val_interval)
             if i % val_interval == 0:
                 print(f'learning rate: {get_lr(opt)}')
                 l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
@@ -393,7 +395,8 @@ class job_object():
                 else:
                     self.kill_counter+=1
                 self.dataloader.dataset.set_mode('train')
-
+            total_pred_loss+=pred_loss.item()*X.shape[0]
+        print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.dataset.n}')
         return False
 
 
@@ -512,8 +515,8 @@ class job_object():
         self.model.turn_on_all()
         self.load_dumped_model(self.hyperits_i)
         with torch.no_grad():
-            total_loss,Y,y_preds = self.get_preds()
-            self.dataloader.dataset.append_pred_Y(y_preds,Y)
+            total_loss,Y,y_preds,Xs = self.get_preds()
+            self.dataloader.dataset.append_pred_Y(y_preds,Y,Xs)
 
     def post_train_eval_special(self):
         if self.bayesian:
@@ -521,6 +524,7 @@ class job_object():
         else:
             preds = np.concatenate(self.dataloader.dataset.pred_test_Y)
             true_y = np.concatenate(self.dataloader.dataset.true_test_Y)
+            X_s = np.concatenate(self.dataloader.dataset.pred_X)
             dif_abs = np.abs(preds-true_y)
             mse = np.mean(dif_abs**2)
             r_2 = 1-mse/true_y.var()
@@ -540,7 +544,6 @@ class job_object():
                 'other_val': val_loss_final,
                 'other_test': val_loss_final,
                             }
-            np.save(self.save_path+f'/preds_and_Y_{self.forecast}.npy', (preds,true_y))
             return result_dict
 
     def post_train_eval(self):
@@ -623,7 +626,7 @@ class job_object():
         self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.batch_size_a, self.batch_size_b)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
-        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.5)),self.max_R+1,dtype=int))
+        self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.75)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
 
     def init(self, parameters):
@@ -667,14 +670,16 @@ class job_object():
         self.parameters = parameters
         if self.cuda:
             self.model = self.model.to(self.device)
-        self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, bs_ratio=parameters['batch_size_ratio'],
-                                                split_mode=self.split_mode, forecast=self.forecast,
-                                                T_dim=self.temporal_tag, normalize=self.normalize_Y,periods=self.periods,period_size=self.period_size)
+        self.init_dataloader(parameters['batch_size_ratio'])
         result_dict = self.train()
         self.hyperits_i+=1
         self.reset_model_dataloader()
         return result_dict
 
+    def init_dataloader(self,bs_ratio):
+        self.dataloader = get_dataloader_tensor(self.data_path, seed=self.seed, bs_ratio=bs_ratio,
+                                                split_mode=self.split_mode, forecast=self.forecast,
+                                                T_dim=self.temporal_tag, normalize=self.normalize_Y,periods=self.periods,period_size=self.period_size)
     def reset_model_dataloader(self):
         del self.model
         del self.dataloader
@@ -824,7 +829,7 @@ class job_object():
         E_test_loss = model_dict['test_loss']
         print(f'Expected val loss: {E_val_loss}')
         print(f'Expected test loss: {E_test_loss}')
-        self.model.load_state_dict(model_dict['model_state_dict'])
+        self.model.load_state_dict(model_dict['model_state_dict'],strict=False)
 
     def extract_training_params(self,parameters):
         training_params = {}

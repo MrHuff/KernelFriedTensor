@@ -257,6 +257,7 @@ class forecast_dataset(Dataset):
         self.normalize = normalize
         self.true_test_Y = []
         self.pred_test_Y = []
+        self.pred_X = []
         self.set_data(0)
 
     def set_data(self,i):
@@ -276,12 +277,16 @@ class forecast_dataset(Dataset):
                 setattr(self,f'Y_{name}', torch.from_numpy(self.Y_base[el,:]).float())
         self.set_mode('train')
 
-    def append_pred_Y(self,pred_Y,true_Y):
-        new_pred_Y = self.transformer.inverse_transform(pred_Y.squeeze().cpu().numpy())
-        new_Y = self.transformer.inverse_transform(true_Y.squeeze().cpu().numpy())
+    def append_pred_Y(self,pred_Y,true_Y,X_s):
+        if self.normalize:
+            new_pred_Y = self.transformer.inverse_transform(pred_Y.squeeze().cpu().numpy())
+            new_Y = self.transformer.inverse_transform(true_Y.squeeze().cpu().numpy())
+        else:
+            new_pred_Y = pred_Y.squeeze().cpu().numpy()
+            new_Y= true_Y.squeeze().cpu().numpy()
         self.pred_test_Y.append(new_pred_Y)
         self.true_test_Y.append(new_Y)
-
+        self.pred_X.append(X_s.numpy())
     def set_mode(self, mode):
         self.mode = mode
         if mode == 'train':
