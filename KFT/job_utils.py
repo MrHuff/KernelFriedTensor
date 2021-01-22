@@ -396,7 +396,7 @@ class job_object():
                     self.kill_counter+=1
                 self.dataloader.dataset.set_mode('train')
             total_pred_loss+=pred_loss.item()*X.shape[0]
-        print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.dataset.n}')
+        print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.n}')
         return False
 
 
