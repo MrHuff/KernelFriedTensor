@@ -15,7 +15,7 @@ base_dict = {
     'PATH': PATH[dataset],
     'reg_para_a':0,
     'reg_para_b': 0, #regularization sets all params to 0? Does not work, figure out why...
-    'batch_size_a': 1e-2, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
+    'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
     'batch_size_b': 1e-2*1.1,#1.1e-2,
     'hyperits': 1,
     'save_path': 'test_run',
@@ -25,8 +25,8 @@ base_dict = {
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
     'max_R': 50,
-    'max_lr': 1e-1,
-    'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
+    'max_lr': 1e-2,
+    'old_setup': True, #Doesnt seem to "train" properly when adding extra terms...
     'latent_scale': False,
     'dual': False,
     'init_max': 1e-1, #fixes regularization issues...
@@ -49,10 +49,10 @@ base_dict = {
     'forecast':True,
     'lags':lags,
     'base_ref_int':lags[-1]+1,
-    'lambda_W_a':1.,
-    'lambda_W_b':1.+1e-4, #might need to adjust this. CCDS requires higher lambda reg...
-    'lambda_T_x_a': 10.,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
-    'lambda_T_x_b': 10+1e-4,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
+    'lambda_W_a':2.,
+    'lambda_W_b':2.+1e-4, #might need to adjust this. CCDS requires higher lambda reg...
+    'lambda_T_x_a': 10000.,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
+    'lambda_T_x_b': 10000+1e-4,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
     'patience': 100,
     'periods':1,#7, 1
     'period_size':15, #24,15

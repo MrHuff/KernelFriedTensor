@@ -220,8 +220,8 @@ class job_object():
         shape = [original_shape[el] for el in args['shape_permutation']]
         args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']  # ['matern_1', 'matern_2', 'matern_3', 'rbf']
         print(f'USING GPU:{device}')
-        args['batch_size_a'] = 1.0 if args['full_grad'] else args['batch_size_a']
-        args['batch_size_b'] = 1.0 if args['full_grad'] else args['batch_size_b']
+        args['batch_size_a'] =  args['batch_size_a']
+        args['batch_size_b'] =  args['batch_size_b']
         args['data_path'] = PATH + 'all_data.pt'
         args['device'] = f'cuda:{device}'
         args['shape'] = shape
@@ -280,8 +280,8 @@ class job_object():
                 if self.normalize_Y:
                     y_preds,Y = self.inverse_transform(y_preds,Y)
                 else:
-                    Y = Y.cpu().numpy()
-                    y_preds = y_preds.cpu().numpy()
+                    Y = Y.squeeze().cpu().numpy()
+                    y_preds = y_preds.squeeze().cpu().numpy()
                 MSE = self.calc_MSE(y_preds,Y)
                 NRMSE = self.calc_NRMSE(MSE,Y)
                 R2 = self.calc_R_2(MSE,Y)
@@ -622,8 +622,10 @@ class job_object():
                 if not self.old_setup:
                     if not self.dual:
                         self.hyperparameter_space[f'reg_para_prime_{i}'] = hp.uniform(f'reg_para_prime_{i}', self.reg_para_a, self.reg_para_b)
-
-        self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.batch_size_a, self.batch_size_b)
+        if self.full_grad:
+            self.hyperparameter_space['batch_size_ratio'] = hp.choice('batch_size_ratio',[1.0])
+        else:
+            self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.batch_size_a, self.batch_size_b)
         if self.latent_scale:
             self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.75)),self.max_R+1,dtype=int))
