@@ -8,7 +8,7 @@ shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
 dataset = 4
-lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [0, 1, 2]
+lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
 print(lags)
 #stuck on train loss for CCDs data
 base_dict = {
@@ -21,14 +21,14 @@ base_dict = {
     'save_path': 'test_run',
     'architecture': 0,
     'task': 'regression',
-    'epochs': 50,
+    'epochs': 200,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
     'max_R': 50,
     'max_lr': 1e-2,
-    'old_setup': True, #Doesnt seem to "train" properly when adding extra terms...
+    'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
     'latent_scale': False,
-    'dual': False,
+    'dual': True,
     'init_max': 1e-1, #fixes regularization issues...
     'bayesian': False,
     'multivariate': False,
@@ -39,7 +39,7 @@ base_dict = {
     'split_mode': 0,
     'seed': 1,
     'temporal_tag': 2,
-    'delete_side_info':[1,2],#[0],
+    'delete_side_info':None,#"[1,2],#[0],
     'special_mode': 0,
     'shape_permutation': [1,0,2],#[0,1],
     'full_grad': False,
@@ -49,15 +49,15 @@ base_dict = {
     'forecast':True,
     'lags':lags,
     'base_ref_int':lags[-1]+1,
-    'lambda_W_a':2.,
-    'lambda_W_b':2.+1e-4, #might need to adjust this. CCDS requires higher lambda reg...
+    'lambda_W_a':4.,
+    'lambda_W_b':4.+1e-4, #might need to adjust this. CCDS requires higher lambda reg...
     'lambda_T_x_a': 10000.,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
     'lambda_T_x_b': 10000+1e-4,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
-    'patience': 100,
-    'periods':1,#7, 1
-    'period_size':15, #24,15
+    'patience': 500,#100,
+    'periods':5,#7, 1
+    'period_size':16, #24,15
     'train_core_separate':True,
-    'temporal_folds': [0]
+    'temporal_folds': [0] #Fits well, but does not transfer "back"
 }
 #Do some hyperparameter optimization for kernels...
 #Confirming both methods have high potential...

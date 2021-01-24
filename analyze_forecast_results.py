@@ -5,7 +5,7 @@ import pickle
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 24)
 
-folder_2 = "jobs_traffic_parallel"
+folder_2 = "jobs_CCDS_3"
 list_of_stuff = os.listdir(folder_2)
 
 

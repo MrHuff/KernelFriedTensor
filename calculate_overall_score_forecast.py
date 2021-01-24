@@ -3,7 +3,7 @@ from generate_parameters import load_obj
 from KFT.job_utils import *
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 25)
-folder_2 = "jobs_traffic_2"
+folder_2 = "jobs_CCDS_2"
 folder = f"{folder_2}_results"
 
 def get_best(df,fold_idx,sort_on):
@@ -18,8 +18,10 @@ def get_errors_np(preds_cat,Y_cat):
     mse = np.mean(diff**2)
     NRSME = mse**0.5/yabs_mean
     ND = mean_abs_err/yabs_mean
-    print(NRSME) #THIS IS OK ALREADY
-    print(ND)
+    print('RMSE',mse**0.5)
+    print('NRMSE',NRSME) #THIS IS OK ALREADY
+    print('ND',ND)
+    return mse**0.5,NRSME,ND
 
 def get_exact_preds(j_tmp,job_ind,sort_on,i):
     d = pd.read_csv(f'{folder}/{job_ind}/test_df.csv', index_col=0)
@@ -37,12 +39,13 @@ def get_exact_preds(j_tmp,job_ind,sort_on,i):
     with torch.no_grad():
         total_loss, Y, y_preds, Xs = j_tmp.get_preds()
         y_preds, Y = j_tmp.inverse_transform(y_preds, Y)
-    get_errors_np(y_preds, Y)
-    return y_preds,Y
+    rmse,nrsme,ND =  get_errors_np(y_preds, Y)
+    return y_preds,Y,rmse,nrsme,ND
 
 
 if __name__ == '__main__':
-    sort_on = 'NRMSE'
+    sort_on = 'RMSE'
+    folds_nr = 5
     df = pd.read_csv(f"analysis_{folder_2}.csv",index_col=0)
     Y_cat = []
     preds_cat = []
@@ -56,17 +59,20 @@ if __name__ == '__main__':
     #
     key_init = load_obj('job_0.pkl', f"{folder_2}/")
     j_tmp = job_object(key_init)
-    for i in range(7):
+    df_metrics = []
+    for i in range(folds_nr):
         job_ind,file_name = get_best(df,i,sort_on)
         key_load = load_obj(file_name,f"{folder_2}/")
         j_tmp.save_path =  f'{folder}/{job_ind}'
-        y_preds,Y = get_exact_preds(j_tmp,job_ind,sort_on,i)
+        y_preds,Y,rmse,nrsme,ND = get_exact_preds(j_tmp,job_ind,sort_on,i)
         Y_cat.append(Y)
         preds_cat.append(y_preds)
+        df_metrics.append([rmse,nrsme,ND])
     preds_cat=np.concatenate(preds_cat)
     Y_cat = np.concatenate(Y_cat)
     get_errors_np(preds_cat, Y_cat)
-
+    df_metrics = pd.DataFrame(df_metrics,columns=['RSME','NRSME','ND'])
+    print(df_metrics.describe())
 
 
 

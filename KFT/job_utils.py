@@ -365,7 +365,7 @@ class job_object():
             if param.requires_grad:
                 print(n, param.requires_grad)
         self.dataloader.dataset.set_mode('train')
-        val_interval = len(self.dataloader)//self.validation_per_epoch
+        val_interval = len(self.dataloader)//self.validation_per_epoch + 1
         lrs = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=self.validation_patience, factor=0.9,min_lr=1e-3)
         total_pred_loss = 0.
         for i, (X, y) in enumerate(self.dataloader):
