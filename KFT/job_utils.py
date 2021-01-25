@@ -1,5 +1,5 @@
-import torch
-from KFT.KFT import *
+from KFT.KFT_VI import *
+from KFT.KFT_forecast import *
 from torch.nn.modules.loss import _Loss
 import gc
 import pickle
@@ -287,13 +287,13 @@ class job_object():
                 R2 = self.calc_R_2(MSE,Y)
                 ND = np.abs(y_preds-Y).mean()/np.abs(Y).mean()
                 metrics = {
-                    'eval': total_loss.item() if self.bayesian else R2,
+                    'eval': total_loss if self.bayesian else R2,
                     'MSE': MSE,
                     'RMSE': MSE**0.5,
                     'R2': R2,
                     'NRMSE':NRMSE,
                     'ND':ND,
-                    'ELBO':total_loss.item() if self.bayesian else False
+                    'ELBO':total_loss if self.bayesian else False
                 }
 
             else:

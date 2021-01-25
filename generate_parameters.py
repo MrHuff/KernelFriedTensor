@@ -23,9 +23,7 @@ def generate_job_params(directory='job_dir/'):
     """
     #FIXED PARAMS
     # PATH = ['public_data/','public_movielens_data/','tensor_data/','CCDS_data/','eletric_data/','traffic_data/']
-    PATH = ['public_data_t_fixed/', 'public_movielens_data_t_fixed/', 'tensor_data_t_fixed/','electric_data/',
-            'CCDS_data/',
-            'traffic_data/']
+    PATH = ['public_data_t_fixed/', 'public_movielens_data_t_fixed/', 'tensor_data_t_fixed/']
     data_path = [dataset+ 'all_data.pt' for dataset in PATH]
     seed = [1337]*len(PATH)
     batch_size_a = [1e-3]*len(PATH)
@@ -33,16 +31,16 @@ def generate_job_params(directory='job_dir/'):
     reg_para_a = [0]*len(PATH)
     reg_para_b = [1e-2]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [70,12,5,100,200,150]
-    architecture = [0,0,0,0,0,0]
-    temporal_tag = [2,2,2,0,2,0] #First find the temporal dim mark it if not None
+    max_R = [70,12,5]
+    architecture = [0,0,0] #[0,0,1]
+    temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
     special_mode = [0]*len(PATH)
     split_mode = [0]*len(PATH)
     latent_scale = [False]*len(PATH)
     old_setup = [False]*len(PATH)
     cuda = [True]*len(PATH)
-    hyperits = [20,20,20,10,20,10]
+    hyperits = [20,20,20]
     epochs = [10]*len(PATH)
     full_grad = [False]*len(PATH)
     dual = [True]*len(PATH)
@@ -51,20 +49,20 @@ def generate_job_params(directory='job_dir/'):
     bayesian = [False]*len(PATH)
     task = ['regression']*len(PATH)
     init_max = [1e-1]*len(PATH)
-    shape_permutation = [[0,1,2],[0,1,2],[0,1,2],[0,1,2],[0,1],[0,1]] #Remove this swap this for dimension order
+    shape_permutation = [[0,1,2],[0,1,2],[0,1,2]] #Remove this swap this for dimension order
     patience = [50]*len(PATH)
     forecast = [False,False,False,True,False,True]
-    lags = [[0],[0],[0],[0],[0],lags_base]
-    base_ref_int=[0,0,0,0,0,lags_base[-1]+1]
+    lags = [[0],[0],[0]]
+    base_ref_int=[0,0,0]
     lambda_W_a=[0.5]*len(PATH)
     lambda_W_b=[2.5]*len(PATH)
     lambda_T_x_a=[50]*len(PATH)
     lambda_T_x_b=[500]*len(PATH)
     normalize_Y = [False,False,False,True,True,True]
-    periods=[7,7,7,7,1,7]
-    period_size=[24,24,24,24,16,24]
-    validation_per_epoch=[4,4,4,4,4,4]
-    validation_patience = [2,2,2,2,2,2]
+    periods=[7,7,7]
+    period_size=[24,24,24]
+    validation_per_epoch=[4,4,4]
+    validation_patience = [2,2,2]
     """
     BAYESIAN PARAMS
     """
@@ -107,14 +105,14 @@ def generate_job_params(directory='job_dir/'):
         'shape_permutation': 0,
         'full_grad':0,
         'sub_epoch_V':0,
-        'forecast':True,
+        'forecast':False,
         'lags':0,
         'base_ref_int':0,
         'lambda_W_a':0.0,
         'lambda_W_b':0.5,
         'lambda_T_x_a': 100.,#625., for none kernel approach
         'lambda_T_x_b': 100.1,#625.1,
-        'normalize_Y':True,
+        'normalize_Y':False,
         'patience': 100,
         'periods':7,
         'period_size':24,

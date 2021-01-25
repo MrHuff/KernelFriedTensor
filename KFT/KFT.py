@@ -206,69 +206,6 @@ class KFT(torch.nn.Module):
             preds = self.bmm_collate(preds_list=preds_list)
             return preds,regularization
 
-class KFT_forecast(KFT):
-    def __init__(self, initialization_data,lambdas,shape_permutation,lags,base_ref_int,cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
-        super(KFT_forecast, self).__init__(initialization_data,lambdas,shape_permutation, cuda, config, old_setup)
-        self.extract_temporal_dimension(initialization_data)
-        v = initialization_data[self.tt_core_temporal_idx]
-        self.KFTR = KFTR_temporal_regulizer(
-            r_1=v['r_1'],
-            n_list=v['n_list'],
-            r_2=v['r_2'],
-            time_idx= self.KFTR_time_idx,
-            base_ref_int=base_ref_int,
-            lag_set_tensor=lags,
-            lambda_W = lambdas['lambda_W'],
-            lambda_T_x = lambdas['lambda_T_x']
-        )
-        self.deactivate_W_mode()
-
-    def get_time_component(self):
-        if not self.old_setup:
-            tt = self.TT_cores[str(self.tt_core_temporal_idx)]
-            if self.has_dual_kernel_component(self.tt_core_temporal_idx):
-                temporal_comp = self.TT_cores_prime[str(self.tt_core_temporal_idx)].core_param *  tt.get_temporal_compoment()
-            else:
-                temporal_comp = self.TT_cores_prime[str(self.tt_core_temporal_idx)].core_param *  tt.core_param
-        else:
-            tt = self.TT_cores[str(self.tt_core_temporal_idx)]
-            if self.has_dual_kernel_component(self.tt_core_temporal_idx):
-                temporal_comp = tt.get_temporal_compoment()
-            else:
-                temporal_comp = tt.core_param
-
-        return temporal_comp
-
-    def activate_W_mode(self):
-        self.turn_off_all()
-        self.current_update_pointers = [i for i in self.ii.keys()]
-        self.KFTR.W.requires_grad=True
-    def deactivate_W_mode(self):
-        self.KFTR.W.requires_grad=False
-
-    def forward(self,indices):
-        indices = indices[:,self.shape_permutation]
-        preds_list,regularization = self.collect_core_outputs(indices)
-        if self.tt_core_temporal_idx in self.current_update_pointers :
-            temporal_reg = self.get_time_component()
-            T_reg = self.KFTR.calculate_KFTR(temporal_reg) + self.KFTR.get_reg()
-        else:
-            T_reg = 0.
-        if self.full_grad:
-            preds = self.edge_mode_collate(preds_list=preds_list)
-            return preds[torch.unbind(indices,dim=1)],regularization+T_reg
-        else:
-            preds = self.bmm_collate(preds_list=preds_list)
-            return preds,regularization+T_reg
-
-    def extract_temporal_dimension(self,initialization_data):
-        self.temporal_tag = self.config['temporal_tag']
-        for i,v in initialization_data.items():
-            if self.temporal_tag in self.ii[i]:
-                self.tt_core_temporal_idx = i
-                self.KFTR_time_idx = self.ii[i].index(self.temporal_tag)
-
-
 class KFT_scale(torch.nn.Module):
     def __init__(self, initialization_data,lambdas,shape_permutation,  cuda=None, config=None, old_setup=False): #decomposition_data = {0:{'ii':[0,1],'lambda':0.01,r_1:1 n_list=[10,10],r_2:10,'has_side_info':True, side_info:{1:x_1,2:x_2},kernel_para:{'ls_factor':0.5, 'kernel_type':'RBF','nu':2.5} },1:{}}
         super(KFT_scale, self).__init__()
@@ -282,7 +219,7 @@ class KFT_scale(torch.nn.Module):
         tmp_dict_b = {}
         self.full_grad = config['full_grad']
         self.ii = {}
-        self.current_update_pointer = None
+        self.current_update_pointers = []
         for i,v in initialization_data.items():
             self.ii[i] = v['ii']
 
@@ -316,6 +253,10 @@ class KFT_scale(torch.nn.Module):
         self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
         self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
 
+    def has_dual_kernel_component(self,i):
+        if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name and self.TT_cores[str(i)].dual:
+            return True
+
     def turn_on_all(self):
         for i, v in self.ii.items():
             if not self.old_setup:
@@ -344,8 +285,8 @@ class KFT_scale(torch.nn.Module):
             self.TT_cores[str(i)].cache_mode = True
 
     def turn_on_V(self,i):
-        self.current_update_pointer = i
         self.turn_off_all()
+        self.current_update_pointers.append(i)
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
             self.TT_cores[str(i)].kernel_train_mode_off()
             self.TT_cores[str(i)].turn_on()
@@ -356,7 +297,8 @@ class KFT_scale(torch.nn.Module):
         self.TT_cores[str(i)].cache_mode=False
 
     def turn_on_prime(self,i):
-        self.current_update_pointer = i
+        self.turn_off_all()
+        self.current_update_pointers.append(i)
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
             self.TT_cores[str(i)].kernel_train_mode_off()
             self.TT_cores[str(i)].turn_off()
@@ -376,7 +318,8 @@ class KFT_scale(torch.nn.Module):
         return False
 
     def turn_on_kernel_mode(self,i):
-        self.current_update_pointer = i
+        self.turn_off_all()
+        self.current_update_pointers.append(i)
         if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
             self.TT_cores[str(i)].kernel_train_mode_on()
             self.TT_cores[str(i)].turn_off()
@@ -434,375 +377,3 @@ class KFT_scale(torch.nn.Module):
         indices = indices[:,self.shape_permutation]
         pred, reg = self.collect_core_outputs(indices)
         return pred,reg
-
-class variational_KFT(KFT):
-    def __init__(self,initialization_data,shape_permutation,cuda=None,config=None,old_setup=False,lambdas=None):
-        super(variational_KFT, self).__init__(initialization_data=initialization_data,shape_permutation=shape_permutation, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
-        tmp_dict = {}
-        tmp_dict_prime = {}
-        self.kernel_class_name = ['multivariate_variational_kernel_TT','univariate_variational_kernel_TT']
-        self.full_grad = config['full_grad']
-        self.ii = {}
-        for i, v in initialization_data.items():
-            self.ii[i] = v['ii']
-            if not old_setup:
-                tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                                  n_list=v['n_list'],
-                                                                  r_2=v['r_2'],
-                                                                  cuda=cuda,
-                                                                  config=config,
-                                                                  init_scale=v['init_scale'],
-                                                                  double_factor=v['double_factor'],
-                                                                  sub_R=config['sub_R'],
-                                                                  mu_prior=v['mu_prior_prime'],
-                                                                  sigma_prior=v['sigma_prior_prime'])
-            if v['has_side_info']:
-                if v['multivariate'] and config['dual']:
-                    tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                          n_list=v['n_list'] if config['dual'] else v[
-                                                                              'primal_list'],
-                                                                          r_2=v['r_2'],
-                                                                          side_information_dict=v['side_info'],
-                                                                          kernel_para_dict=v['kernel_para'],
-                                                                          cuda=cuda,
-                                                                          config=config,
-                                                                          init_scale=v['init_scale'],
-                                                                          mu_prior=v['mu_prior'],
-                                                                          )
-                else:
-                    tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                        n_list=v['n_list'] if config['dual'] else v[
-                                                                            'primal_list'],
-                                                                        r_2=v['r_2'],
-                                                                        side_information_dict=v['side_info'],
-                                                                        kernel_para_dict=v['kernel_para'],
-                                                                        cuda=cuda,
-                                                                        config=config,
-                                                                        init_scale=v['init_scale'],
-                                                                        mu_prior=v['mu_prior'],
-                                                                        sigma_prior=v['sigma_prior']
-                                                                        )
-            else:
-                tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                            n_list= v['n_list'],
-                                                            r_2=v['r_2'],
-                                                            cuda=cuda,
-                                                            config=config,
-                                                            init_scale=v['init_scale'],
-                                                            mu_prior=v['mu_prior'],
-                                                            sigma_prior=v['sigma_prior']
-                                                            )
-
-        self.TT_cores = torch.nn.ModuleDict(tmp_dict)
-        self.TT_cores_prime = torch.nn.ModuleDict(tmp_dict_prime)
-
-    def get_norms(self):
-        with torch.no_grad():
-            for i, v in self.ii.items():
-                print(torch.mean(self.TT_cores[str(i)].core_param.abs()))
-                if self.TT_cores[str(i)].__class__.__name__=='univariate_variational_kernel_TT':
-                    print(torch.mean(self.TT_cores[str(i)].variance_parameters))
-                if not self.old_setup:
-                    print(torch.mean(self.TT_cores_prime[str(i)].core_param.abs()))
-                    print(torch.mean(self.TT_cores_prime[str(i)].variance_parameters))
-
-    def toggle(self,toggle):
-        for i,v in self.ii.items():
-            self.TT_cores[str(i)].toggle_mean_var(toggle)
-            if not self.old_setup:
-                self.TT_cores_prime[str(i)].toggle_mean_var(toggle)
-        return 0
-
-    def collect_core_outputs_mean(self,indices):
-        pred_outputs = []
-        for i,v in self.ii.items():
-            ix = indices[:,v]
-            tt = self.TT_cores[str(i)]
-            tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred = tt_prime.mean_forward(ix)
-            pred = tt.mean_forward(ix)
-            pred_outputs.append(pred*prime_pred)
-        return pred_outputs
-
-    def collect_core_outputs_mean_old(self,indices):
-        pred_outputs = []
-        for i,v in self.ii.items():
-            ix = indices[:,v]
-            tt = self.TT_cores[str(i)]
-            pred = tt.mean_forward(ix)
-            pred_outputs.append(pred)
-        return pred_outputs
-
-    #TODO: prior hyper para/opt scheme
-    def collect_core_outputs_old(self,indices):
-        first_term = []
-        second_term = []
-        total_KL = 0
-        for i, v in self.ii.items():
-            ix = indices[:, v]
-            tt = self.TT_cores[str(i)]
-            base, extra, KL = tt(ix)
-            first_term.append(base)
-            second_term.append(extra)
-            total_KL += KL.abs()
-        if self.full_grad:
-            group_func = self.edge_mode_collate
-        else:
-            group_func = self.bmm_collate
-        middle = group_func(first_term)
-        gf = group_func(second_term)
-        last_term = middle ** 2 + gf
-        if self.full_grad:
-            middle = middle[torch.unbind(indices, dim=1)]
-            last_term = last_term[torch.unbind(indices, dim=1)]
-        return middle, last_term, total_KL
-
-    def collect_core_outputs(self,indices):
-        first_term = []
-        second_term = []
-        total_KL = 0
-        for i, v in self.ii.items():
-            ix = indices[:, v]
-            tt = self.TT_cores[str(i)]
-            tt_prime = self.TT_cores_prime[str(i)]
-            M_prime, sigma_prime, KL_prime = tt_prime(ix)
-            base, extra, KL = tt(ix)
-            first_term.append(M_prime*base)
-            second_term.append((extra+base**2)*sigma_prime+(M_prime**2)*extra)
-            total_KL += KL.abs() + KL_prime
-        if self.full_grad:
-            group_func = self.edge_mode_collate
-        else:
-            group_func = self.bmm_collate
-        middle = group_func(first_term)
-        gf = group_func(second_term)
-        last_term = middle**2 + gf
-        if self.full_grad:
-            middle = middle[torch.unbind(indices, dim=1)]
-            last_term = last_term[torch.unbind(indices, dim=1)]
-        return middle,last_term, total_KL
-
-    def collect_core_outputs_sample_old(self, indices):
-        pred_outputs = []
-        for i,v in self.ii.items():
-            ix = indices[:,v]
-            tt = self.TT_cores[str(i)]
-            pred= tt.sample(ix)
-            pred_outputs.append(pred)
-        return pred_outputs
-
-    def collect_core_outputs_sample(self, indices):
-        pred_outputs = []
-        for i,v in self.ii.items():
-            ix = indices[:,v]
-            tt = self.TT_cores[str(i)]
-            tt_prime = self.TT_cores_prime[str(i)]
-            prime_pred = tt_prime.sample(ix)
-            pred= tt.sample(ix)
-            pred_outputs.append(pred*prime_pred)
-        return pred_outputs
-
-    def sample(self, indices):
-        indices = indices[:,self.shape_permutation]
-        if self.old_setup:
-            preds_list = self.collect_core_outputs_sample_old(indices)
-        else:
-            preds_list = self.collect_core_outputs_sample(indices)
-        if self.full_grad:
-            preds = self.edge_mode_collate(preds_list)
-            return preds[torch.unbind(indices, dim=1)]
-        else:
-            preds = self.bmm_collate(preds_list)
-            return preds
-
-    def forward(self, indices):
-        indices = indices[:,self.shape_permutation]
-        if self.old_setup:
-            middle,third, regularization = self.collect_core_outputs_old(indices)
-
-        else:
-            middle,third, regularization = self.collect_core_outputs(indices)
-        return middle,third,regularization
-
-    def mean_forward(self,indices):
-        indices = indices[:,self.shape_permutation]
-        if self.old:
-            preds_list = self.collect_core_outputs_mean_old(indices)
-        else:
-            preds_list = self.collect_core_outputs_mean(indices)
-        if self.full_grad:
-            preds = self.edge_mode_collate(preds_list)
-            return preds[torch.unbind(indices, dim=1)]
-        else:
-            preds = self.bmm_collate(preds_list)
-            return preds
-
-
-class varitional_KFT_scale(KFT_scale):
-    def __init__(self,initialization_data,shape_permutation,cuda=None,config=None,old_setup=False,lambdas=None):
-        super(varitional_KFT_scale, self).__init__(initialization_data=initialization_data,shape_permutation=shape_permutation, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
-        tmp_dict = {}
-        tmp_dict_s = {}
-        tmp_dict_b = {}
-        self.kernel_class_name = ['multivariate_variational_kernel_TT', 'univariate_variational_kernel_TT']
-        self.full_grad = config['full_grad']
-        self.ii = {}
-        for i, v in initialization_data.items():
-            self.ii[i] = v['ii']
-            tmp_dict_s[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
-                                                              n_list=v['n_list'],
-                                                              r_2=v['r_2_latent'],
-                                                              cuda=cuda,
-                                                              config=config,
-                                                              mu_prior=v['mu_prior_s'],
-                                                              sigma_prior=v['sigma_prior_s'],
-                                                          )
-            tmp_dict_b[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
-                                                          n_list=v['n_list'],
-                                                          r_2=v['r_2_latent'],
-                                                          cuda=cuda,
-                                                          config=config,
-                                                          mu_prior=v['mu_prior_b'],
-                                                          sigma_prior=v['sigma_prior_b']
-
-                                                          )
-            if v['has_side_info']:
-                if v['multivariate'] and config['dual']:
-                    tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                          n_list= v['n_list'],
-                                                                          r_2=v['r_2'],
-                                                                          side_information_dict=v['side_info'],
-                                                                          kernel_para_dict=v['kernel_para'],
-                                                                          cuda=cuda,
-                                                                          config=config,
-                                                                          init_scale=1.0,
-                                                                          mu_prior=v['mu_prior'],
-
-                                                                          )
-                else:
-                    tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
-                                                                        n_list= v['n_list'],
-                                                                        r_2=v['r_2'],
-                                                                        side_information_dict=v['side_info'],
-                                                                        kernel_para_dict=v['kernel_para'],
-                                                                        cuda=cuda,
-                                                                        config=config,
-                                                                        init_scale=1.0,
-                                                                        mu_prior=v['mu_prior'],
-                                                                        sigma_prior=v['sigma_prior']
-                                                                        )
-            else:
-                tmp_dict[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                            n_list= v['n_list'],
-                                                            r_2=v['r_2'],
-                                                            cuda=cuda,
-                                                            config=config,
-                                                            init_scale=1.0,
-                                                            mu_prior=v['mu_prior'],
-                                                            sigma_prior=v['sigma_prior']
-                                                            )
-        self.TT_cores = torch.nn.ModuleDict(tmp_dict)
-        self.TT_cores_s = torch.nn.ModuleDict(tmp_dict_s)
-        self.TT_cores_b = torch.nn.ModuleDict(tmp_dict_b)
-
-    def collect_core_sample(self,indices):
-        scale = []
-        bias = []
-        core = []
-        for i, v in self.ii.items():
-            ix = indices[:, v]
-            tt = self.TT_cores[str(i)]
-            tt_s = self.TT_cores_s[str(i)]
-            tt_b = self.TT_cores_b[str(i)]
-            V_s = tt_s.sample(ix)
-            V_b = tt_b.sample(ix)
-            base = tt.sample(ix)
-            scale.append(V_s)
-            bias.append(V_b)
-            core.append(base)
-
-        if self.full_grad:
-            group_func = self.edge_mode_collate
-        else:
-            group_func = self.bmm_collate
-        scale_forward = group_func(scale)
-        bias_forward = group_func(bias)
-        core_forward = group_func(core)
-
-        if self.full_grad:
-            T = scale_forward*core_forward+bias_forward
-            return T[torch.unbind(indices, dim=1)]
-        else:
-            return scale_forward*core_forward+bias_forward
-
-    def sample(self,indices):
-        indices = indices[:,self.shape_permutation]
-        T = self.collect_core_sample(indices)
-        return T
-
-    def collect_core_outputs(self, indices):
-        scale = []
-        scale_var = []
-        bias = []
-        bias_var = []
-        core = []
-        core_var = []
-        total_KL = 0
-        for i, v in self.ii.items():
-            ix = indices[:, v]
-            tt = self.TT_cores[str(i)]
-            tt_s = self.TT_cores_s[str(i)]
-            tt_b = self.TT_cores_b[str(i)]
-            V_s, var_s, KL_s = tt_s(ix)
-            V_b, var_b, KL_b = tt_b(ix)
-            base, extra, KL = tt(ix)
-            scale.append(V_s)
-            scale_var.append(var_s)
-            bias.append(V_b)
-            bias_var.append(var_b)
-            core.append(base)
-            core_var.append(extra)
-            total_KL+= KL_s+KL_b+KL.abs()
-
-        if self.full_grad:
-            group_func = self.edge_mode_collate
-        else:
-            group_func = self.bmm_collate
-        scale_forward = group_func(scale)
-        scale_forward_var = group_func(scale_var)
-        bias_forward = group_func(bias)
-        bias_forward_var = group_func(bias_var)
-        core_forward = group_func(core)
-        core_forward_var = group_func(core_var)
-        middle = scale_forward*core_forward+bias_forward
-        third_term = (scale_forward**2+scale_forward_var)*(core_forward**2+core_forward_var)+2*scale_forward*core_forward*bias_forward+bias_forward**2+bias_forward_var
-
-        if self.full_grad:
-            return middle[torch.unbind(indices, dim=1)], third_term[torch.unbind(indices, dim=1)], total_KL
-        else:
-            return middle, third_term, total_KL
-
-    def forward(self,indices):
-        indices = indices[:,self.shape_permutation]
-        middle_term,third_term,reg = self.collect_core_outputs(indices)
-        return middle_term,third_term,reg
-
-    def toggle(self, train_means):
-        for i, v in self.ii.items():
-            self.TT_cores[str(i)].toggle_mean_var(train_means)
-            if not self.old_setup:
-                self.TT_cores_s[str(i)].toggle_mean_var(train_means)
-                self.TT_cores_b[str(i)].toggle_mean_var(train_means)
-        return 0
-
-    def get_norms(self):
-        with torch.no_grad():
-            for i, v in self.ii.items():
-                print(torch.mean(self.TT_cores[str(i)].core_param.abs()))
-                if self.TT_cores[str(i)].__class__.__name__ == 'univariate_variational_kernel_TT':
-                    print(torch.mean(self.TT_cores[str(i)].variance_parameters))
-                if not self.old_setup:
-                    print(torch.mean(self.TT_cores_s[str(i)].core_param.abs()))
-                    print(torch.mean(self.TT_cores_s[str(i)].variance_parameters))
-                    print(torch.mean(self.TT_cores_b[str(i)].core_param.abs()))
-                    print(torch.mean(self.TT_cores_b[str(i)].variance_parameters))

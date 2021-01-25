@@ -7,14 +7,14 @@ PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
-dataset = 4
+dataset = 0
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
 print(lags)
 #stuck on train loss for CCDs data
 base_dict = {
     'PATH': PATH[dataset],
-    'reg_para_a':0,
-    'reg_para_b': 0, #regularization sets all params to 0? Does not work, figure out why...
+    'reg_para_a':1., #for VI dont screw this up
+    'reg_para_b': 10., #regularization sets all params to 0? Does not work, figure out why...
     'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
     'batch_size_b': 1e-2*1.1,#1.1e-2,
     'hyperits': 1,
@@ -27,11 +27,11 @@ base_dict = {
     'max_R': 50,
     'max_lr': 1e-2,
     'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
-    'latent_scale': False,
+    'latent_scale': True,
     'dual': True,
     'init_max': 1e-1, #fixes regularization issues...
-    'bayesian': False,
-    'multivariate': False,
+    'bayesian': True,
+    'multivariate': True,
     'mu_a': 0,
     'mu_b': 0,
     'sigma_a': -1.01,
@@ -41,12 +41,12 @@ base_dict = {
     'temporal_tag': 2,
     'delete_side_info':None,#"[1,2],#[0],
     'special_mode': 0,
-    'shape_permutation': [1,0,2],#[0,1],
+    'shape_permutation': [0,1,2],#[0,1],
     'full_grad': False,
     'normalize_Y': False,
     'validation_per_epoch': 5,
     'validation_patience': 2,
-    'forecast':True,
+    'forecast':False,
     'lags':lags,
     'base_ref_int':lags[-1]+1,
     'lambda_W_a':4.,
