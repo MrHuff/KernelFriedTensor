@@ -524,7 +524,6 @@ class job_object():
         else:
             preds = np.concatenate(self.dataloader.dataset.pred_test_Y)
             true_y = np.concatenate(self.dataloader.dataset.true_test_Y)
-            X_s = np.concatenate(self.dataloader.dataset.pred_X)
             dif_abs = np.abs(preds-true_y)
             mse = np.mean(dif_abs**2)
             r_2 = 1-mse/true_y.var()
@@ -627,7 +626,7 @@ class job_object():
         else:
             self.hyperparameter_space['batch_size_ratio'] = hp.uniform('batch_size_ratio', self.batch_size_a, self.batch_size_b)
         if self.latent_scale:
-            self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R//2+1,dtype=int))
+            self.hyperparameter_space['R_scale'] = hp.choice('R_scale', np.arange(self.max_R//4,self.max_R+1,dtype=int))
         self.hyperparameter_space['R'] = hp.choice('R', np.arange( int(round(self.max_R*0.75)),self.max_R+1,dtype=int))
         self.hyperparameter_space['lr_2'] = hp.choice('lr_2', self.lrs ) #Very important for convergence
 
@@ -654,7 +653,13 @@ class job_object():
                                              cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
         else:
             if self.latent_scale:
-                self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
+                if self.forecast:
+                    self.model = KFT_forecast_LS(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
+                                     config=self.tensor_component_configs, old_setup=self.old_setup,
+                                              lambdas=lambdas,lags=self.lags,base_ref_int=self.base_ref_int)
+                    self.model.deactivate_W_mode()
+                else:
+                    self.model = KFT_scale(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
                                        config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
             else:
                 if self.forecast:

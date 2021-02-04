@@ -65,4 +65,5 @@ base_dict = {
 if __name__ == '__main__':
     warnings.simplefilter("ignore")
     run_job_func(base_dict)
-
+    #do a smaller hyperopt run for 10 searches, record average training and validation loss curve
+    #TAKE WLR and 10 searches, record average training and validation loss curve

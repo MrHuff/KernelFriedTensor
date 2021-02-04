@@ -21,11 +21,11 @@ def generate_job_params(directory='job_dir/'):
         'hyperits':15,
         'architecture':0,
         'task':'regression',
-        'epochs':200,
+        'epochs':100,
         'bayesian':False,
         'data_path':PATH[dataset]+'all_data.pt',
         'cuda':True,
-        'max_R':200,
+        'max_R':75,
         'max_lr':1e-2,
         'old_setup':False,
         'latent_scale':False,
@@ -39,7 +39,7 @@ def generate_job_params(directory='job_dir/'):
         'split_mode':0,
         'seed':0,
         'temporal_tag':0 if dataset in [0,2] else 2,
-        'delete_side_info':[1,2],
+        'delete_side_info':None,
         'special_mode':0,
         'shape_permutation': [0,1] if dataset in [0,2] else [1,0,2],
         'full_grad':False,
@@ -61,7 +61,7 @@ def generate_job_params(directory='job_dir/'):
     }
     counter = 0
     rang = 7 if dataset in [0,2] else 5
-    for W in [2.]:
+    for W in [1.0]:
     # for W in [0.0,0.1,1.0,2.0,5.0,10.]:
         for lt in [10000.]:
         # for lt in [10.,100.,1000.,10000.]:
@@ -69,11 +69,11 @@ def generate_job_params(directory='job_dir/'):
                 base_dict['lambda_T_x_a']=lt*0.5
                 base_dict['lambda_T_x_b']=lt*1.5
                 base_dict['lambda_W_a']=W
-                base_dict['lambda_W_b']=W+10
+                base_dict['lambda_W_b']=W+4.
                 base_dict['temporal_folds']=[t]
                 print(base_dict)
                 save_obj(base_dict,f'job_{counter}',directory)
                 counter += 1
 
 if __name__ == '__main__':
-    generate_job_params('jobs_CCDS_4/')
+    generate_job_params('jobs_traffic_side_info_WLR_11/')

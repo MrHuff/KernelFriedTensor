@@ -3,7 +3,7 @@ from generate_parameters import load_obj
 from KFT.job_utils import *
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 25)
-folder_2 = "jobs_CCDS_2"
+folder_2 = "jobs_CCDS_side_info_WLR_2"
 folder = f"{folder_2}_results"
 
 def get_best(df,fold_idx,sort_on):
