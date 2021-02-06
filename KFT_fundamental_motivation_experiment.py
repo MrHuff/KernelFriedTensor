@@ -57,7 +57,8 @@ base_dict = {
     'periods':7,#7, 1
     'period_size':24, #24,15
     'train_core_separate':True,
-    'temporal_folds': [0] #Fits well, but does not transfer "back"
+    'temporal_folds': [0], #Fits well, but does not transfer "back",
+    'log_errors': False
 }
 #Do some hyperparameter optimization for kernels...
 #Confirming both methods have high potential...

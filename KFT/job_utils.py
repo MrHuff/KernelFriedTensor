@@ -21,6 +21,7 @@ cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in rev
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
+
 def run_job_func(args):
     torch.cuda.empty_cache()
     j = job_object(args)
@@ -233,7 +234,6 @@ class job_object():
                          }
         return tensor_component_configs,args,side_info_dict
 
-
     def get_preds(self):
         loss_list = []
         y_s = []
@@ -376,8 +376,6 @@ class job_object():
             opt.zero_grad()
             total_loss.backward()
             opt.step()
-            # lrs.step(total_loss)
-            # self.train_monitor(total_loss, reg, pred_loss,y_pred,i,val_interval)
             if i % val_interval == 0:
                 print(f'learning rate: {get_lr(opt)}')
                 l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
@@ -397,8 +395,13 @@ class job_object():
                 self.dataloader.dataset.set_mode('train')
             total_pred_loss+=pred_loss.item()*X.shape[0]
         print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.n}')
+        if self.log_errors:
+            self.train_errors.append(total_pred_loss/self.dataloader.n)
+            l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
+            l_test = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
+            self.val_errors.append(l_val['MSE'])
+            self.test_errors.append(l_test['MSE'])
         return False
-
 
     def outer_train_loop(self, train_dict):
         for val in train_dict.values():
@@ -418,7 +421,6 @@ class job_object():
                 if ERROR:
                     return ERROR
         return False
-
 
     def setup_runs(self):
         self.loss_func = get_loss_func(self.train_config)
@@ -678,7 +680,15 @@ class job_object():
         if self.cuda:
             self.model = self.model.to(self.device)
         self.init_dataloader(parameters['batch_size_ratio'])
+        if self.log_errors:
+            self.train_errors = []
+            self.val_errors = []
+            self.test_errors = []
         result_dict = self.train()
+        if self.log_errors:
+            pass #save errorrs according to hyperit
+
+
         self.hyperits_i+=1
         self.reset_model_dataloader()
         return result_dict
