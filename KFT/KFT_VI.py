@@ -13,7 +13,7 @@ class variational_KFT(KFT):
             self.ii[i] = v['ii']
             if not old_setup:
                 tmp_dict_prime[str(i)] = variational_TT_component(r_1=v['r_1'],
-                                                                  n_list=v['n_list'],
+                                                                  n_list=v['prime_list'],
                                                                   r_2=v['r_2'],
                                                                   cuda=cuda,
                                                                   config=config,
@@ -26,7 +26,7 @@ class variational_KFT(KFT):
                 if v['multivariate'] and config['dual']:
                     tmp_dict[str(i)] = multivariate_variational_kernel_TT(r_1=v['r_1'],
                                                                           n_list=v['n_list'] if config['dual'] else v[
-                                                                              'primal_list'],
+                                                                              'prime_list'],
                                                                           r_2=v['r_2'],
                                                                           side_information_dict=v['side_info'],
                                                                           kernel_para_dict=v['kernel_para'],
@@ -38,7 +38,7 @@ class variational_KFT(KFT):
                 else:
                     tmp_dict[str(i)] = univariate_variational_kernel_TT(r_1=v['r_1'],
                                                                         n_list=v['n_list'] if config['dual'] else v[
-                                                                            'primal_list'],
+                                                                            'prime_list'],
                                                                         r_2=v['r_2'],
                                                                         side_information_dict=v['side_info'],
                                                                         kernel_para_dict=v['kernel_para'],
@@ -216,7 +216,7 @@ class varitional_KFT_scale(KFT_scale):
         for i, v in initialization_data.items():
             self.ii[i] = v['ii']
             tmp_dict_s[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
-                                                              n_list=v['n_list'],
+                                                              n_list=v['prime_list'],
                                                               r_2=v['r_2_latent'],
                                                               cuda=cuda,
                                                               config=config,
@@ -224,7 +224,7 @@ class varitional_KFT_scale(KFT_scale):
                                                               sigma_prior=v['sigma_prior_s'],
                                                           )
             tmp_dict_b[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
-                                                          n_list=v['n_list'],
+                                                          n_list=v['prime_list'],
                                                           r_2=v['r_2_latent'],
                                                           cuda=cuda,
                                                           config=config,

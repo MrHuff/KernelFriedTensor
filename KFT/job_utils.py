@@ -13,7 +13,7 @@ import numpy as np
 import multiprocessing as mp
 import pandas as pd
 from tqdm import tqdm
-
+import copy
 
 cal_list = [5, 15, 25, 35, 45]
 cal_string_list = [f'{cal}%' for cal in cal_list] + [f'{100-cal}%'for cal in reversed(cal_list)]
@@ -38,34 +38,27 @@ def get_loss_func(train_config):
         loss_func = torch.nn.BCEWithLogitsLoss(pos_weight=train_config['pos_weight'])
     return loss_func
 
-def get_tensor_architectures(i, permuted_shape, R=2, R_scale=1): #Two component tends to overfit?! Really weird!
+def get_tensor_architectures(i, permuted_shape,d_shape, R=2, R_scale=1): #Two component tends to overfit?! Really weird!
 
     if len(permuted_shape)==3:
         TENSOR_ARCHITECTURES = {
             0:{
-               0:{'ii':[0],'r_1':1,'n_list':[permuted_shape[0]], 'r_2':R, 'r_1_latent':1, 'r_2_latent':R_scale},
-               1:{'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]], 'r_2': R, 'r_1_latent':R_scale, 'r_2_latent':R_scale}, #Magnitude of kernel sum
-               2:{'ii': [2], 'r_1': R, 'n_list': [permuted_shape[2]], 'r_2': 1, 'r_1_latent':R_scale, 'r_2_latent':1},
+               0:{'ii':[0],'r_1':1,'n_list':[permuted_shape[0]],'prime_list':[d_shape[0]], 'r_2':R, 'r_1_latent':1, 'r_2_latent':R_scale},
+               1:{'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]],'prime_list':[d_shape[1]], 'r_2': R, 'r_1_latent':R_scale, 'r_2_latent':R_scale}, #Magnitude of kernel sum
+               2:{'ii': [2], 'r_1': R, 'n_list': [permuted_shape[2]],'prime_list':[d_shape[2]], 'r_2': 1, 'r_1_latent':R_scale, 'r_2_latent':1},
                },
             1:{
-               0: {'ii':[0],'r_1':1,'n_list':[permuted_shape[0]], 'r_2':R, 'r_1_latent':1, 'r_2_latent':R_scale},
-               1: {'ii': [1,2], 'r_1': R, 'n_list': [permuted_shape[1], permuted_shape[2]], 'r_2': 1, 'r_1_latent':R_scale, 'r_2_latent':1}, #Magnitude of kernel sum
-               },
-            2: {
-                0: {'ii': [0], 'r_1': 1, 'n_list': [permuted_shape[0]], 'r_2': R,
-                    'r_1_latent': 1, 'r_2_latent': R_scale},
-                1: {'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]], 'r_2': 1,
-                    'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
-            }  # Regular MF
-
+               0: {'ii':[0],'r_1':1,'n_list':[permuted_shape[0]],'prime_list':[d_shape[0]], 'r_2':R, 'r_1_latent':1, 'r_2_latent':R_scale},
+               1: {'ii': [1,2], 'r_1': R, 'n_list': [permuted_shape[1], d_shape[2]],'prime_list':[permuted_shape[1],permuted_shape[2]], 'r_2': 1, 'r_1_latent':R_scale, 'r_2_latent':1}, #Magnitude of kernel sum
+               }
         }
     elif len(permuted_shape)==2:
         TENSOR_ARCHITECTURES = {
 
             0: {
-                0: { 'ii': [0], 'r_1': 1, 'n_list': [permuted_shape[0]], 'r_2': R,
+                0: { 'ii': [0], 'r_1': 1, 'n_list': [permuted_shape[0]],'prime_list':[d_shape[0]], 'r_2': R,
                     'r_1_latent': 1, 'r_2_latent': R_scale},
-                1: {'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]], 'r_2': 1,
+                1: {'ii': [1], 'r_1': R, 'n_list': [permuted_shape[1]],'prime_list':[d_shape[1]], 'r_2': 1,
                     'r_1_latent': R_scale, 'r_2_latent': 1},  # Magnitude of kernel sum
             }  # Regular MF
         }
@@ -208,7 +201,7 @@ class job_object():
         if args['delete_side_info'] is not None: # a list if passed to the orginal shape
             for i in args['delete_side_info']:
                 del side_info_dict_tmp[i]
-
+        dual_shape = copy.deepcopy(original_shape)
         for dim_idx, n in enumerate(original_shape):
             if dim_idx in side_info_dict_tmp:
                 if not args['dual']:
@@ -219,6 +212,7 @@ class job_object():
             if perm in side_info_dict_tmp:
                 side_info_dict[old_key] = side_info_dict_tmp.pop(perm)
         shape = [original_shape[el] for el in args['shape_permutation']]
+        d_shape = [dual_shape[el] for el in args['shape_permutation']]
         args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']  # ['matern_1', 'matern_2', 'matern_3', 'rbf']
         print(f'USING GPU:{device}')
         args['batch_size_a'] =  args['batch_size_a']
@@ -226,12 +220,15 @@ class job_object():
         args['data_path'] = PATH + 'all_data.pt'
         args['device'] = f'cuda:{device}'
         args['shape'] = shape
+        args['d_shape'] = d_shape
         args['lags'] = torch.tensor(args['lags']).long()
         print(shape)
+        print(d_shape)
         tensor_component_configs = {
                              'full_grad': args['full_grad'],
                              'bayesian': args['bayesian'],
                          }
+        #Introduce primal and dual shape to fix...
         return tensor_component_configs,args,side_info_dict
 
     def get_preds(self):
@@ -582,7 +579,7 @@ class job_object():
     def define_hyperparameter_space(self):
         self.hyperparameter_space = {}
         self.available_side_info_dims = []
-        t_act = get_tensor_architectures(self.architecture, self.shape)
+        t_act = get_tensor_architectures(i=self.architecture, permuted_shape=self.shape,d_shape=self.d_shape)
         for dim, val in self.side_info.items():
             self.available_side_info_dims.append(dim)
             if self.dual: #Add periodic kernel setup here
@@ -635,7 +632,11 @@ class job_object():
     def init(self, parameters):
         print(parameters)
         self.tensor_component_configs['dual'] = self.dual
-        self.tensor_architecture = get_tensor_architectures(self.architecture, self.shape, parameters['R'], parameters['R_scale'] if self.latent_scale else 1)
+        self.tensor_architecture = get_tensor_architectures(i=self.architecture,
+                                                            permuted_shape=self.shape,
+                                                            d_shape=self.d_shape,
+                                                            R=parameters['R'],
+                                                            R_scale=parameters['R_scale'] if self.latent_scale else 1)
         if not self.old_setup:
             if not self.latent_scale:
                 for key, component in self.tensor_architecture.items():
@@ -686,9 +687,12 @@ class job_object():
             self.test_errors = []
         result_dict = self.train()
         if self.log_errors:
-            pass #save errorrs according to hyperit
-
-
+            train_errors = np.array(self.train_errors)
+            val_errors = np.array(self.val_errors)
+            test_errors = np.array(self.test_errors)
+            np.save(self.save_path+'/'+'train_errors.npy',train_errors)
+            np.save(self.save_path+'/'+'val_errors.npy',val_errors)
+            np.save(self.save_path+'/'+'test_errors.npy',test_errors)
         self.hyperits_i+=1
         self.reset_model_dataloader()
         return result_dict

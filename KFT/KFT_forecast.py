@@ -69,7 +69,7 @@ class KFT_forecast_LS(KFT_scale):
         v = initialization_data[self.tt_core_temporal_idx]
         self.KFTR = KFTR_temporal_regulizer(
             r_1=v['r_1'],
-            n_list=v['n_list'],
+            n_list=v['prime_list'],
             r_2=v['r_2'],
             time_idx= self.KFTR_time_idx,
             base_ref_int=base_ref_int,
@@ -79,7 +79,7 @@ class KFT_forecast_LS(KFT_scale):
         )
         self.KFTR_s = KFTR_temporal_regulizer(
             r_1=v['r_1_latent'],
-            n_list=v['n_list'],
+            n_list=v['prime_list'],
             r_2=v['r_2_latent'],
             time_idx= self.KFTR_time_idx,
             base_ref_int=base_ref_int,
@@ -89,7 +89,7 @@ class KFT_forecast_LS(KFT_scale):
         )
         self.KFTR_b = KFTR_temporal_regulizer(
             r_1=v['r_1_latent'],
-            n_list=v['n_list'],
+            n_list=v['prime_list'],
             r_2=v['r_2_latent'],
             time_idx= self.KFTR_time_idx,
             base_ref_int=base_ref_int,

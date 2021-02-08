@@ -3,15 +3,12 @@ import warnings
 from KFT.job_utils import run_job_func,job_object
 import torch
 import pickle
-
-path = 'primal_explain_example'
-PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t_fixed/'  ,'electric_data/' ,'CCDS_data/','traffic_data/']
+PATH = ['public_data/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t_fixed/'  ,'electric_data/' ,'CCDS_data/','traffic_data/']
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
 dataset = 0
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
-print(lags)
 base_dict = {
     'PATH': PATH[dataset],
     'reg_para_a':0., #for VI dont screw this up
@@ -19,7 +16,7 @@ base_dict = {
     'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
     'batch_size_b': 1e-2*1.1,#1.1e-2,
     'hyperits': 5,
-    'save_path': path,
+    'save_path': 'placeholder',
     'architecture': 0,
     'task': 'regression',
     'epochs': 100,
@@ -28,8 +25,8 @@ base_dict = {
     'max_R': 50,
     'max_lr': 1e-2,
     'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
-    'latent_scale': True,
-    'dual': True,
+    'latent_scale': False,
+    'dual': False,
     'init_max': 1e-1, #fixes regularization issues...
     'bayesian': False,
     'multivariate': True,
@@ -42,7 +39,7 @@ base_dict = {
     'temporal_tag': 2,
     'delete_side_info':None,#"[1,2],#[0],
     'special_mode': 0,
-    'shape_permutation': [0,2,1],#[0,1],
+    'shape_permutation': [0,1,2],#[0,1],
     'full_grad': False,
     'normalize_Y': False,
     'validation_per_epoch': 5,
@@ -58,10 +55,11 @@ base_dict = {
     'periods':7,#7, 1
     'period_size':24, #24,15
     'train_core_separate':True,
-    'temporal_folds': [0] #Fits well, but does not transfer "back"
+    'temporal_folds': [0], #Fits well, but does not transfer "back",
+    'log_errors':True,
 }
 
-def load_best_model(j_tmp):
+def load_best_model(j_tmp,path):
     trials = pickle.load(open(path + f'/frequentist_0.p', "rb"))
     best_ind = sorted(trials.trials, key=lambda x: x['result']['loss'], reverse=True)[0]['misc']['tid'] + 1
     model_info = torch.load(f'{path}/frequentist_0_model_hyperit={best_ind + 1}.pt')
@@ -69,12 +67,22 @@ def load_best_model(j_tmp):
     j_tmp.load_dumped_model(best_ind + 1)
 
 if __name__ == '__main__':
-    if not os.path.exists(path):
-        warnings.simplefilter("ignore")
+    ##########FIX PRIMAL BUGGIE
+
+    warnings.simplefilter("ignore")
+
+    if not os.path.exists('WLR_primal_example'):
+        base_dict['latent_scale'] = False
+        base_dict['save_path'] = 'WLR_primal_example'
         run_job_func(base_dict)
-    else:
-        j_tmp = job_object(base_dict)
-        load_best_model(j_tmp)
+    if not os.path.exists('LS_primal_example'):
+        base_dict['latent_scale'] = True
+        base_dict['save_path'] = 'LS_primal_example'
+        run_job_func(base_dict)
+
+    # else:
+    #     j_tmp = job_object(base_dict)
+    #     load_best_model(j_tmp,path)
 
 
 

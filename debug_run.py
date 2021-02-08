@@ -7,7 +7,7 @@ PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
-dataset = 4
+dataset = 0
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
 print(lags)
 #stuck on train loss for CCDs data
@@ -57,7 +57,7 @@ base_dict = {
     'periods':7,#7, 1
     'period_size':24, #24,15
     'train_core_separate':True,
-    'temporal_folds': [0] #Fits well, but does not transfer "back"
+    'temporal_folds': [0], #Fits well, but does not transfer "back",
 }
 #Do some hyperparameter optimization for kernels...
 #Confirming both methods have high potential...

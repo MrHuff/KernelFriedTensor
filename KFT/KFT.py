@@ -23,7 +23,7 @@ class KFT(torch.nn.Module):
             self.ii[i] = v['ii']
             if not self.old_setup:
                 tmp_dict_prime[str(i)] = TT_component(r_1=v['r_1'],
-                                                          n_list=v['n_list'],
+                                                          n_list=v['prime_list'],
                                                           r_2=v['r_2'],
                                                           cuda=cuda,
                                                           config=config,
@@ -224,14 +224,14 @@ class KFT_scale(torch.nn.Module):
             self.ii[i] = v['ii']
 
             tmp_dict_b[str(i)] = TT_component(r_1=v['r_1_latent'],
-                                              n_list=v['n_list'],
+                                              n_list=v['prime_list'],
                                               r_2=v['r_2_latent'],
                                               cuda=cuda,
                                               config=config,
                                               init_scale=v['init_scale'],
                                               reg_para=lambdas[f'reg_para_b_{i}'])
             tmp_dict_s[str(i)] = TT_component(r_1=v['r_1_latent'],
-                                              n_list=v['n_list'],
+                                              n_list=v['prime_list'],
                                               r_2=v['r_2_latent'],
                                               cuda=cuda,
                                               config=config,

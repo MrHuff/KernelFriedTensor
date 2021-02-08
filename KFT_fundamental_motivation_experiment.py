@@ -1,15 +1,14 @@
 
 import warnings
 from KFT.job_utils import run_job_func
-
-# PATH = ['public_data/' ,'public_movielens_data/' ,'tensor_data/' ,'CCDS_data/' ,'eletric_data/' ,'traffic_data/']
+import numpy as np
+import os
 PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t_fixed/'  ,'electric_data/' ,'CCDS_data/','traffic_data/']
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
-dataset = 4
+dataset = 0
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
-print(lags)
 #stuck on train loss for CCDs data
 base_dict = {
     'PATH': PATH[dataset],
@@ -17,17 +16,17 @@ base_dict = {
     'reg_para_b': 0., #regularization sets all params to 0? Does not work, figure out why...
     'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
     'batch_size_b': 1e-2*1.1,#1.1e-2,
-    'hyperits': 1,
-    'save_path': 'test_run',
+    'hyperits': 10,
+    'save_path': 'placeholder',
     'architecture': 0,
     'task': 'regression',
-    'epochs': 200,
+    'epochs': 50,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
     'max_R': 50,
     'max_lr': 1e-2,
-    'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
-    'latent_scale': True,
+    'old_setup': True, #Doesnt seem to "train" properly when adding extra terms...
+    'latent_scale': False,
     'dual': True,
     'init_max': 1e-1, #fixes regularization issues...
     'bayesian': False,
@@ -38,15 +37,15 @@ base_dict = {
     'sigma_b': -1.,
     'split_mode': 0,
     'seed': 1,
-    'temporal_tag': 0,
+    'temporal_tag': 2,
     'delete_side_info':None,#"[1,2],#[0],
     'special_mode': 0,
-    'shape_permutation': [0,1],#[0,1],
+    'shape_permutation': [0,1,2],#[0,1],
     'full_grad': False,
     'normalize_Y': False,
     'validation_per_epoch': 5,
     'validation_patience': 2,
-    'forecast':True,
+    'forecast':False,
     'lags':lags,
     'base_ref_int':lags[-1]+1,
     'lambda_W_a':0.,
@@ -58,13 +57,23 @@ base_dict = {
     'period_size':24, #24,15
     'train_core_separate':True,
     'temporal_folds': [0], #Fits well, but does not transfer "back",
-    'log_errors': False
+    'log_errors': True
 }
-#Do some hyperparameter optimization for kernels...
-#Confirming both methods have high potential...
-#Fix the transition and convergence rate...
+
+
 if __name__ == '__main__':
+
     warnings.simplefilter("ignore")
-    run_job_func(base_dict)
-    #do a smaller hyperopt run for 10 searches, record average training and validation loss curve
-    #TAKE WLR and 10 searches, record average training and validation loss curve
+    if not os.path.exists('KFT_motivation'):
+        base_dict['save_path'] = 'KFT_motivation'
+        base_dict['old_setup'] = False
+        run_job_func(base_dict)
+    if not  os.path.exists('KFT_motivation_old_setup'):
+        base_dict['save_path'] = 'KFT_motivation_old_setup'
+        base_dict['old_setup'] = True
+        run_job_func(base_dict)
+    if not  os.path.exists('KFT_motivation_plain'):
+        base_dict['save_path'] = 'KFT_motivation_plain'
+        base_dict['old_setup'] = True
+        base_dict['delete_side_info'] = [0,1,2]
+        run_job_func(base_dict)
