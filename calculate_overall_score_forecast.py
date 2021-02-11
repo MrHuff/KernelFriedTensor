@@ -40,7 +40,7 @@ def get_exact_preds(j_tmp,job_ind,sort_on,i):
         total_loss, Y, y_preds, Xs = j_tmp.get_preds()
         y_preds, Y = j_tmp.inverse_transform(y_preds, Y)
     rmse,nrsme,ND =  get_errors_np(y_preds, Y)
-    return y_preds,Y,rmse,nrsme,ND
+    return y_preds,Y,rmse,nrsme,ND,Xs
 
 
 if __name__ == '__main__':
@@ -56,18 +56,21 @@ if __name__ == '__main__':
     # sort on appropriate thing to get index ND or NRSME
     # move to cuda and no grad.
     # Also get the dataloader
-    #
+    # Add forecast plots roflmao
     key_init = load_obj('job_0.pkl', f"{folder_2}/")
     j_tmp = job_object(key_init)
     df_metrics = []
+    X = []
     for i in range(folds_nr):
         job_ind,file_name = get_best(df,i,sort_on)
         key_load = load_obj(file_name,f"{folder_2}/")
         j_tmp.save_path =  f'{folder}/{job_ind}'
-        y_preds,Y,rmse,nrsme,ND = get_exact_preds(j_tmp,job_ind,sort_on,i)
+        y_preds,Y,rmse,nrsme,ND,Xs = get_exact_preds(j_tmp,job_ind,sort_on,i)
         Y_cat.append(Y)
         preds_cat.append(y_preds)
         df_metrics.append([rmse,nrsme,ND])
+        X.append(Xs)
+    X = torch.cat(X)
     preds_cat=np.concatenate(preds_cat)
     Y_cat = np.concatenate(Y_cat)
     get_errors_np(preds_cat, Y_cat)

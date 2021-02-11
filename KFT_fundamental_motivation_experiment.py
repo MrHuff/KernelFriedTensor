@@ -13,14 +13,14 @@ lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else
 base_dict = {
     'PATH': PATH[dataset],
     'reg_para_a':0., #for VI dont screw this up
-    'reg_para_b': 0., #regularization sets all params to 0? Does not work, figure out why...
+    'reg_para_b': 1e-2, #regularization sets all params to 0? Does not work, figure out why...
     'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
     'batch_size_b': 1e-2*1.1,#1.1e-2,
-    'hyperits': 10,
+    'hyperits': 5,
     'save_path': 'placeholder',
     'architecture': 0,
     'task': 'regression',
-    'epochs': 50,
+    'epochs': 100,
     'data_path': PATH[dataset]+'all_data.pt',
     'cuda': True,
     'max_R': 50,
@@ -52,13 +52,15 @@ base_dict = {
     'lambda_W_b':0.+1e-4, #might need to adjust this. CCDS requires higher lambda reg...
     'lambda_T_x_a': 10000.,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
     'lambda_T_x_b': 10000+1e-4,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
-    'patience': 500,#100,
+    'patience': 500000,#100,
     'periods':7,#7, 1
     'period_size':24, #24,15
     'train_core_separate':True,
     'temporal_folds': [0], #Fits well, but does not transfer "back",
     'log_errors': True
 }
+
+
 
 
 if __name__ == '__main__':
@@ -72,8 +74,5 @@ if __name__ == '__main__':
         base_dict['save_path'] = 'KFT_motivation_old_setup'
         base_dict['old_setup'] = True
         run_job_func(base_dict)
-    if not  os.path.exists('KFT_motivation_plain'):
-        base_dict['save_path'] = 'KFT_motivation_plain'
-        base_dict['old_setup'] = True
-        base_dict['delete_side_info'] = [0,1,2]
-        run_job_func(base_dict)
+
+

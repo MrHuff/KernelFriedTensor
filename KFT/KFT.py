@@ -184,6 +184,26 @@ class KFT(torch.nn.Module):
                     reg_output += tt.reg_para*torch.mean(reg) #numerical issue with fp 16 how fix, sum of square terms, serves as fp 16 fix
         return pred_outputs,reg_output
 
+    def interpret_prediction(self,indices):
+        pred_outputs = []
+        component_output_dict = {}
+        for i, v in self.ii.items():
+            ix = indices[:, v]
+            tt = self.TT_cores[str(i)]
+            if not self.old_setup:
+                tt_prime = self.TT_cores_prime[str(i)]
+                prime_pred, reg_prime = tt_prime(ix)
+                pred, reg = tt(ix)
+                component_output_dict[f'tt_{i}'] = pred
+                component_output_dict[f'tt_prime_{i}'] = prime_pred
+                pred_outputs.append(pred * prime_pred)
+            else:
+                pred, reg = tt(ix)
+                component_output_dict[f'tt_{i}'] = pred
+                pred_outputs.append(pred)
+
+        return pred_outputs,component_output_dict
+
     def bmm_collate(self, preds_list):
         preds = preds_list[0]
         for i in range(1, len(preds_list)):
@@ -195,6 +215,13 @@ class KFT(torch.nn.Module):
         for i in range(1, len(preds_list)):
             preds = edge_mode_product(preds, preds_list[i], len(preds.shape) - 1, 0)  # General mode product!
         return preds.squeeze()
+
+    def forward_interpret(self,indices):
+        with torch.no_grad():
+            indices = indices[:, self.shape_permutation]
+            preds_list,component_dict = self.interpret_prediction(indices)
+            preds = self.bmm_collate(preds_list=preds_list)
+            return preds, component_dict
 
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
@@ -377,3 +404,41 @@ class KFT_scale(torch.nn.Module):
         indices = indices[:,self.shape_permutation]
         pred, reg = self.collect_core_outputs(indices)
         return pred,reg
+
+    def interpret_prediction(self,indices):
+        scale = []
+        regression = []
+        bias = []
+        component_dict = {}
+        for i,v in self.ii.items():
+            ix = indices[:,v]
+            tt = self.TT_cores[str(i)]
+            tt_s = self.TT_cores_s[str(i)]
+            tt_b = self.TT_cores_b[str(i)]
+            prime_s,reg_s = tt_s.forward_scale(ix)
+            prime_b,reg_b = tt_b.forward_scale(ix)
+            pred, reg = tt(ix)
+            scale.append(prime_s)
+            bias.append(prime_b)
+            regression.append(pred)
+
+        if self.full_grad:
+            group_func = self.edge_mode_collate
+        else:
+            group_func = self.bmm_collate
+        s = group_func(scale)
+        r = group_func(regression)
+        b = group_func(bias)
+        pred = s*r+b
+        component_dict['s'] = s
+        component_dict['b'] = b
+        component_dict['r'] = r
+
+        return pred,component_dict
+
+
+    def forward_interpret(self,indices):
+        with torch.no_grad():
+            indices = indices[:, self.shape_permutation]
+            preds,component_dict = self.interpret_prediction(indices)
+            return preds,component_dict

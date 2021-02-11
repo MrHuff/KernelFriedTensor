@@ -392,13 +392,8 @@ class job_object():
                 self.dataloader.dataset.set_mode('train')
             total_pred_loss+=pred_loss.item()*X.shape[0]
         print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.n}')
-        if self.log_errors:
-            self.train_errors.append(total_pred_loss/self.dataloader.n)
-            l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
-            l_test = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
-            self.val_errors.append(l_val['MSE'])
-            self.test_errors.append(l_test['MSE'])
-        return False
+
+        return False,total_pred_loss/self.dataloader.n
 
     def outer_train_loop(self, train_dict):
         for val in train_dict.values():
@@ -406,17 +401,23 @@ class job_object():
                 freezer_func = v['call']
                 opt = v['opt']
                 freezer_func(k)
-                ERROR = self.train_loop(opt)
+                ERROR,train_error = self.train_loop(opt)
                 if self.forecast:
                     if k == self.model.tt_core_temporal_idx:
                         # activate W training
                         self.model.activate_W_mode()
-                        ERROR = self.train_loop(self.forecast_opt)
+                        ERROR,train_error = self.train_loop(self.forecast_opt)
                         self.model.deactivate_W_mode()
                 if ERROR == 'early_stop':
                     return ERROR
                 if ERROR:
                     return ERROR
+        if self.log_errors:
+            self.train_errors.append(train_error)
+            l_val = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
+            l_test = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
+            self.val_errors.append(l_val['MSE'])
+            self.test_errors.append(l_test['MSE'])
         return False
 
     def setup_runs(self):
@@ -690,9 +691,9 @@ class job_object():
             train_errors = np.array(self.train_errors)
             val_errors = np.array(self.val_errors)
             test_errors = np.array(self.test_errors)
-            np.save(self.save_path+'/'+'train_errors.npy',train_errors)
-            np.save(self.save_path+'/'+'val_errors.npy',val_errors)
-            np.save(self.save_path+'/'+'test_errors.npy',test_errors)
+            np.save(self.save_path+'/'+f'train_errors_{self.hyperits_i}.npy',train_errors)
+            np.save(self.save_path+'/'+f'val_errors_{self.hyperits_i}.npy',val_errors)
+            np.save(self.save_path+'/'+f'test_errors_{self.hyperits_i}.npy',test_errors)
         self.hyperits_i+=1
         self.reset_model_dataloader()
         return result_dict
@@ -856,10 +857,6 @@ class job_object():
         training_params = {}
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
-        # if self.bayesian or self.forecast:
-        #     training_params['prime_lr'] = parameters['lr_2']
-        # else:
-        #     training_params['prime_lr'] = parameters['lr_2']/100.
         training_params['prime_lr'] = parameters['lr_2']
         training_params['ls_lr'] = 1e-2
         training_params['V_lr'] = parameters['lr_2']
