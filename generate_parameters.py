@@ -22,16 +22,15 @@ def generate_job_params(directory='job_dir/'):
     BE CAREFUL OF WHAT YOU PUT HERE
     """
     #FIXED PARAMS
-    # PATH = ['public_data/','public_movielens_data/','tensor_data/','CCDS_data/','eletric_data/','traffic_data/']
     PATH = ['public_data_t_fixed/', 'public_movielens_data_t_fixed/', 'tensor_data_t_fixed/']
     data_path = [dataset+ 'all_data.pt' for dataset in PATH]
     seed = [1337]*len(PATH)
-    batch_size_a = [1e-3]*len(PATH)
-    batch_size_b = [1e-2]*len(PATH)
-    reg_para_a = [0]*len(PATH)
-    reg_para_b = [1e-2]*len(PATH)
+    batch_size_a = [1e-3*8]*len(PATH)
+    batch_size_b = [1e-2*1.2]*len(PATH)
+    reg_para_a = [1e-2]*len(PATH)
+    reg_para_b = [100]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [70,12,5]
+    max_R = [20,6,5]
     architecture = [0,0,0] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
@@ -40,17 +39,15 @@ def generate_job_params(directory='job_dir/'):
     latent_scale = [False]*len(PATH)
     old_setup = [False]*len(PATH)
     cuda = [True]*len(PATH)
-    hyperits = [20,20,20]
-    epochs = [10]*len(PATH)
+    hyperits = [10,10,10]
+    epochs = [50]*len(PATH)
     full_grad = [False]*len(PATH)
     dual = [True]*len(PATH)
-    sub_epoch_V = [100]*len(PATH)
-    chunks = [10]*len(PATH)
-    bayesian = [False]*len(PATH)
+    bayesian = [True]*len(PATH)
     task = ['regression']*len(PATH)
-    init_max = [1e-1]*len(PATH)
+    init_max = [1e0]*len(PATH)
     shape_permutation = [[0,1,2],[0,1,2],[0,1,2]] #Remove this swap this for dimension order
-    patience = [50]*len(PATH)
+    patience = [100]*len(PATH)
     forecast = [False,False,False,True,False,True]
     lags = [[0],[0],[0]]
     base_ref_int=[0,0,0]
@@ -103,8 +100,7 @@ def generate_job_params(directory='job_dir/'):
         'delete_side_info':0,
         'special_mode':0,
         'shape_permutation': 0,
-        'full_grad':0,
-        'sub_epoch_V':0,
+        'full_grad':False,
         'forecast':False,
         'lags':0,
         'base_ref_int':0,
@@ -116,14 +112,19 @@ def generate_job_params(directory='job_dir/'):
         'patience': 100,
         'periods':7,
         'period_size':24,
-    'validation_per_epoch': 3,
-    'validation_patience': 2,
+        'validation_per_epoch': 3,
+        'validation_patience': 2,
+        'train_core_separate': True,
+        'temporal_folds': [0],
+        'log_errors':False
+
     }
     counter = 0
 
     for i,datasets in enumerate([0]):
         for key in base_dict.keys():
-            base_dict[key]=locals()[key][datasets]
+            if key in locals().keys():
+                base_dict[key]=locals()[key][datasets]
         for seed in range(5):
             base_dict['seed']=seed
             print(base_dict)
@@ -131,4 +132,4 @@ def generate_job_params(directory='job_dir/'):
             counter += 1
 
 if __name__ == '__main__':
-    generate_job_params(directory='job_dir_frequentist_alcohol_normal_perm/')
+    generate_job_params(directory='alcohol_bayesian_dual_univariate/')

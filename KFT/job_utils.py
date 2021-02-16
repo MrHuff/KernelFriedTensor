@@ -284,7 +284,7 @@ class job_object():
                 R2 = self.calc_R_2(MSE,Y)
                 ND = np.abs(y_preds-Y).mean()/np.abs(Y).mean()
                 metrics = {
-                    'eval': total_loss if self.bayesian else R2,
+                    'eval': -total_loss if self.bayesian else R2,
                     'MSE': MSE,
                     'RMSE': MSE**0.5,
                     'R2': R2,
@@ -334,7 +334,7 @@ class job_object():
             if self.train_config['task'] == 'regression':
                 if self.train_config['bayesian']:
                     y_pred, middle_term, reg = self.model(X)
-                    pred_loss= -(analytical_reconstruction_error_VI_sum(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg)
+                    pred_loss= analytical_reconstruction_error_VI_sum(y.squeeze(),y_pred,middle_term)*self.train_config['sigma_y'] + reg
                 else:
                     loss_func = torch.nn.MSELoss(reduction='sum')
                     y_pred, _ = self.model(X)
@@ -393,7 +393,7 @@ class job_object():
             total_pred_loss+=pred_loss.item()*X.shape[0]
         print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.n}')
 
-        return False,total_pred_loss/self.dataloader.n
+        return False, total_pred_loss/self.dataloader.n
 
     def outer_train_loop(self, train_dict):
         for val in train_dict.values():
@@ -551,6 +551,8 @@ class job_object():
         if self.bayesian:
             val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
             test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
+            val_likelihood,val_ELBO = self.calculate_likelihood(mode='val',samples=2)
+            test_likelihood,test_ELBO = self.calculate_likelihood(mode='test',samples=2)
             total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
             total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
             result_dict =  {'results':{'loss': total_cal_error_val-val_loss_final['R2'],
@@ -562,7 +564,11 @@ class job_object():
                             'test_loss_final': test_loss_final,
                             'other_val':val_loss_final,
                             'other_test':test_loss_final},
-                            'predictions': predictions
+                            'predictions': predictions,
+                            'val_likelihood':val_likelihood,
+                            'test_likelihood':test_likelihood,
+                            'val_ELBO': val_ELBO,
+                            'test_ELBO': test_ELBO,
             }
             return result_dict
         else:
@@ -707,30 +713,57 @@ class job_object():
         del self.dataloader
         torch.cuda.empty_cache()
 
+    def calculate_ELBO(self,X,y):
+        y_pred, last_term, reg = self.model(X)
+        pred_loss = self.loss_func(y.squeeze(), y_pred, last_term)
+        total_loss = pred_loss*self.train_config['sigma_y'] + reg
+        return total_loss
+
+    def calculate_likelihood(self,mode='val',samples=10):
+        self.dataloader.dataset.set_mode(mode)
+        _loglikelihood_estimates = []
+        _elbo_estimates = []
+        tensor_s = torch.tensor(samples).float()
+        with torch.no_grad():
+            for iteration, (X, y) in enumerate(self.dataloader):
+                _elbo = []
+                for i in range(samples):
+                    X=X.to(self.device)
+                    y=y.to(self.device)
+                    ELBO = self.calculate_ELBO(X,y)
+                    _elbo.append(ELBO)
+                _elbo_estimates.append(ELBO)
+                likelihood_est = torch.stack(_elbo,dim=0)
+                _loglikelihood_estimates.append(torch.logsumexp(likelihood_est,dim=0).cpu() - torch.log(tensor_s))
+            _elbo_estimates = torch.stack(_elbo_estimates, dim=0)
+            _loglikelihood_estimates = torch.stack(_loglikelihood_estimates, dim=0)
+        loglikelihood_estimate = _loglikelihood_estimates.mean()
+        ELBO_mean = _elbo_estimates.mean()
+        return loglikelihood_estimate,ELBO_mean
+
     def calculate_calibration(self,mode='val',task='regression',samples=100):
         self.dataloader.dataset.set_mode(mode)
         with torch.no_grad():
             all_samples = []
             Y = []
-            for i in range(samples):
-                _y_preds = []
-                for i, (X, y) in enumerate(self.dataloader):
-                    if self.train_config['cuda']:
-                        X = X.to(self.train_config['device'])
+            for i, (X, y) in enumerate(self.dataloader):
+                if self.train_config['cuda']:
+                    X = X.to(self.train_config['device'])
+                _y_preds=[]
+                for j in range(samples):
                     _y_pred_sample = self.model.sample(X)
                     if self.normalize_Y:
                         _y_pred_sample,y = self.inverse_transform(_y_pred_sample,y)
                     else:
                         _y_pred_sample = _y_pred_sample.cpu().numpy()
-                        y = y.squeeze().cpu().numpy()
+                        y = y.squeeze()
                     if not task=='regression':
                         _y_pred_sample = torch.sigmoid(_y_pred_sample)
                     _y_preds.append(_y_pred_sample)
-                    if i==0:
-                        Y.append(y)
-                y_sample = np.concatenate(_y_preds,axis=0)
+                Y.append(y)
+                y_sample = np.stack(_y_preds,axis=1)
                 all_samples.append(y_sample)
-            Y_preds = np.stack(all_samples,axis=1)
+            Y_preds = np.concatenate(all_samples,axis=0)
             df = para_summary(Y_preds)
             df['y_true'] = np.concatenate(Y,axis=0)
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.dataset.X)
@@ -745,7 +778,7 @@ class job_object():
             output_dict = self.start_training(parameters)
             predictions = output_dict['predictions']
             results = output_dict['results']
-            if not np.isinf(results['val_loss_final']):
+            if not np.isinf(results['val_loss_final']['ELBO']):
                 torch.cuda.empty_cache()
                 if results['test_loss'] < self.best:
                     self.best = results['test_loss']

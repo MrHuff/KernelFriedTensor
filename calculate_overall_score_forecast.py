@@ -1,9 +1,11 @@
 import pandas as pd
 from generate_parameters import load_obj
 from KFT.job_utils import *
+from matplotlib import pyplot as plt
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 25)
-folder_2 = "jobs_CCDS_side_info_WLR_2"
+# folder_2 = "jobs_CCDS_side_info_WLR_2"
+folder_2 = "jobs_traffic_3"
 folder = f"{folder_2}_results"
 
 def get_best(df,fold_idx,sort_on):
@@ -42,6 +44,35 @@ def get_exact_preds(j_tmp,job_ind,sort_on,i):
     rmse,nrsme,ND =  get_errors_np(y_preds, Y)
     return y_preds,Y,rmse,nrsme,ND,Xs
 
+def forecast_plot_traffic(X, Y, preds, fold_idx):
+    X_cpu = X.cpu().numpy()
+    Y_cpu = Y
+    preds = preds
+    slice_indices= [0,1,2,3,4]
+    mask = np.isin(X_cpu[:,1],[0,1,2,3,4])
+    y_true = Y[mask]
+    preds_ = preds[mask]
+    x_subset = X_cpu[mask,:]
+    df = pd.DataFrame(np.concatenate([x_subset,y_true[:,np.newaxis],preds_[:,np.newaxis]],axis=1))
+    df = df.sort_values(by=[1, 0])
+    for i in slice_indices:
+        subset = df[df[1]==i]
+        plt.plot(subset[0],subset[2],'-.',label='True values',color='b')
+        plt.plot(subset[0],subset[3],'-',label='Forecasts',color='b')
+        plt.xlabel('Time index')
+        plt.ylabel('Value')
+        plt.legend()
+        plt.savefig(f'traffic_forecast_{fold_idx}.png')
+        plt.clf()
+
+
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     sort_on = 'RMSE'
@@ -66,11 +97,12 @@ if __name__ == '__main__':
         key_load = load_obj(file_name,f"{folder_2}/")
         j_tmp.save_path =  f'{folder}/{job_ind}'
         y_preds,Y,rmse,nrsme,ND,Xs = get_exact_preds(j_tmp,job_ind,sort_on,i)
+
+        forecast_plot_traffic(Xs, Y, y_preds,i)
+
         Y_cat.append(Y)
         preds_cat.append(y_preds)
         df_metrics.append([rmse,nrsme,ND])
-        X.append(Xs)
-    X = torch.cat(X)
     preds_cat=np.concatenate(preds_cat)
     Y_cat = np.concatenate(Y_cat)
     get_errors_np(preds_cat, Y_cat)
