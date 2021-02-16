@@ -381,7 +381,7 @@ class job_object():
                 print(f'test_error= {l_test}')
                 if self.kill_counter==self.patience:
                     print(f"No improvement in val, stopping training! best val error: {self.best_val_loss}")
-                    return 'early_stop'
+                    return 'early_stop',total_pred_loss
                 lrs.step(-l_val['eval'])
                 if -l_val['eval'] < -self.best_val_loss:
                     self.kill_counter = 0
