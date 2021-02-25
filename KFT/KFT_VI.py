@@ -150,15 +150,21 @@ class variational_KFT(KFT):
 
     def collect_core_outputs_sample_old(self, indices):
         pred_outputs = []
+        total_KL = 0
         for i,v in self.ii.items():
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
             pred= tt.sample(ix)
             pred_outputs.append(pred)
-        return pred_outputs
+            KL = tt.get_KL(ix)
+            total_KL += KL.abs()
+
+        return pred_outputs,total_KL
 
     def collect_core_outputs_sample(self, indices):
         pred_outputs = []
+        total_KL = 0
+
         for i,v in self.ii.items():
             ix = indices[:,v]
             tt = self.TT_cores[str(i)]
@@ -166,26 +172,29 @@ class variational_KFT(KFT):
             prime_pred = tt_prime.sample(ix)
             pred= tt.sample(ix)
             pred_outputs.append(pred*prime_pred)
-        return pred_outputs
+            KL = tt.get_KL(ix)
+            KL_prime =tt_prime.get_KL(ix)
+            total_KL += KL.abs() + KL_prime
+
+        return pred_outputs,total_KL
 
     def sample(self, indices):
         indices = indices[:,self.shape_permutation]
         if self.old_setup:
-            preds_list = self.collect_core_outputs_sample_old(indices)
+            preds_list,KL = self.collect_core_outputs_sample_old(indices)
         else:
-            preds_list = self.collect_core_outputs_sample(indices)
+            preds_list,KL = self.collect_core_outputs_sample(indices)
         if self.full_grad:
             preds = self.edge_mode_collate(preds_list)
             return preds[torch.unbind(indices, dim=1)]
         else:
             preds = self.bmm_collate(preds_list)
-            return preds
+            return preds,KL
 
     def forward(self, indices):
         indices = indices[:,self.shape_permutation]
         if self.old_setup:
             middle,third, regularization = self.collect_core_outputs_old(indices)
-
         else:
             middle,third, regularization = self.collect_core_outputs(indices)
         return middle,third,regularization

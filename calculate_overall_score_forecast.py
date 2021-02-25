@@ -31,7 +31,6 @@ def get_exact_preds(j_tmp,job_ind,sort_on,i):
     d = d.sort_values(sort_on)
     best_ind = d.index.values.astype(int)[0]
     model_info = torch.load(f'{folder}/{job_ind}/frequentist_0_model_hyperit={best_ind + 1}.pt')
-    j_tmp.init(model_info['parameters'])
     j_tmp.load_dumped_model(best_ind + 1)
     j_tmp.model.turn_on_all()
     j_tmp.model.to(j_tmp.device)

@@ -2,9 +2,6 @@ from KFT.KFT_VI import *
 from KFT.KFT_forecast import *
 from torch.nn.modules.loss import _Loss
 import gc
-import pickle
-import os
-import warnings
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
 from KFT.util import *
 from sklearn import metrics
@@ -12,7 +9,6 @@ import time
 import numpy as np
 import multiprocessing as mp
 import pandas as pd
-from tqdm import tqdm
 import copy
 
 cal_list = [5, 15, 25, 35, 45]
@@ -551,10 +547,8 @@ class job_object():
         if self.bayesian:
             val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
             test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
-            val_likelihood,val_ELBO = self.calculate_likelihood(mode='val',samples=2)
-            test_likelihood,test_ELBO = self.calculate_likelihood(mode='test',samples=2)
-            total_cal_error_val,val_cal_dict ,_ = self.calculate_calibration(mode='val',task=self.train_config['task'])
-            total_cal_error_test,test_cal_dict ,predictions = self.calculate_calibration(mode='test',task=self.train_config['task'])
+            total_cal_error_val,val_cal_dict ,_,val_likelihood,val_ELBO = self.calculate_calibration(mode='val',task=self.train_config['task'])
+            total_cal_error_test,test_cal_dict ,predictions,test_likelihood,test_ELBO = self.calculate_calibration(mode='test',task=self.train_config['task'])
             result_dict =  {'results':{'loss': total_cal_error_val-val_loss_final['R2'],
                             'status': STATUS_OK,
                             'test_loss': total_cal_error_test-test_loss_final['R2'],
@@ -570,6 +564,7 @@ class job_object():
                             'val_ELBO': val_ELBO,
                             'test_ELBO': test_ELBO,
             }
+            print(result_dict)
             return result_dict
         else:
             val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
@@ -713,61 +708,52 @@ class job_object():
         del self.dataloader
         torch.cuda.empty_cache()
 
-    def calculate_ELBO(self,X,y):
-        y_pred, last_term, reg = self.model(X)
-        pred_loss = self.loss_func(y.squeeze(), y_pred, last_term)
-        total_loss = pred_loss*self.train_config['sigma_y'] + reg
+    def elbo_sample(self, y_samples, y_true, KL):
+        pred_loss = (y_samples-y_true)**2
+        total_loss = pred_loss*self.train_config['sigma_y'] + KL
         return total_loss
 
-    def calculate_likelihood(self,mode='val',samples=10):
+    def calculate_calibration(self,mode='val',task='regression',samples=100):
         self.dataloader.dataset.set_mode(mode)
         _loglikelihood_estimates = []
         _elbo_estimates = []
         tensor_s = torch.tensor(samples).float()
+        all_samples = []
+        Y = []
         with torch.no_grad():
-            for iteration, (X, y) in enumerate(self.dataloader):
-                _elbo = []
-                for i in range(samples):
-                    X=X.to(self.device)
-                    y=y.to(self.device)
-                    ELBO = self.calculate_ELBO(X,y)
-                    _elbo.append(ELBO)
-                _elbo_estimates.append(ELBO)
-                likelihood_est = torch.stack(_elbo,dim=0)
-                _loglikelihood_estimates.append(torch.logsumexp(likelihood_est,dim=0).cpu() - torch.log(tensor_s))
-            _elbo_estimates = torch.stack(_elbo_estimates, dim=0)
-            _loglikelihood_estimates = torch.stack(_loglikelihood_estimates, dim=0)
-        loglikelihood_estimate = _loglikelihood_estimates.mean()
-        ELBO_mean = _elbo_estimates.mean()
-        return loglikelihood_estimate,ELBO_mean
-
-    def calculate_calibration(self,mode='val',task='regression',samples=100):
-        self.dataloader.dataset.set_mode(mode)
-        with torch.no_grad():
-            all_samples = []
-            Y = []
             for i, (X, y) in enumerate(self.dataloader):
                 if self.train_config['cuda']:
                     X = X.to(self.train_config['device'])
+                    y=y.to(self.device)
                 _y_preds=[]
+                _elbo = []
                 for j in range(samples):
-                    _y_pred_sample = self.model.sample(X)
+                    _y_pred_sample,KL = self.model.sample(X)
+                    ELBO = self.elbo_sample(y_samples=_y_pred_sample, y_true=y, KL=KL)
+                    _elbo.append(ELBO)
                     if self.normalize_Y:
-                        _y_pred_sample,y = self.inverse_transform(_y_pred_sample,y)
+                        _y_pred_sample,y_copy = self.inverse_transform(_y_pred_sample,y)
                     else:
                         _y_pred_sample = _y_pred_sample.cpu().numpy()
-                        y = y.squeeze()
+                        y_copy = y.cpu().numpy()
                     if not task=='regression':
                         _y_pred_sample = torch.sigmoid(_y_pred_sample)
                     _y_preds.append(_y_pred_sample)
-                Y.append(y)
+                Y.append(y_copy)
+                _elbo_estimates.append(ELBO)
+                likelihood_est = torch.stack(_elbo, dim=1)
+                _loglikelihood_estimates.append(torch.logsumexp(likelihood_est, dim=1).cpu() - torch.log(tensor_s))
                 y_sample = np.stack(_y_preds,axis=1)
                 all_samples.append(y_sample)
+            _elbo_estimates = torch.cat(_elbo_estimates, dim=0)
+            _loglikelihood_estimates = torch.cat(_loglikelihood_estimates, dim=0)
+            loglikelihood_estimate = _loglikelihood_estimates.mean()
+            ELBO_mean = _elbo_estimates.mean()
             Y_preds = np.concatenate(all_samples,axis=0)
             df = para_summary(Y_preds)
             df['y_true'] = np.concatenate(Y,axis=0)
             total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.dataset.X)
-            return total_cal_error,cal_dict ,predictions
+            return total_cal_error,cal_dict ,predictions,loglikelihood_estimate.item(),ELBO_mean.item()
 
     def __call__(self, parameters):
         # for i in range(2):
@@ -884,7 +870,9 @@ class job_object():
         E_test_loss = model_dict['test_loss']
         print(f'Expected val loss: {E_val_loss}')
         print(f'Expected test loss: {E_test_loss}')
+        self.init(model_dict['parameters'])
         self.model.load_state_dict(model_dict['model_state_dict'],strict=False)
+        self.model = self.model.to(self.device)
 
     def extract_training_params(self,parameters):
         training_params = {}

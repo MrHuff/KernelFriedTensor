@@ -17,7 +17,20 @@ class variational_TT_component(TT_component):
         self.register_buffer('mu_prior',torch.tensor(mu_prior))
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
     def calculate_KL(self,mean,sig):
-        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).sum(dim=1).mean().squeeze()
+        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).mean().squeeze()
+        return KL
+
+    def calculate_KL_likelihood(self,mean,sig):
+        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).squeeze()
+        return KL
+
+    def get_KL(self,indices):
+        if self.full_grad or not self.dual:
+            KL = self.calculate_KL_likelihood(self.core_param, self.variance_parameters)
+        else:
+            mean = self.core_param.permute(self.permutation_list)[indices]
+            sig = self.variance_parameters.permute(self.permutation_list)[indices]
+            KL = self.calculate_KL_likelihood(mean, sig)
         return KL
 
     def sample(self,indices):
@@ -90,9 +103,20 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         self.register_buffer('sigma_prior', torch.tensor(sigma_prior))
 
     def calculate_KL(self,mean,sig):
-        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).sum(dim=1).mean().squeeze()
+        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).mean().squeeze()
+        return KL
+    def calculate_KL_likelihood(self,mean,sig):
+        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).squeeze()
         return KL
 
+    def get_KL(self,indices):
+        if self.full_grad or not self.dual:
+            KL = self.calculate_KL_likelihood(self.core_param, self.variance_parameters)
+        else:
+            mean = self.core_param.permute(self.permutation_list)[indices]
+            sig = self.variance_parameters.permute(self.permutation_list)[indices]
+            KL = self.calculate_KL_likelihood(mean, sig)
+        return KL
 
     def apply_square_kernel(self,T):
         for key, val in self.n_dict.items():
@@ -393,6 +417,9 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 det = self.fast_log_det(B)
         return det.squeeze()
 
+    def get_KL(self,indices=[]):
+        return self.calculate_KL()
+
     def calculate_KL(self):
         tr_term = 1.
         T = self.ones*self.mu_prior - self.core_param
@@ -417,7 +444,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
     def get_L(self,key):
         D = getattr(self, f'D_{key}')
         B = getattr(self, f'B_{key}')
-        L = torch.tril(B @ B.t()) + D
+        L = torch.triu(B @ B.t()) + D
         return L
 
     def build_cov(self,key):

@@ -30,20 +30,19 @@ def generate_job_params(directory='job_dir/'):
     reg_para_a = [1e-2]*len(PATH)
     reg_para_b = [100]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [20,6,5]
+    max_R = [30,6,5]
     architecture = [0,0,0] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
     special_mode = [0]*len(PATH)
     split_mode = [0]*len(PATH)
-    latent_scale = [False]*len(PATH)
+    latent_scale = [True]*len(PATH)
     old_setup = [False]*len(PATH)
     cuda = [True]*len(PATH)
     hyperits = [10,10,10]
-    epochs = [50]*len(PATH)
+    epochs = [20]*len(PATH)
     full_grad = [False]*len(PATH)
     dual = [True]*len(PATH)
-    bayesian = [True]*len(PATH)
     task = ['regression']*len(PATH)
     init_max = [1e0]*len(PATH)
     shape_permutation = [[0,1,2],[0,1,2],[0,1,2]] #Remove this swap this for dimension order
@@ -63,7 +62,8 @@ def generate_job_params(directory='job_dir/'):
     """
     BAYESIAN PARAMS
     """
-    multivariate = [False]*len(PATH)
+    bayesian = [True]*len(PATH)
+    multivariate = [True]*len(PATH)
     mu_a = [0.]*len(PATH)
     mu_b =[0.]*len(PATH)
     sigma_a = [-1]*len(PATH)
@@ -121,7 +121,7 @@ def generate_job_params(directory='job_dir/'):
     }
     counter = 0
 
-    for i,datasets in enumerate([0]):
+    for i,datasets in enumerate([1]):
         for key in base_dict.keys():
             if key in locals().keys():
                 base_dict[key]=locals()[key][datasets]
@@ -132,4 +132,4 @@ def generate_job_params(directory='job_dir/'):
             counter += 1
 
 if __name__ == '__main__':
-    generate_job_params(directory='alcohol_bayesian_dual_univariate/')
+    generate_job_params(directory='movielens_20_bayesian_dual_multivariate_LS/')
