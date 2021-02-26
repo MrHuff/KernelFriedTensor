@@ -424,7 +424,7 @@ class job_object():
             for key, items in self.model.ii.items():
                 core_dict[key] =  {'para': 'V_lr', 'call': self.model.turn_on_V}
             train_dict['V'] = core_dict
-            if self.train_config['dual']:
+            if self.train_config['dual'] and self.available_side_info_dims:
                 kernel_dict = {}
                 for key, items in self.model.ii.items():
                     if self.model.has_dual_kernel_component(key):
@@ -445,7 +445,7 @@ class job_object():
             core_dict = {}
             core_dict[0] = {'para': 'V_lr', 'call': self.model.turn_on_all_V}
             train_dict['V'] = core_dict
-            if self.train_config['dual']:
+            if self.train_config['dual'] and self.available_side_info_dims:
                 kernel_dict = {}
                 kernel_dict[0] = {'para': 'ls_lr', 'call': self.model.turn_on_all_kernels}
                 train_dict['kernel'] = kernel_dict
@@ -607,7 +607,7 @@ class job_object():
                     self.hyperparameter_space[f'mu_prior_prime_{i}'] = hp.uniform(f'mu_prior_prime_{i}', self.mu_a, self.mu_b)
                     self.hyperparameter_space[f'sigma_prior_prime_{i}'] = hp.uniform(f'sigma_prior_prime_{i}', self.sigma_a, self.sigma_b)
                 self.hyperparameter_space[f'mu_prior_{i}'] = hp.uniform(f'mu_prior_{i}', self.mu_a, self.mu_b)
-                if not self.multivariate or not i in self.available_side_info_dims:
+                if not self.multivariate:
                     self.hyperparameter_space[f'sigma_prior_{i}'] = hp.uniform(f'sigma_prior_{i}', self.sigma_a,
                                                                                self.sigma_b)
         else:
@@ -851,7 +851,7 @@ class job_object():
                     items['mu_prior_prime'] = parameters[f'mu_prior_prime_{key}']
                     items['sigma_prior_prime'] = parameters[f'sigma_prior_prime_{key}']
                 items['mu_prior'] = parameters[f'mu_prior_{key}']
-                if not self.multivariate or not key in self.available_side_info_dims:
+                if not self.multivariate:
                     items['sigma_prior'] = parameters[f'sigma_prior_{key}']
         return init_dict
 

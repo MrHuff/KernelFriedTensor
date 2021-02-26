@@ -311,6 +311,48 @@ class KFT_scale(torch.nn.Module):
             self.TT_cores_b[str(i)].cache_mode = True
             self.TT_cores[str(i)].cache_mode = True
 
+    def turn_on_all_V(self,placeholder=None):
+        self.turn_off_all()
+        for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_off()
+                self.TT_cores[str(i)].turn_on()
+            else:
+                self.TT_cores[str(i)].turn_on()
+            self.TT_cores[str(i)].cache_mode = False
+            if not self.old_setup:
+                self.TT_cores_s[str(i)].turn_off()
+                self.TT_cores_b[str(i)].turn_off()
+    def turn_on_all_prime(self,placeholder=None):
+        self.turn_off_all()
+        for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
+            if not self.old_setup:
+                if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                    self.TT_cores[str(i)].kernel_train_mode_off()
+                    self.TT_cores[str(i)].turn_off()
+                else:
+                    self.TT_cores[str(i)].turn_off()
+                self.TT_cores_s[str(i)].turn_on()
+                self.TT_cores_b[str(i)].turn_on()
+                self.TT_cores_s[str(i)].cache_mode = False
+                self.TT_cores_b[str(i)].cache_mode = False
+
+    def turn_on_all_kernels(self,placeholder=None):
+        self.turn_off_all()
+        for i, v in self.ii.items():
+            self.current_update_pointers.append(i)
+            if self.TT_cores[str(i)].__class__.__name__ in self.kernel_class_name:
+                self.TT_cores[str(i)].kernel_train_mode_on()
+                self.TT_cores[str(i)].turn_off()
+            else:
+                self.TT_cores[str(i)].turn_off()
+            if not self.old_setup:
+                self.TT_cores_s[str(i)].turn_off()
+                self.TT_cores_b[str(i)].turn_off()
+            self.TT_cores[str(i)].cache_mode = False
+
     def turn_on_V(self,i):
         self.turn_off_all()
         self.current_update_pointers.append(i)

@@ -284,6 +284,7 @@ class varitional_KFT_scale(KFT_scale):
         scale = []
         bias = []
         core = []
+        total_KL = 0
         for i, v in self.ii.items():
             ix = indices[:, v]
             tt = self.TT_cores[str(i)]
@@ -292,9 +293,13 @@ class varitional_KFT_scale(KFT_scale):
             V_s = tt_s.sample(ix)
             V_b = tt_b.sample(ix)
             base = tt.sample(ix)
+            KL = tt.get_KL(ix)
+            KL_s =tt_s.get_KL(ix)
+            KL_b =tt_b.get_KL(ix)
             scale.append(V_s)
             bias.append(V_b)
             core.append(base)
+            total_KL+= KL_s+KL_b+KL.abs()
 
         if self.full_grad:
             group_func = self.edge_mode_collate
@@ -308,12 +313,12 @@ class varitional_KFT_scale(KFT_scale):
             T = scale_forward*core_forward+bias_forward
             return T[torch.unbind(indices, dim=1)]
         else:
-            return scale_forward*core_forward+bias_forward
+            return scale_forward*core_forward+bias_forward,total_KL
 
     def sample(self,indices):
         indices = indices[:,self.shape_permutation]
-        T = self.collect_core_sample(indices)
-        return T
+        T,KL = self.collect_core_sample(indices)
+        return T,KL
 
     def collect_core_outputs(self, indices):
         scale = []
