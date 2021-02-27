@@ -181,6 +181,18 @@ if __name__ == '__main__':
                         hyperits_count=10,
                         epochs_count=15
                         )
+    generate_job_params(directory='movielens_20_bayesian_dual_multivariate_LS/',
+                         dataset_ind=1,
+                        bayesian_flag=True,
+                        mv_flag=True,
+                        LS_flag=True,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=15
+                        )
     generate_job_params(directory='movielens_20_bayesian_dual_univariate/',
                          dataset_ind=1,
                         bayesian_flag=True,

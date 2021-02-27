@@ -7,7 +7,7 @@ PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
-dataset = 0
+dataset = 1
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
 print(lags)
 #stuck on train loss for CCDs data Not converging for some reason wtf...
@@ -28,12 +28,12 @@ if __name__ == '__main__':
         'cuda': True,
         'max_R': 5,
         'max_lr': 1e-2,
-        'old_setup': True, #Doesnt seem to "train" properly when adding extra terms...
+        'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
         'latent_scale': False,
         'dual': True,
         'init_max': 1e0, #fixes regularization issues... Trick for succesfull VI
         'bayesian': True,
-        'multivariate': False,
+        'multivariate': True,
         'mu_a': 0,
         'mu_b': 0,
         'sigma_a': -1.01,
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         'split_mode': 0,
         'seed': 1,
         'temporal_tag': 2,
-        'delete_side_info': [0,1,2],#"[1,2],#[0],
+        'delete_side_info': None,#"[1,2],#[0],
         'special_mode': 0,
         'shape_permutation': [0,1,2],#[0,1],
         'full_grad': False,

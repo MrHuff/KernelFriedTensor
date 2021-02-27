@@ -607,7 +607,7 @@ class job_object():
                     self.hyperparameter_space[f'mu_prior_prime_{i}'] = hp.uniform(f'mu_prior_prime_{i}', self.mu_a, self.mu_b)
                     self.hyperparameter_space[f'sigma_prior_prime_{i}'] = hp.uniform(f'sigma_prior_prime_{i}', self.sigma_a, self.sigma_b)
                 self.hyperparameter_space[f'mu_prior_{i}'] = hp.uniform(f'mu_prior_{i}', self.mu_a, self.mu_b)
-                if not self.multivariate:
+                if not self.multivariate or not (i in self.available_side_info_dims):
                     self.hyperparameter_space[f'sigma_prior_{i}'] = hp.uniform(f'sigma_prior_{i}', self.sigma_a,
                                                                                self.sigma_b)
         else:
@@ -851,7 +851,7 @@ class job_object():
                     items['mu_prior_prime'] = parameters[f'mu_prior_prime_{key}']
                     items['sigma_prior_prime'] = parameters[f'sigma_prior_prime_{key}']
                 items['mu_prior'] = parameters[f'mu_prior_{key}']
-                if not self.multivariate:
+                if not self.multivariate or not (key in self.available_side_info_dims):
                     items['sigma_prior'] = parameters[f'sigma_prior_{key}']
         return init_dict
 
