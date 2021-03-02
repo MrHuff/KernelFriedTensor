@@ -186,15 +186,7 @@ class KFTR_temporal_regulizer(torch.nn.Module):
 
     def loss(self,x,y):
         return torch.mean((x-y)**2)
-
-    # def forward(self,time_component,index):
-    #     offset = index-self.base_ref
-    #     if offset<0:
-    #         return time_component.index_select(self.time_idx,index).squeeze()
-    #     else:
-    #         lags  = self.lag_tensor + offset
-    #         return (self.W*time_component.index_select(self.time_idx,lags)).sum(dim=self.time_idx)
-
+    
     def calculate_square_error(self,actual_component,predicted_component):
         return self.loss(actual_component,predicted_component)
 

@@ -72,7 +72,7 @@ def load_best_model(j_tmp,path):
     j_tmp.model.to(j_tmp.device)
 
 def access_tt_core_weights(j_tmp,i):
-    return j_tmp.model.TT_cores[str(i)].core_param
+    return j_tmp.model.TT_cores[str(i)].core_param,j_tmp.model.TT_cores_prime[str(i)].core_param
 
 if __name__ == '__main__':
     ##########FIX PRIMAL BUGGIE
@@ -95,23 +95,26 @@ if __name__ == '__main__':
     load_best_model(j_tmp,'WLR_primal_example')
     j_tmp.init_dataloader(0.01)
     j_tmp.dataloader.dataset.set_mode('test')
-    X = j_tmp.dataloader.dataset.X[1,:].unsqueeze(0)
-    print(X)
-    pred,index_specific_weights = j_tmp.model.forward_interpret(X)
     i=2
-    prime_weight = index_specific_weights[f'tt_prime_{i}'].squeeze().cpu().detach().numpy()
-    average_prime_weight = np.mean(prime_weight).item()
-    plt.hist(prime_weight,bins=10)
-    plt.title(f'Mean: {round(average_prime_weight,3)}')
-    plt.savefig('prime_weight_distribution.png')
-    plt.clf()
-    tt_weights = access_tt_core_weights(j_tmp,i)
+    tt_weights,tt_prime_weights= access_tt_core_weights(j_tmp,i)
     year_ind = 0
     year_weights_accross_latent = tt_weights[:,year_ind,:].squeeze().cpu().detach().numpy()
-    average_latent_effect = np.mean(year_weights_accross_latent).item()
-    plt.hist(year_weights_accross_latent,bins=10)
-    plt.title(f'Mean: {round(average_latent_effect,3)}')
+    print(year_weights_accross_latent.shape)
+    average_latent_effect = np.median(year_weights_accross_latent).item()
+    plt.bar(x=np.arange(1,year_weights_accross_latent.shape[0]+1),height=year_weights_accross_latent)
+    plt.title(f'Median weight: {round(average_latent_effect,3)}')
+    plt.xlabel("Latent weight index")
     plt.savefig('WLR_example_time_year.png')
+    plt.clf()
+    year_weights_accross_latent = tt_prime_weights[:, year_ind, :].squeeze().cpu().detach().numpy()
+    print(year_weights_accross_latent.shape)
+
+    average_latent_effect = np.median(year_weights_accross_latent).item()
+    plt.bar(x=np.arange(1,year_weights_accross_latent.shape[0]+1),height=year_weights_accross_latent)
+    plt.title(f'Median weight: {round(average_latent_effect, 3)}')
+    plt.xlabel("Latent weight index")
+
+    plt.savefig('WLR_example_time_year_prime.png')
     plt.clf()
 
     #LS EXAMPLE
@@ -121,27 +124,29 @@ if __name__ == '__main__':
     load_best_model(j_tmp, 'LS_primal_example')
     j_tmp.init_dataloader(0.01)
     j_tmp.dataloader.dataset.set_mode('test')
-    X = j_tmp.dataloader.dataset.X[1, :].unsqueeze(0)
+    X = j_tmp.dataloader.dataset.X[:5, :]
     print(X)
 
     i=2
     pred,index_specific_weights = j_tmp.model.forward_interpret(X)
-    tt_weights = access_tt_core_weights(j_tmp, i)
-    year_ind = 0
-    year_weights_accross_latent = tt_weights[:, year_ind, :].squeeze().cpu().detach().numpy()
-    average_latent_effect = np.mean(year_weights_accross_latent).item()
-    plt.hist(year_weights_accross_latent, bins=10)
-    plt.title(f'Mean: {round(average_latent_effect, 3)}')
-    plt.savefig('LS_example_time_year.png')
-    plt.clf()
+    # tt_weights = access_tt_core_weights(j_tmp, i)
+    # year_ind = 0
+    # year_weights_accross_latent = tt_weights[:, year_ind, :].squeeze().cpu().detach().numpy()
+    # average_latent_effect = np.mean(year_weights_accross_latent).item()
+    # plt.hist(year_weights_accross_latent, bins=10)
+    # plt.title(f'Mean: {round(average_latent_effect, 3)}')
+    # plt.savefig('LS_example_time_year.png')
+    # plt.clf()
 
-    s = index_specific_weights['s'].cpu().numpy().item()
-    r = index_specific_weights['r'].cpu().numpy().item()
-    b = index_specific_weights['b'].cpu().numpy().item()
+    s = index_specific_weights['s'].cpu().numpy()
+    r = index_specific_weights['r'].cpu().numpy()
+    b = index_specific_weights['b'].cpu().numpy()
 
-    data = [s,r,b]
-    dat = pd.DataFrame(data,columns=['S','V','B'])
+    data = np.stack([s,r,b,],axis=1)
+    dat = pd.DataFrame(data,columns=['$\Vb_s$','$\Vb$','$\Vb_b$'])
     dat.to_csv("LS_example.csv")
+    dat.to_latex("LS_example.tex",escape=False)
+
     #take one component for example... location. look at the auxiliary weights slice and the regression slice.
     #Effect of component and prime effect...
 

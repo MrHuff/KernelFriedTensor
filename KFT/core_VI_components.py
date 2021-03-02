@@ -4,9 +4,52 @@ tensorly.set_backend('pytorch')
 import gpytorch
 import math
 import timeit
-from KFT.core_components import TT_component,TT_kernel_component,lazy_mode_product,lazy_mode_hadamard,transpose_khatri_rao,edge_mode_product
+from KFT.core_components import TT_component,TT_kernel_component,lazy_mode_product,lazy_mode_hadamard,transpose_khatri_rao,KFTR_temporal_regulizer
 PI  = math.pi
 torch.set_printoptions(profile="full")
+
+
+class KFTR_temporal_regulizer_VI(KFTR_temporal_regulizer):
+    def __init__(self, r_1, n_list, r_2, time_idx, base_ref_int, lag_set_tensor, lambda_W, lambda_T_x):
+        super(KFTR_temporal_regulizer_VI, self).__init__(r_1, n_list, r_2, time_idx, base_ref_int, lag_set_tensor, lambda_W, lambda_T_x)
+
+    def calc_autoregressive_predictions(self,time_component):
+        x_data = time_component.index_select(self.time_idx+1,self.idx_extractor.flatten())
+        x_data = torch.stack(x_data.chunk(x_data.shape[self.time_idx+1]//self.lag_size,dim=self.time_idx+1),dim=self.time_idx+1)
+        x_data = (x_data*self.W).sum(dim=self.time_idx+2)
+        return x_data
+
+    def calc_autoregressive_predictions_square(self,time_component):
+        x_data = time_component.index_select(self.time_idx+1,self.idx_extractor.flatten())
+        x_data = torch.stack(x_data.chunk(x_data.shape[self.time_idx+1]//self.lag_size,dim=self.time_idx+1),dim=self.time_idx+1)
+        x_data = (x_data*self.W**2).sum(dim=self.time_idx+2)
+        return x_data
+
+    def calc_error(self,
+                   x_square_ref,
+                   x_ref,
+                   predictions_square,
+                   predictions_x_ref,
+                   predictions_x_ref_square_W
+                   ):
+        error = x_square_ref - 2.* x_ref * predictions_x_ref + predictions_square + predictions_x_ref**2-predictions_x_ref_square_W
+        return error
+
+    def calculate_KFTR_VI(self,x_square_term,x_term):
+        x_square_ref  =  x_square_term.index_select(self.time_idx+1,self.indices_iterate.squeeze())
+        x_ref  =  x_term.index_select(self.time_idx+1,self.indices_iterate.squeeze())
+        predictions_square = self.calc_autoregressive_predictions_square(x_square_term)
+        predictions_x_ref = self.calc_autoregressive_predictions(x_term)
+        predictions_x_ref_square_W = self.calc_autoregressive_predictions_square(x_term)
+        err = self.calc_error( x_square_ref,
+                   x_ref,
+                   predictions_square,
+                   predictions_x_ref,
+                   predictions_x_ref_square_W
+                         )
+        return err.mean()*self.lambda_T_x
+    def get_reg(self):
+        return self.lambda_W * torch.mean(self.W ** 2)
 
 class variational_TT_component(TT_component):
     def __init__(self, r_1, n_list, r_2, cuda=None, config=None, init_scale=1.0, old_setup=False, double_factor=False, sub_R=1, mu_prior=0, sigma_prior=-1):
@@ -16,6 +59,7 @@ class variational_TT_component(TT_component):
         self.train_group = ['mean','var']
         self.register_buffer('mu_prior',torch.tensor(mu_prior))
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
+
     def calculate_KL(self,mean,sig):
         KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).mean().squeeze()
         return KL

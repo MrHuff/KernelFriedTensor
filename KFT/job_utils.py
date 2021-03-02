@@ -1,5 +1,6 @@
 from KFT.KFT_VI import *
 from KFT.KFT_forecast import *
+from KFT.KFT_forecast_VI import *
 from torch.nn.modules.loss import _Loss
 import gc
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
@@ -590,7 +591,9 @@ class job_object():
                 else:
                     self.hyperparameter_space[f'kernel_{dim}_choice'] = hp.choice(f'kernel_{dim}_choice',self.kernels ) #self.kernels
                 self.hyperparameter_space[f'ARD_{dim}'] = hp.choice(f'ARD_{dim}', [True,False])
-
+        if self.forecast:
+            self.hyperparameter_space[f'lambda_W'] = hp.uniform(f'lambda_W', self.lambda_W_a, self.lambda_W_b)
+            self.hyperparameter_space[f'lambda_T_x'] = hp.uniform(f'lambda_T_x', self.lambda_T_x_a, self.lambda_T_x_b)
         if self.bayesian:
             self.hyperparameter_space['reg_para'] = hp.uniform('reg_para', self.reg_para_a, self.reg_para_b)
             for i in range(len(t_act)):
@@ -611,9 +614,6 @@ class job_object():
                     self.hyperparameter_space[f'sigma_prior_{i}'] = hp.uniform(f'sigma_prior_{i}', self.sigma_a,
                                                                                self.sigma_b)
         else:
-            if self.forecast:
-                self.hyperparameter_space[f'lambda_W'] = hp.uniform(f'lambda_W',self.lambda_W_a ,self.lambda_W_b )
-                self.hyperparameter_space[f'lambda_T_x'] = hp.uniform(f'lambda_T_x',self.lambda_T_x_a ,self.lambda_T_x_b )
             for i in range(len(t_act)):
                 self.hyperparameter_space[f'reg_para_{i}'] = hp.uniform(f'reg_para_{i}', self.reg_para_a, self.reg_para_b)
                 if self.latent_scale:
@@ -651,10 +651,21 @@ class job_object():
         self.tensor_component_configs['temporal_tag'] = self.temporal_tag
         if self.bayesian:
             if self.latent_scale:
-                self.model = varitional_KFT_scale(initialization_data=init_dict, shape_permutation=self.shape_permutation,
+                if self.forecast:
+                    self.model = KFT_forecast_VI_LS(initialization_data=init_dict, shape_permutation=self.shape_permutation,
+                                                  cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup
+                                                    , lambdas=lambdas,lags = self.lags, base_ref_int = self.base_ref_int)
+                else:
+                    self.model = varitional_KFT_scale(initialization_data=init_dict, shape_permutation=self.shape_permutation,
                                                   cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
             else:
-                self.model = variational_KFT(initialization_data=init_dict,shape_permutation=self.shape_permutation,
+                if self.forecast:
+                    self.model = KFT_forecast_VI(initialization_data=init_dict,shape_permutation=self.shape_permutation,
+                                             cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas,
+                                                 lags = self.lags, base_ref_int = self.base_ref_int
+                                                 )
+                else:
+                    self.model = variational_KFT(initialization_data=init_dict,shape_permutation=self.shape_permutation,
                                              cuda=self.device, config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
         else:
             if self.latent_scale:
@@ -802,9 +813,9 @@ class job_object():
                     reg_params[f'reg_para_prime_{i}'] = parameters[f'reg_para_prime_{i}']
                 else:
                     reg_params[f'reg_para_prime_{i}'] = 1.0
-            if self.forecast:
-                reg_params['lambda_W'] = parameters['lambda_W']
-                reg_params['lambda_T_x'] = parameters['lambda_T_x']
+        if self.forecast:
+            reg_params['lambda_W'] = parameters['lambda_W']
+            reg_params['lambda_T_x'] = parameters['lambda_T_x']
         return reg_params
 
     def construct_kernel_params(self,side_info_dims,parameters):

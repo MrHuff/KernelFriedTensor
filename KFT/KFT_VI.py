@@ -99,7 +99,6 @@ class variational_KFT(KFT):
             pred_outputs.append(pred)
         return pred_outputs
 
-    #TODO: prior hyper para/opt scheme
     def collect_core_outputs_old(self,indices):
         first_term = []
         second_term = []
