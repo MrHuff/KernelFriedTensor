@@ -276,6 +276,8 @@ class job_object():
                 else:
                     Y = Y.squeeze().cpu().numpy()
                     y_preds = y_preds.squeeze().cpu().numpy()
+                print('ypred', y_preds[0:5])
+                print('true y', Y[0:5])
                 MSE = self.calc_MSE(y_preds,Y)
                 NRMSE = self.calc_NRMSE(MSE,Y)
                 R2 = self.calc_R_2(MSE,Y)

@@ -43,7 +43,7 @@ class KFT_forecast(KFT):
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         preds_list,regularization = self.collect_core_outputs(indices)
-        if self.tt_core_temporal_idx in self.current_update_pointers :
+        if (self.tt_core_temporal_idx in self.current_update_pointers) and (not self.TT_cores[str(self.tt_core_temporal_idx)].kernel_eval_mode):
             temporal_reg = self.get_time_component()
             T_reg = self.KFTR.calculate_KFTR(temporal_reg) + self.KFTR.get_reg()
         else:
@@ -135,7 +135,7 @@ class KFT_forecast_LS(KFT_scale):
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         preds,regularization = self.collect_core_outputs(indices)
-        if self.tt_core_temporal_idx in self.current_update_pointers :
+        if (self.tt_core_temporal_idx in self.current_update_pointers) and (not self.TT_cores[str(self.tt_core_temporal_idx)].kernel_eval_mode):
             temporal_reg,temporal_reg_s,temporal_reg_b = self.get_time_component()
             T_reg = self.KFTR.calculate_KFTR(temporal_reg) + self.KFTR.get_reg()
             T_reg_s = self.KFTR_s.calculate_KFTR(temporal_reg_s) + self.KFTR_s.get_reg()

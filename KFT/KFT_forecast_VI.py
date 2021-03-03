@@ -68,12 +68,13 @@ class KFT_forecast_VI(variational_KFT):
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         middle,last_term, total_KL = self.collect_core_outputs(indices)
-        if self.tt_core_temporal_idx in self.current_update_pointers :
+        if (self.tt_core_temporal_idx in self.current_update_pointers) and (not self.TT_cores[str(self.tt_core_temporal_idx)].kernel_eval_mode):
             x_square_term,x_term = self.get_time_component()
             T_reg = self.KFTR.calculate_KFTR_VI(x_square_term,x_term) + self.KFTR.get_reg()
         else:
             T_reg = 0.
-
+        print('KL',total_KL)
+        print('T_reg',T_reg)
         return middle,last_term,total_KL+T_reg
 
 class KFT_forecast_VI_LS(varitional_KFT_scale):
@@ -178,7 +179,7 @@ class KFT_forecast_VI_LS(varitional_KFT_scale):
     def forward(self,indices):
         indices = indices[:,self.shape_permutation]
         middle,last_term, total_KL = self.collect_core_outputs(indices)
-        if self.tt_core_temporal_idx in self.current_update_pointers :
+        if (self.tt_core_temporal_idx in self.current_update_pointers) and (not self.TT_cores[str(self.tt_core_temporal_idx)].kernel_eval_mode):
             x_term,x_square_term, x_term_s,x_square_term_s,x_term_b,x_square_term_b  = self.get_time_component()
             T_reg = self.KFTR.calculate_KFTR_VI(x_square_term,x_term) + self.KFTR.get_reg()
             T_reg_s = self.KFTR_s.calculate_KFTR_VI(x_square_term_s,x_term_s) + self.KFTR_s.get_reg()
