@@ -85,8 +85,14 @@ class stableBCEwithlogits(_Loss):
         return torch.mean(self.f(x)-x*y)
 
 def analytical_reconstruction_error_VI(y,middle_term,last_term):
-    loss = torch.mean(y**2 -2*y*middle_term+last_term)
-    return loss
+    err = y**2-2*y*middle_term+last_term
+    # print('error', err[0:10])
+    # tmp_mid = y**2-2*y*middle_term
+    # print('mid_term', tmp_mid[0:10])
+    # print('last_term', last_term[0:10])
+
+
+    return torch.mean(err)
 
 def analytical_reconstruction_error_VI_sum(y,middle_term,last_term):
     loss = torch.sum(y**2 -2*y*middle_term+last_term)
@@ -151,6 +157,7 @@ def para_summary(df):
     dataframe = pd.DataFrame(data,columns=["mean", "std"]+ cal_string_list)
     p.close()
     return dataframe
+
 
 class job_object():
     def __init__(self, args):
@@ -276,8 +283,10 @@ class job_object():
                 else:
                     Y = Y.squeeze().cpu().numpy()
                     y_preds = y_preds.squeeze().cpu().numpy()
-                print('ypred', y_preds[0:5])
-                print('true y', Y[0:5])
+                print('ypred', y_preds[0:10])
+                print('true y', Y[0:10])
+                # print(f'variance ypred {y_preds.var()},Y variance {Y.var()}')
+
                 MSE = self.calc_MSE(y_preds,Y)
                 NRMSE = self.calc_NRMSE(MSE,Y)
                 R2 = self.calc_R_2(MSE,Y)
@@ -299,34 +308,7 @@ class job_object():
                     'AUC': auc_check(y_preds, Y),
                     'ACC': accuracy_check(y_preds, Y)
                 }
-
         return metrics
-
-    def train_monitor(self,total_loss, reg, pred_loss, y_pred, p,val_interval):
-        with torch.no_grad():
-            ERROR = False
-            if torch.isnan(total_loss) or torch.isinf(total_loss):
-                print('FOUND INF/NAN RIP, RESTARTING')
-                print(reg)
-                print(pred_loss)
-                print(y_pred.mean())
-                self.reset_()
-                ERROR = True
-            if (y_pred == 0).all():
-                self.reset_()
-            if p % val_interval== 0:
-                print(f'reg_term it {p}: {reg.data}')
-                print(f'train_loss it {p}: {pred_loss.data}')
-        return ERROR
-
-    def reset_(self):
-        fac = self.train_config['reset']
-        print(f'dead model_reinit factor: {fac}')
-        for n, param in self.model.named_parameters():
-            if 'core_param' in n:
-                param.normal_(0, self.train_config['reset'])
-        self.train_config['reset'] = self.train_config['reset'] * 1.1
-        self.train_config['V_lr'] = self.train_config['V_lr']/10
 
     def correct_validation_loss(self,X, y ):
         with torch.no_grad():
@@ -348,6 +330,9 @@ class job_object():
         if self.train_config['task'] == 'regression' and self.train_config['bayesian']:
             y_pred, last_term, reg = self.model(X)
             pred_loss = self.loss_func(y.squeeze(), y_pred, last_term)
+            # print(f'recon term: {pred_loss}')
+            # print(f'KL term: {reg}')
+
             total_loss = pred_loss*self.train_config['sigma_y'] + reg
         else:
             y_pred, reg = self.model(X)
@@ -391,7 +376,7 @@ class job_object():
                 self.dataloader.dataset.set_mode('train')
             total_pred_loss+=pred_loss.item()*X.shape[0]
         print(f'MEAN PRED LOSS EPOCH END: {total_pred_loss/self.dataloader.n}')
-
+        # self.print_model_params()
         return False, total_pred_loss/self.dataloader.n
 
     def outer_train_loop(self, train_dict):
@@ -471,12 +456,12 @@ class job_object():
         ERROR = False
         for i in range(self.train_config['epochs']):
             print(f'----------epoch: {i}')
-            if self.bayesian:
-                for train_mean in [True, False]:
-                    self.model.toggle(train_mean)
-                    ERROR = self.outer_train_loop( train_dict)
-            else:
-                ERROR = self.outer_train_loop( train_dict)
+            # if self.bayesian:
+            #     for train_mean in [True, False]:
+            #         self.model.toggle(train_mean)
+            #         ERROR = self.outer_train_loop( train_dict)
+            # else:
+            ERROR = self.outer_train_loop( train_dict)
             if ERROR == 'early_stop':
                 break
         return ERROR
@@ -941,3 +926,9 @@ class job_object():
 
 
 
+    def print_model_params(self):
+        for n,p in self.model.named_parameters():
+            print(n)
+            if 'core_param' in n:
+                print(p.shape)
+                print(p)

@@ -124,7 +124,9 @@ class variational_KFT(KFT):
 
     def collect_core_outputs(self,indices):
         first_term = []
-        second_term = []
+        second_term_a = []
+        second_term_b = []
+        second_term_c = []
         total_KL = 0
         for i, v in self.ii.items():
             ix = indices[:, v]
@@ -132,16 +134,20 @@ class variational_KFT(KFT):
             tt_prime = self.TT_cores_prime[str(i)]
             M_prime, sigma_prime, KL_prime = tt_prime(ix)
             base, extra, KL = tt(ix)
-            first_term.append(M_prime*base)
-            second_term.append((extra+base**2)*sigma_prime+(M_prime**2)*extra)
+            first_term.append(M_prime*base) #base preds
+            second_term_a.append(extra*sigma_prime)
+            second_term_b.append((M_prime**2)*extra)
+            second_term_c.append(base**2*sigma_prime)
             total_KL += KL.abs() + KL_prime
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
             group_func = self.bmm_collate
         middle = group_func(first_term)
-        gf = group_func(second_term)
-        last_term = middle**2 + gf
+        gf_a = group_func(second_term_a)
+        gf_b = group_func(second_term_b)
+        gf_c = group_func(second_term_c)
+        last_term = middle**2 + gf_a+gf_b+gf_c
         if self.full_grad:
             middle = middle[torch.unbind(indices, dim=1)]
             last_term = last_term[torch.unbind(indices, dim=1)]

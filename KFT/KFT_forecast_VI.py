@@ -40,7 +40,7 @@ class KFT_forecast_VI(variational_KFT):
                 basic_term = tt.core_param
             x_square_term = (tt_prime.core_param ** 2 + tt_prime.variance_parameters.exp()) * (
                         basic_term ** 2 + square_term_variance)
-            x_term = basic_term * tt_prime.variance_parameters.exp()
+            x_term = basic_term * tt_prime.core_param
 
         else:
             tt = self.TT_cores[str(self.tt_core_temporal_idx)]
@@ -73,8 +73,8 @@ class KFT_forecast_VI(variational_KFT):
             T_reg = self.KFTR.calculate_KFTR_VI(x_square_term,x_term) + self.KFTR.get_reg()
         else:
             T_reg = 0.
-        print('KL',total_KL)
-        print('T_reg',T_reg)
+        # print('KL',total_KL)
+        # print('T_reg',T_reg)
         return middle,last_term,total_KL+T_reg
 
 class KFT_forecast_VI_LS(varitional_KFT_scale):
