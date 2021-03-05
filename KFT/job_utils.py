@@ -456,12 +456,12 @@ class job_object():
         ERROR = False
         for i in range(self.train_config['epochs']):
             print(f'----------epoch: {i}')
-            # if self.bayesian:
-            #     for train_mean in [True, False]:
-            #         self.model.toggle(train_mean)
-            #         ERROR = self.outer_train_loop( train_dict)
-            # else:
-            ERROR = self.outer_train_loop( train_dict)
+            if self.bayesian:
+                for train_mean in [True, False]:
+                    self.model.toggle(train_mean)
+                    ERROR = self.outer_train_loop( train_dict)
+            else:
+                ERROR = self.outer_train_loop( train_dict)
             if ERROR == 'early_stop':
                 break
         return ERROR
@@ -503,23 +503,48 @@ class job_object():
             self.dataloader.dataset.append_pred_Y(y_preds,Y,Xs)
 
     def post_train_eval_special(self):
+        preds = np.concatenate(self.dataloader.dataset.pred_test_Y)
+        true_y = np.concatenate(self.dataloader.dataset.true_test_Y)
+        dif_abs = np.abs(preds - true_y)
+        mse = np.mean(dif_abs ** 2)
+        r_2 = 1 - mse / true_y.var()
+        NRMSE = mse ** 0.5 / (np.abs(true_y).mean())
+        ND = dif_abs.mean() / np.abs(true_y).mean()
+        val_loss_final = {'R2': r_2,
+                          'RMSE': mse ** 0.5,
+                          'MSE': mse,
+                          'NRMSE': NRMSE,
+                          'ND': ND,
+                          }
         if self.bayesian:
-            raise Exception
+            self.model.turn_on_all()
+            self.load_dumped_model(self.hyperits_i)
+            val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
+            test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
+            total_cal_error_val, val_cal_dict, _, val_likelihood, val_ELBO = self.calculate_calibration(mode='val',
+                                                                                                        task=
+                                                                                                        self.train_config[
+                                                                                                            'task'])
+            total_cal_error_test, test_cal_dict, predictions, test_likelihood, test_ELBO = self.calculate_calibration(
+                mode='test', task=self.train_config['task'])
+            result_dict = {'results': {'loss': total_cal_error_val - val_loss_final['R2'],
+                                       'status': STATUS_OK,
+                                       'test_loss': total_cal_error_test - test_loss_final['R2'],
+                                       'val_cal_dict': val_cal_dict,
+                                       'test_cal_dict': test_cal_dict,
+                                       'val_loss_final': val_loss_final,
+                                       'test_loss_final': test_loss_final,
+                                       'other_val': val_loss_final,
+                                       'other_test': test_loss_final},
+                           'predictions': predictions,
+                           'val_likelihood': val_likelihood,
+                           'test_likelihood': test_likelihood,
+                           'val_ELBO': val_ELBO,
+                           'test_ELBO': test_ELBO,
+                           'other_val': val_loss_final,
+                           'other_test': val_loss_final,
+                           }
         else:
-            preds = np.concatenate(self.dataloader.dataset.pred_test_Y)
-            true_y = np.concatenate(self.dataloader.dataset.true_test_Y)
-            dif_abs = np.abs(preds-true_y)
-            mse = np.mean(dif_abs**2)
-            r_2 = 1-mse/true_y.var()
-            NRMSE = mse**0.5/(np.abs(true_y).mean())
-            ND = dif_abs.mean()/np.abs(true_y).mean()
-            val_loss_final = {'R2':r_2,
-                              'RMSE': mse**0.5,
-                              'MSE': mse,
-                              'NRMSE': NRMSE,
-                              'ND':ND,
-                        }
-
             result_dict =  {
                 'loss': r_2,
                 'status': STATUS_OK,
@@ -527,7 +552,7 @@ class job_object():
                 'other_val': val_loss_final,
                 'other_test': val_loss_final,
                             }
-            return result_dict
+        return result_dict
 
     def post_train_eval(self):
         self.model.turn_on_all()
