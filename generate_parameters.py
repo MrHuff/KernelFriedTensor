@@ -4,7 +4,7 @@ import pickle
 
 def save_obj(obj, name ,folder):
     with open(f'{folder}'+ name + '.pkl', 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(obj, f, protocol=4)
 
 def load_obj(name,folder):
     with open(f'{folder}' + name, 'rb') as f:
@@ -42,7 +42,7 @@ def generate_job_params(
     reg_para_a = [1e-2]*len(PATH)
     reg_para_b = [100]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [30,6,5]
+    max_R = [30,6,15]
     architecture = [0,0,0] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
@@ -58,7 +58,7 @@ def generate_job_params(
     dual = [dual_flag]*len(PATH)
     task = ['regression']*len(PATH)
     init_max = [1e0]*len(PATH)
-    shape_permutation = [[0,1,2],[0,1,2],[0,1,2]] #Remove this swap this for dimension order
+    shape_permutation = [[0,1,2],[0,1,2],[0,2,1]] #Remove this swap this for dimension order
     patience = [100]*len(PATH)
     forecast = [False,False,False,True,False,True]
     lags = [[0],[0],[0]]
@@ -138,15 +138,16 @@ def generate_job_params(
         for key in base_dict.keys():
             if key in locals().keys():
                 base_dict[key]=locals()[key][datasets]
-        for seed in range(5):
+        for seed in range(3):
             base_dict['seed']=seed
             print(base_dict)
             save_obj(base_dict,f'job_{counter}',directory)
             counter += 1
 
 if __name__ == '__main__':
-    generate_job_params(directory='alchohol_bayesian_benchmark/',
-                         dataset_ind=0,
+
+    generate_job_params(directory='retail_benchmark_bayesian/',
+                         dataset_ind=2,
                         bayesian_flag=True,
                         mv_flag=False,
                         LS_flag=False,
@@ -154,66 +155,54 @@ if __name__ == '__main__':
                         old_flag=True,
                         core_flag=True,
                         del_list=[0,1,2],
-                        hyperits_count=10,
-                        epochs_count=25
-                        )
-    generate_job_params(directory='movielens_20_benchmark_bayesian/',
-                         dataset_ind=1,
-                        bayesian_flag=True,
-                        mv_flag=False,
-                        LS_flag=False,
-                        dual_flag=True,
-                        old_flag=True,
-                        core_flag=True,
-                        del_list=[1,2],
-                        hyperits_count=10,
+                        hyperits_count=5,
                         epochs_count=15
                         )
-    generate_job_params(directory='movielens_20_bayesian_dual_multivariate/',
-                         dataset_ind=1,
+    generate_job_params(directory='retail_20_bayesian_dual_multivariate/',
+                         dataset_ind=2,
                         bayesian_flag=True,
                         mv_flag=True,
                         LS_flag=False,
                         dual_flag=True,
                         old_flag=False,
-                        del_list=None,
+                        del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=10,
+                        hyperits_count=5,
                         epochs_count=15
                         )
-    generate_job_params(directory='movielens_20_bayesian_dual_multivariate_LS/',
-                         dataset_ind=1,
+    generate_job_params(directory='retail_20_bayesian_dual_multivariate_LS/',
+                         dataset_ind=2,
                         bayesian_flag=True,
                         mv_flag=True,
                         LS_flag=True,
                         dual_flag=True,
                         old_flag=False,
-                        del_list=None,
+                        del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=10,
+                        hyperits_count=5,
                         epochs_count=15
                         )
-    generate_job_params(directory='movielens_20_bayesian_dual_univariate/',
-                         dataset_ind=1,
+    generate_job_params(directory='retail_20_bayesian_dual_univariate/',
+                         dataset_ind=2,
                         bayesian_flag=True,
                         mv_flag=False,
                         LS_flag=False,
                         dual_flag=True,
                         old_flag=False,
-                        del_list=None,
+                        del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=10,
+                        hyperits_count=5,
                         epochs_count=15
                         )
-    generate_job_params(directory='movielens_20_bayesian_dual_univariate_LS/',
-                         dataset_ind=1,
+    generate_job_params(directory='retail_20_bayesian_dual_univariate_LS/',
+                         dataset_ind=2,
                         bayesian_flag=True,
                         mv_flag=False,
                         LS_flag=True,
                         dual_flag=True,
                         old_flag=False,
-                        del_list=None,
+                        del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=10,
+                        hyperits_count=5,
                         epochs_count=15
                         )

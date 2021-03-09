@@ -176,7 +176,7 @@ class KFTR_temporal_regulizer(torch.nn.Module):
         self.n_list[time_idx] = lag_set_tensor.shape[0]
         self.n_list.insert(time_idx,1)
         W_size = [r_1,*self.n_list,r_2]
-        self.W = torch.nn.Parameter( torch.randn(*W_size).float(),requires_grad=True)
+        self.W = torch.nn.Parameter( torch.ones(*W_size).float(),requires_grad=True)
         self.base_ref = base_ref_int
         self.lambda_W = lambda_W
         self.lambda_T_x = lambda_T_x
@@ -226,7 +226,7 @@ class TT_component(torch.nn.Module):
         if self.double_factor:
             self.core_param = sub_factorization(self.shape_list,R=sub_R,init_scale=init_scale)
         else:
-            self.core_param = torch.nn.Parameter(init_scale*torch.rand(*self.shape_list), requires_grad=True)
+            self.core_param = torch.nn.Parameter(init_scale*torch.randn(*self.shape_list), requires_grad=True)
 
         self.init_scale = init_scale
         for i, n in enumerate(n_list):

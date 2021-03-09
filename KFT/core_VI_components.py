@@ -61,7 +61,7 @@ class variational_TT_component(TT_component):
         self.register_buffer('sigma_prior',torch.tensor(sigma_prior))
 
     def calculate_KL(self,mean,sig):
-        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).mean().squeeze()
+        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).mean().squeeze()
         return KL
 
     def calculate_KL_likelihood(self,mean,sig):
@@ -147,7 +147,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
         self.register_buffer('sigma_prior', torch.tensor(sigma_prior))
 
     def calculate_KL(self,mean,sig):
-        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).mean().squeeze()
+        KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).mean().squeeze()
         return KL
     def calculate_KL_likelihood(self,mean,sig):
         KL = 0.5*( ((mean-self.mu_prior)**2+ sig.exp())/self.sigma_prior.exp()-1-(sig-self.sigma_prior)).flatten(1).sum(dim=1).squeeze()

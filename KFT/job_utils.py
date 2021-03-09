@@ -698,8 +698,9 @@ class job_object():
                 else:
                     self.model = KFT(initialization_data=init_dict, cuda=self.device,shape_permutation=self.shape_permutation,
                                      config=self.tensor_component_configs, old_setup=self.old_setup, lambdas=lambdas)
-        print(self.model)
-
+        for n,p in self.model.named_parameters():
+            print(n)
+            print(p.shape)
     def start_training(self,parameters):
         print(parameters)
         self.parameters = parameters
@@ -752,7 +753,7 @@ class job_object():
                 _elbo = []
                 for j in range(samples):
                     _y_pred_sample,KL = self.model.sample(X)
-                    ELBO = self.elbo_sample(y_samples=_y_pred_sample, y_true=y, KL=KL)
+                    ELBO = self.elbo_sample(y_samples=_y_pred_sample, y_true=y, KL=KL).cpu()
                     _elbo.append(ELBO)
                     if self.normalize_Y:
                         _y_pred_sample,y_copy = self.inverse_transform(_y_pred_sample,y)
