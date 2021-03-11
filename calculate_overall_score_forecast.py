@@ -1,4 +1,5 @@
 import pandas as pd
+import torch
 from generate_parameters import load_obj
 from KFT.job_utils import *
 from matplotlib import pyplot as plt
@@ -64,15 +65,6 @@ def forecast_plot_traffic(X, Y, preds, fold_idx):
         plt.savefig(f'traffic_forecast_{fold_idx}.png')
         plt.clf()
 
-
-
-
-
-
-
-
-
-
 if __name__ == '__main__':
     sort_on = 'RMSE'
     folds_nr = 5
@@ -96,9 +88,7 @@ if __name__ == '__main__':
         key_load = load_obj(file_name,f"{folder_2}/")
         j_tmp.save_path =  f'{folder}/{job_ind}'
         y_preds,Y,rmse,nrsme,ND,Xs = get_exact_preds(j_tmp,job_ind,sort_on,i)
-
         forecast_plot_traffic(Xs, Y, y_preds,i)
-
         Y_cat.append(Y)
         preds_cat.append(y_preds)
         df_metrics.append([rmse,nrsme,ND])

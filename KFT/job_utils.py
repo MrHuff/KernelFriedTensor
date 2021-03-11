@@ -2,10 +2,12 @@ from KFT.KFT_VI import *
 from KFT.KFT_forecast import *
 from KFT.KFT_forecast_VI import *
 from torch.nn.modules.loss import _Loss
+import torch
 import gc
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
 from KFT.util import *
 from sklearn import metrics
+from RAdam.radam import RAdam
 import time
 import numpy as np
 import multiprocessing as mp
@@ -427,7 +429,7 @@ class job_object():
 
             for values in train_dict.values():
                 for val in values.values():
-                    opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
+                    opt = RAdam(self.model.parameters(), lr=self.train_config[val['para']])
                     val['opt'] = opt
         else:
             core_dict = {}
@@ -445,10 +447,10 @@ class job_object():
 
             for values in train_dict.values():
                 for val in values.values():
-                    opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
+                    opt = RAdam(self.model.parameters(), lr=self.train_config[val['para']])
                     val['opt'] = opt
         if self.forecast:
-            self.forecast_opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config['V_lr'])
+            self.forecast_opt = RAdam(self.model.parameters(), lr=self.train_config['V_lr'])
         return train_dict
 
     def train_epoch_loop(self):
@@ -535,14 +537,11 @@ class job_object():
                                        'val_loss_final': val_loss_final,
                                        'test_loss_final': test_loss_final,
                                        'other_val': val_loss_final,
-                                       'other_test': test_loss_final},
+                                       'other_test': test_loss_final,
+                                       'val_likelihood': val_likelihood,
+                                       'test_likelihood': test_likelihood,
+                                       },
                            'predictions': predictions,
-                           'val_likelihood': val_likelihood,
-                           'test_likelihood': test_likelihood,
-                           'val_ELBO': val_ELBO,
-                           'test_ELBO': test_ELBO,
-                           'other_val': val_loss_final,
-                           'other_test': val_loss_final,
                            }
         else:
             result_dict =  {
@@ -570,12 +569,14 @@ class job_object():
                             'val_loss_final': val_loss_final,
                             'test_loss_final': test_loss_final,
                             'other_val':val_loss_final,
-                            'other_test':test_loss_final},
+                            'other_test':test_loss_final,
+                           'val_likelihood': val_likelihood,
+                           'test_likelihood': test_likelihood,
+                           'val_ELBO': val_ELBO,
+                           'test_ELBO': test_ELBO,
+                                       },
                             'predictions': predictions,
-                            'val_likelihood':val_likelihood,
-                            'test_likelihood':test_likelihood,
-                            'val_ELBO': val_ELBO,
-                            'test_ELBO': test_ELBO,
+
             }
             print(result_dict)
             return result_dict
