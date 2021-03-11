@@ -7,7 +7,7 @@ PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
-dataset = 2
+dataset = 1
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
 print(lags)
 #stuck on train loss for CCDs data Not converging for some reason wtf...
@@ -15,25 +15,25 @@ if __name__ == '__main__': #forecasts tends to converge to constant value for so
     warnings.simplefilter("ignore") #memory issues for some reason as well. Likelihood???
     base_dict = {
         'PATH': PATH[dataset],
-        'reg_para_a':0., #for VI dont screw this up #Seems that it becomes overregularized in the bayesian case... But what's causing it?!
-        'reg_para_b': 0, #regularization sets all params to 0? Does not work, figure out why...
+        'reg_para_a':100., #for VI dont screw this up #Seems that it becomes overregularized in the bayesian case... But what's causing it?!
+        'reg_para_b': 101, #regularization sets all params to 0? Does not work, figure out why...
         'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
         'batch_size_b': 1e-2*1.1,#1.1e-2,
         'hyperits': 1,
         'save_path': 'test_run',
-        'architecture': 1,
+        'architecture': 0,
         'task': 'regression',
         'epochs': 20,
         'data_path': PATH[dataset]+'all_data.pt',
         'cuda': True,
-        'max_R': 20, #24 is about max 10gig memory
+        'max_R': 15, #24 is about max 10gig memory
         'max_lr': 1e-2,
         'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
         'latent_scale': False,
         'dual': True,
         'init_max': 1e-1, #fixes regularization issues... Trick for succesfull VI
-        'bayesian': False,
-        'multivariate': False,
+        'bayesian': True,
+        'multivariate': True,
         'mu_a': 0,
         'mu_b': 0,
         'sigma_a': -1,
@@ -41,7 +41,7 @@ if __name__ == '__main__': #forecasts tends to converge to constant value for so
         'split_mode': 0,
         'seed': 1,
         'temporal_tag': 0 if dataset in [3,5] else 2,
-        'delete_side_info': [0,1],#"[1,2],#[0],
+        'delete_side_info': None,#"[1,2],#[0],
         'special_mode': 0,
         'shape_permutation': [0,1] if dataset in [3,5] else [0,1,2],#[0,1],
         'full_grad': False,

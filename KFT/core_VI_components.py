@@ -232,17 +232,7 @@ class univariate_variational_kernel_TT(TT_kernel_component):
 
     def mean_forward(self,indices):
         """Do tensor ops"""
-        T = self.core_param
-        for key, val in self.n_dict.items():
-            if val is not None:
-                if self.kernel_eval_mode:
-                    tmp_kernel_func = getattr(self, f'kernel_{key}')
-                    val = tmp_kernel_func(getattr(self, f'kernel_data_{key}'))
-                if not self.RFF_dict[key]:
-                    T = lazy_mode_product(T, val, key)
-                else:
-                    T = lazy_mode_product(T, val.t(), key)
-                    T = lazy_mode_product(T, val, key)
+        T = self.apply_kernels(self.core_param)
         if self.full_grad:
             return T
         else:

@@ -1,7 +1,7 @@
 import warnings
 from KFT.util import job_parser_preloaded
 from KFT.job_utils import run_job_func
-from generate_parameters import load_obj
+from generate_parameters_bayesian import load_obj
 import os
 
 if __name__ == '__main__':

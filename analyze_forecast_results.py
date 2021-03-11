@@ -1,5 +1,5 @@
 import pandas as pd
-from generate_parameters import load_obj
+from generate_parameters_bayesian import load_obj
 import os
 import pickle
 pd.set_option('display.max_rows', 500)

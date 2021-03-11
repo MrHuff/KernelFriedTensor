@@ -1,4 +1,4 @@
-from generate_parameters import *
+from generate_parameters_bayesian import *
 
 
 def generate_job_params(directory='job_dir/',hyperits=5,LS=False,dual=False,mv=False,bayesian=False,forecast=False,normalize=False,seperate_train=False):

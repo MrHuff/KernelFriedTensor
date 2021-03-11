@@ -2,7 +2,7 @@ import pandas as pd
 import torch
 import pickle
 from calculate_overall_score_forecast import *
-folder_2 = 'jobs_traffic_baysian_WLR'
+folder_2 = 'jobs_traffic_baysian_WLR_2'
 folder = f'{folder_2}_results'
 i = 6
 job_ind = f'job_{i}'
@@ -20,6 +20,7 @@ def get_exact_preds(j_tmp,job_ind,best_ind,i):
         all_samples = []
         Y = []
         all_X = []
+        # mean_preds = []
         for i, (X, y) in enumerate(j_tmp.dataloader):
             if j_tmp.train_config['cuda']:
                 X = X.to(j_tmp.device)
@@ -39,10 +40,12 @@ def get_exact_preds(j_tmp,job_ind,best_ind,i):
             Y.append(y_copy)
             y_sample = np.stack(_y_preds, axis=1)
             all_samples.append(y_sample)
+            # mean_preds.append(j_tmp.dataloader.dataset.transformer.inverse_transform(j_tmp.model.mean_forward(X).cpu().numpy()))
     Y_preds = np.concatenate(all_samples, axis=0)
     Y_true =  np.concatenate(Y,axis=0)
     X_all = np.concatenate(all_X,axis=0)
-    return X_all,Y_preds,Y_true
+    # mean = np.concatenate(mean_preds,axis=0)
+    return X_all,Y_preds,Y_true#,mean
 
 
 if __name__ == '__main__':
@@ -53,9 +56,9 @@ if __name__ == '__main__':
     j_tmp = job_object(key_init)
     j_tmp.save_path = f'{folder}/{job_ind}'
     X,preds,y_t = get_exact_preds(j_tmp,job_ind,best_tid,i)
-    mean  = preds.mean(axis=1)
+    mean  = np.mean(preds,axis=1)
     std = preds.std(axis=1)
-    slice_indices = [0]
+    slice_indices = [100]
     mask = np.isin(X[:,1],slice_indices)
     y_true = y_t[mask]
     mean = mean[mask]

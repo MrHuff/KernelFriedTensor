@@ -21,7 +21,7 @@ def generate_job_params(
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=20
                         ):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -39,10 +39,10 @@ def generate_job_params(
     seed = [1337]*len(PATH)
     batch_size_a = [1e-3*8]*len(PATH)
     batch_size_b = [1e-2*1.2]*len(PATH)
-    reg_para_a = [1e-2]*len(PATH)
+    reg_para_a = [1]*len(PATH)
     reg_para_b = [100]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [30,6,15]
+    max_R = [30,15,15]
     architecture = [0,0,0] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
@@ -57,7 +57,7 @@ def generate_job_params(
     full_grad = [False]*len(PATH)
     dual = [dual_flag]*len(PATH)
     task = ['regression']*len(PATH)
-    init_max = [1e0]*len(PATH)
+    init_max = [1e-1]*len(PATH)
     shape_permutation = [[0,1,2],[0,1,2],[0,2,1]] #Remove this swap this for dimension order
     patience = [100]*len(PATH)
     forecast = [False,False,False,True,False,True]
@@ -104,8 +104,8 @@ def generate_job_params(
         'init_max':0,
         'multivariate':0,
         'mu_a':0,
-        'sigma_a':0,
-        'mu_b':0,
+        'sigma_a':-1,
+        'mu_b':0.5,
         'sigma_b':0,
         'split_mode':0,
         'seed':0,
@@ -138,14 +138,13 @@ def generate_job_params(
         for key in base_dict.keys():
             if key in locals().keys():
                 base_dict[key]=locals()[key][datasets]
-        for seed in range(3):
+        for seed in range(5):
             base_dict['seed']=seed
             print(base_dict)
             save_obj(base_dict,f'job_{counter}',directory)
             counter += 1
 
-if __name__ == '__main__':
-
+def generate_retail_param():
     generate_job_params(directory='retail_benchmark_bayesian/',
                          dataset_ind=2,
                         bayesian_flag=True,
@@ -156,7 +155,7 @@ if __name__ == '__main__':
                         core_flag=True,
                         del_list=[0,1,2],
                         hyperits_count=5,
-                        epochs_count=15
+                        epochs_count=20
                         )
     generate_job_params(directory='retail_20_bayesian_dual_multivariate/',
                          dataset_ind=2,
@@ -168,7 +167,7 @@ if __name__ == '__main__':
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=15
+                        epochs_count=20
                         )
     generate_job_params(directory='retail_20_bayesian_dual_multivariate_LS/',
                          dataset_ind=2,
@@ -180,7 +179,7 @@ if __name__ == '__main__':
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=15
+                        epochs_count=20
                         )
     generate_job_params(directory='retail_20_bayesian_dual_univariate/',
                          dataset_ind=2,
@@ -192,7 +191,7 @@ if __name__ == '__main__':
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=15
+                        epochs_count=20
                         )
     generate_job_params(directory='retail_20_bayesian_dual_univariate_LS/',
                          dataset_ind=2,
@@ -204,5 +203,136 @@ if __name__ == '__main__':
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=15
+                        epochs_count=20
                         )
+
+def generate_alcohol_param():
+    generate_job_params(directory='alcohol_benchmark_bayesian/',
+                         dataset_ind=0,
+                        bayesian_flag=True,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=True,
+                        old_flag=True,
+                        core_flag=True,
+                        del_list=[0,1,2],
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='alcohol_bayesian_dual_multivariate/',
+                        dataset_ind=0,
+                        bayesian_flag=True,
+                        mv_flag=True,
+                        LS_flag=False,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='alcohol_bayesian_dual_multivariate_LS/',
+                        dataset_ind=0,
+                        bayesian_flag=True,
+                        mv_flag=True,
+                        LS_flag=True,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='alcohol_bayesian_dual_univariate/',
+                        dataset_ind=0,
+                        bayesian_flag=True,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='alcohol_bayesian_dual_univariate_LS/',
+                        dataset_ind=0,
+                        bayesian_flag=True,
+                        mv_flag=False,
+                        LS_flag=True,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+
+
+
+def generate_movielens_params():
+    generate_job_params(directory='movielens_20_benchmark_bayesian/',
+                         dataset_ind=1,
+                        bayesian_flag=True,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=True,
+                        old_flag=True,
+                        core_flag=True,
+                        del_list=[0,1,2],
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='movielens_20_bayesian_dual_multivariate/',
+                         dataset_ind=1,
+                        bayesian_flag=True,
+                        mv_flag=True,
+                        LS_flag=False,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='movielens_20_bayesian_dual_multivariate_LS/',
+                         dataset_ind=1,
+                        bayesian_flag=True,
+                        mv_flag=True,
+                        LS_flag=True,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='movielens_20_bayesian_dual_univariate/',
+                         dataset_ind=1,
+                        bayesian_flag=True,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+    generate_job_params(directory='movielens_20_bayesian_dual_univariate_LS/',
+                         dataset_ind=1,
+                        bayesian_flag=True,
+                        mv_flag=False,
+                        LS_flag=True,
+                        dual_flag=True,
+                        old_flag=False,
+                        del_list=None,
+                        core_flag=True,
+                        hyperits_count=10,
+                        epochs_count=20
+                        )
+
+if __name__ == '__main__':
+    generate_retail_param()
+    generate_alcohol_param()
+    generate_movielens_params()

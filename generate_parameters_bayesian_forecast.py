@@ -1,4 +1,4 @@
-from generate_parameters import *
+from generate_parameters_bayesian import *
 
 
 def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=False,mv=False,bayesian=False,forecast=False,normalize=False,seperate_train=False,a=1.0,b=100):
@@ -33,8 +33,8 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
         'multivariate':mv,
         'mu_a':1e-2,
         'sigma_a':-1,
-        'mu_b':1.0,
-        'sigma_b':0,
+        'mu_b':0.5,
+        'sigma_b':0.5,
         'split_mode':0,
         'seed':0,
         'temporal_tag':0 if dataset in [0,2] else 2,
@@ -66,8 +66,8 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
         for lt in [1e-2]:
         # for lt in [10.,100.,1000.,10000.]:
             for t in range(rang):
-                base_dict['lambda_T_x_a']=lt
-                base_dict['lambda_T_x_b']=lt*10
+                base_dict['lambda_T_x_a']=lt*0.5
+                base_dict['lambda_T_x_b']=lt*2
                 base_dict['lambda_W_a']=W
                 base_dict['lambda_W_b']=W*10
                 base_dict['temporal_folds']=[t]

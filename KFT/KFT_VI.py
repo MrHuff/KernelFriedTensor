@@ -1,6 +1,6 @@
 from KFT.KFT import *
 from KFT.core_VI_components import univariate_variational_kernel_TT,multivariate_variational_kernel_TT,variational_TT_component
-
+import torch
 class variational_KFT(KFT):
     def __init__(self,initialization_data,shape_permutation,cuda=None,config=None,old_setup=False,lambdas=None):
         super(variational_KFT, self).__init__(initialization_data=initialization_data,shape_permutation=shape_permutation, cuda=cuda, config=config, old_setup=old_setup,lambdas=lambdas)
@@ -207,7 +207,7 @@ class variational_KFT(KFT):
 
     def mean_forward(self,indices):
         indices = indices[:,self.shape_permutation]
-        if self.old:
+        if self.old_setup:
             preds_list = self.collect_core_outputs_mean_old(indices)
         else:
             preds_list = self.collect_core_outputs_mean(indices)

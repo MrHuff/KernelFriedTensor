@@ -1,6 +1,6 @@
 import pandas as pd
 import torch
-from generate_parameters import load_obj
+from generate_parameters_bayesian import load_obj
 from KFT.job_utils import *
 from matplotlib import pyplot as plt
 pd.set_option('display.max_rows', 500)
