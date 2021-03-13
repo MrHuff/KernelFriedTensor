@@ -890,7 +890,8 @@ class job_object():
                     }, f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
 
     def load_dumped_model(self,i):
-        model_dict = torch.load(f'{self.save_path}/{self.name}_model_hyperit={i}.pt')
+        print(self.device)
+        model_dict = torch.load(f'{self.save_path}/{self.name}_model_hyperit={i}.pt',map_location=self.device)
         E_val_loss = model_dict['val_loss']
         E_test_loss = model_dict['test_loss']
         print(f'Expected val loss: {E_val_loss}')

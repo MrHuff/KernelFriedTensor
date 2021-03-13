@@ -39,7 +39,7 @@ def generate_job_params(
     seed = [1337]*len(PATH)
     batch_size_a = [1e-3*8]*len(PATH)
     batch_size_b = [1e-2*1.2]*len(PATH)
-    reg_para_a = [1]*len(PATH)
+    reg_para_a = [10]*len(PATH)
     reg_para_b = [100]*len(PATH)
     max_lr = [1e-2]*len(PATH)
     max_R = [30,15,15]

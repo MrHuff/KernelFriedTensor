@@ -40,9 +40,9 @@ def generate_job_params(
     batch_size_a = [1e-3*8]*len(PATH)
     batch_size_b = [1e-2*1.2]*len(PATH)
     reg_para_a = [0]*len(PATH)
-    reg_para_b = [1e-2]*len(PATH)
+    reg_para_b = [0]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [75,25,20]
+    max_R = [75,25,40]
     architecture = [0,0,0] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
@@ -153,7 +153,7 @@ def generate_retail_param():
                         old_flag=True,
                         core_flag=True,
                         del_list=[0,1,2],
-                        hyperits_count=5,
+                        hyperits_count=10,
                         epochs_count=15
                         )
     generate_job_params(directory='retail_20_bayesian_dual/',
@@ -165,7 +165,7 @@ def generate_retail_param():
                         old_flag=False,
                         del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=5,
+                        hyperits_count=10,
                         epochs_count=15
                         )
     generate_job_params(directory='retail_20_bayesian_dual_LS/',
@@ -177,7 +177,7 @@ def generate_retail_param():
                         old_flag=False,
                         del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=5,
+                        hyperits_count=10,
                         epochs_count=15
                         )
     generate_job_params(directory='retail_20_bayesian_primal/',
@@ -189,7 +189,7 @@ def generate_retail_param():
                         old_flag=False,
                         del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=5,
+                        hyperits_count=10,
                         epochs_count=15
                         )
     generate_job_params(directory='retail_20_bayesian_primal_LS/',
@@ -201,7 +201,7 @@ def generate_retail_param():
                         old_flag=False,
                         del_list=[0,1],
                         core_flag=True,
-                        hyperits_count=5,
+                        hyperits_count=10,
                         epochs_count=15
                         )
 

@@ -11,12 +11,21 @@ def get_likelihood(j_tmp,best_ind):
         mode='test', task=j_tmp.train_config['task'])
     return test_ELBO,test_likelihood
 
+
+def find_p_file(path):
+    files = os.listdir(path)
+    for el in files:
+        if el[-2:]=='.p':
+            return el
+
 def save_likelihood_metrics(folder,folder_2,job_indices):
     if not os.path.exists(folder+'/all_results.csv'):
         trial_list = []
         columns = ['dataset','model','$\Xi_{0.05}$','$\Xi_{0.15}$','$\Xi_{0.25}$','$\Xi_{0.35}$','$\Xi_{0.45}$','$\Xi$','$R^2$','$\eta_{\text{criteria}}$','ELBO','log-likelihood']
         for job_ind in job_indices:
-            trials = pickle.load(open(folder + f'/job_{job_ind}/bayesian_{job_ind}.p', "rb"))
+            path_a = folder + f'/job_{job_ind}'
+            fname = find_p_file(path_a)
+            trials = pickle.load(open(folder + f'/job_{job_ind}/{fname}', "rb"))
             best_trial = sorted(trials.trials, key=lambda x: x['result']['test_loss'], reverse=False)[0]
             best_tid = best_trial['tid']
             key_init = load_obj(f'job_{job_ind}.pkl', f"{folder_2}/")
@@ -44,6 +53,7 @@ def save_likelihood_metrics(folder,folder_2,job_indices):
 if __name__ == '__main__':
     columns = ['dataset', 'model', '$\Xi_{0.05}$', '$\Xi_{0.15}$', '$\Xi_{0.25}$', '$\Xi_{0.35}$', '$\Xi_{0.45}$',
                '$\Xi$', '$R^2$', '$\eta_{\text{criteria}}$', 'ELBO', 'log-likelihood']
+    tex_final_name = 'retail_bayesian_results'
     folder_2_list = ['retail_benchmark_bayesian',
                      'retail_20_bayesian_dual_univariate_LS',
                      'retail_20_bayesian_dual_multivariate_LS',
@@ -55,7 +65,7 @@ if __name__ == '__main__':
     for folder_2 in folder_2_list:
         folder = f'{folder_2}_results'
         save_likelihood_metrics(folder,folder_2,job_indices)
-        if not os.path.exists(folder+'/all_results.tex'):
+        if os.path.exists(folder+'/all_results.csv'):
             df = pd.read_csv(folder+'/all_results.csv',index_col=0)
             summary = df.describe().transpose()
             tmp_df = summary[['mean','std']]
@@ -65,4 +75,4 @@ if __name__ == '__main__':
             tmp_df.insert(0,folder)
             summary_df_list.append(tmp_df)
     df = pd.DataFrame(summary_df_list,columns=columns)
-    df.to_latex('retail_bayesian_results.tex',escape=False,index=None)
+    df.to_latex(f'{tex_final_name}.tex',escape=False,index=None)

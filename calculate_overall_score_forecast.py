@@ -3,6 +3,14 @@ import torch
 from generate_parameters_bayesian import load_obj
 from KFT.job_utils import *
 from matplotlib import pyplot as plt
+font_size = 30
+plt.rcParams['font.size'] = font_size
+plt.rcParams['legend.fontsize'] = font_size
+plt.rcParams['axes.labelsize'] = font_size
+plt.rcParams['figure.figsize'] = 15, 7.5
+plt.rcParams['axes.titlesize'] = 35
+plt.rcParams['xtick.labelsize'] = 25
+plt.rcParams['ytick.labelsize'] = 25
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 25)
 # folder_2 = "jobs_CCDS_side_info_WLR_2"
@@ -31,7 +39,6 @@ def get_exact_preds(j_tmp,job_ind,sort_on,i):
     print(d)
     d = d.sort_values(sort_on)
     best_ind = d.index.values.astype(int)[0]
-    model_info = torch.load(f'{folder}/{job_ind}/frequentist_0_model_hyperit={best_ind + 1}.pt')
     j_tmp.load_dumped_model(best_ind + 1)
     j_tmp.model.turn_on_all()
     j_tmp.model.to(j_tmp.device)
@@ -46,10 +53,9 @@ def get_exact_preds(j_tmp,job_ind,sort_on,i):
 
 def forecast_plot_traffic(X, Y, preds, fold_idx):
     X_cpu = X.cpu().numpy()
-    Y_cpu = Y
     preds = preds
-    slice_indices= [0,1,2,3,4]
-    mask = np.isin(X_cpu[:,1],[0,1,2,3,4])
+    slice_indices= [0,1,100,236,45]
+    mask = np.isin(X_cpu[:,1],slice_indices)
     y_true = Y[mask]
     preds_ = preds[mask]
     x_subset = X_cpu[mask,:]
@@ -59,10 +65,12 @@ def forecast_plot_traffic(X, Y, preds, fold_idx):
         subset = df[df[1]==i]
         plt.plot(subset[0],subset[2],'-.',label='True values',color='b')
         plt.plot(subset[0],subset[3],'-',label='Forecasts',color='b')
+        plt.title(f'Series index {i}')
         plt.xlabel('Time index')
         plt.ylabel('Value')
         plt.legend()
-        plt.savefig(f'traffic_forecast_{fold_idx}.png')
+        plt.savefig(f'traffic_forecast_{fold_idx}_{i}.png',bbox_inches = 'tight',
+    pad_inches = 0.1)
         plt.clf()
 
 if __name__ == '__main__':
@@ -71,15 +79,9 @@ if __name__ == '__main__':
     df = pd.read_csv(f"analysis_{folder_2}.csv",index_col=0)
     Y_cat = []
     preds_cat = []
-
-    # Get the job dict
-    # init the job_object
-    # load val_df.csv
-    # sort on appropriate thing to get index ND or NRSME
-    # move to cuda and no grad.
-    # Also get the dataloader
-    # Add forecast plots roflmao
     key_init = load_obj('job_0.pkl', f"{folder_2}/")
+    devices = GPUtil.getAvailable(order='memory', limit=1)
+    print(key_init)
     j_tmp = job_object(key_init)
     df_metrics = []
     X = []
