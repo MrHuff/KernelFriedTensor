@@ -21,7 +21,12 @@ def generate_job_params(
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=20
+                        epochs_count=20,
+                        input_lr=1e-2,
+                        R_max = 10,
+                        a=1,
+                        b=10,
+                        init=1e-1
                         ):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -39,11 +44,13 @@ def generate_job_params(
     seed = [1337]*len(PATH)
     batch_size_a = [1e-3*8]*len(PATH)
     batch_size_b = [1e-2*1.2]*len(PATH)
-    reg_para_a = [10]*len(PATH)
-    reg_para_b = [100]*len(PATH)
-    max_lr = [1e-2]*len(PATH)
-    max_R = [30,15,15]
-    architecture = [0,0,0] #[0,0,1]
+    # reg_para_a = [1e-2,10,1]
+    # reg_para_b = [10,100,1e5]
+    reg_para_a = [a]*len(PATH)
+    reg_para_b = [b]*len(PATH)
+    max_lr = [input_lr]*len(PATH)
+    max_R = [R_max]*len(PATH)
+    architecture = [0,0,1] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
     delete_side_info[dataset_ind]=del_list
@@ -57,8 +64,8 @@ def generate_job_params(
     full_grad = [False]*len(PATH)
     dual = [dual_flag]*len(PATH)
     task = ['regression']*len(PATH)
-    init_max = [1e-1]*len(PATH)
-    shape_permutation = [[0,1,2],[0,1,2],[0,2,1]] #Remove this swap this for dimension order
+    init_max = [init]*len(PATH)
+    shape_permutation = [[0,1,2],[0,1,2],[0,1,2]] #Remove this swap this for dimension order
     patience = [100]*len(PATH)
     forecast = [False,False,False,True,False,True]
     lags = [[0],[0],[0]]
@@ -133,12 +140,11 @@ def generate_job_params(
 
     }
     counter = 0
-
     for i,datasets in enumerate([dataset_ind]):
         for key in base_dict.keys():
             if key in locals().keys():
                 base_dict[key]=locals()[key][datasets]
-        for seed in range(5):
+        for seed in range(3):
             base_dict['seed']=seed
             print(base_dict)
             save_obj(base_dict,f'job_{counter}',directory)
@@ -152,10 +158,13 @@ def generate_retail_param():
                         LS_flag=False,
                         dual_flag=True,
                         old_flag=True,
-                        core_flag=True,
+                        core_flag=False,
                         del_list=[0,1,2],
                         hyperits_count=5,
-                        epochs_count=20
+                        epochs_count=10,
+                        R_max=10,
+                        a=1,
+                        b=100
                         )
     generate_job_params(directory='retail_20_bayesian_dual_multivariate/',
                          dataset_ind=2,
@@ -167,7 +176,12 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=20
+                        epochs_count=10,
+                        input_lr=1e-2,
+                        R_max=10,
+                        a=100,
+                        b=1e5
+
                         )
     generate_job_params(directory='retail_20_bayesian_dual_multivariate_LS/',
                          dataset_ind=2,
@@ -179,7 +193,11 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=20
+                        epochs_count=10,
+                        input_lr= 1e-2,
+                        R_max=5,
+                        a=1,
+                        b=100
                         )
     generate_job_params(directory='retail_20_bayesian_dual_univariate/',
                          dataset_ind=2,
@@ -191,7 +209,9 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=20
+                        epochs_count=10,
+                        a=100,
+                        b=1e5
                         )
     generate_job_params(directory='retail_20_bayesian_dual_univariate_LS/',
                          dataset_ind=2,
@@ -203,7 +223,10 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=20
+                        epochs_count=10,
+                        R_max=5,
+                        a = 1,
+                        b = 100
                         )
 
 def generate_alcohol_param():
@@ -214,10 +237,13 @@ def generate_alcohol_param():
                         LS_flag=False,
                         dual_flag=True,
                         old_flag=True,
-                        core_flag=True,
+                        core_flag=False,
                         del_list=[0,1,2],
                         hyperits_count=10,
-                        epochs_count=20
+                        epochs_count=20,
+                        R_max=30,
+                        a=1e-2,
+                        b=100
                         )
     generate_job_params(directory='alcohol_bayesian_dual_multivariate/',
                         dataset_ind=0,
@@ -229,7 +255,11 @@ def generate_alcohol_param():
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=20
+                        epochs_count=20,
+                        R_max=30,
+                        a = 1,
+                            b = 100,
+                        init=1e-2
                         )
     generate_job_params(directory='alcohol_bayesian_dual_multivariate_LS/',
                         dataset_ind=0,
@@ -241,8 +271,12 @@ def generate_alcohol_param():
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=20
-                        )
+                        epochs_count=20,
+                        R_max=30,
+                        a=1e-3,
+                        b=1,
+                        init = 1e-2
+    )
     generate_job_params(directory='alcohol_bayesian_dual_univariate/',
                         dataset_ind=0,
                         bayesian_flag=True,
@@ -253,7 +287,11 @@ def generate_alcohol_param():
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=20
+                        epochs_count=20,
+                        R_max=30,
+                        a=1e-2,
+                        b=100
+
                         )
     generate_job_params(directory='alcohol_bayesian_dual_univariate_LS/',
                         dataset_ind=0,
@@ -265,7 +303,11 @@ def generate_alcohol_param():
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=20
+                        epochs_count=20,
+                        R_max=30,
+                        a=1e-2,
+                        b=10
+
                         )
 
 
@@ -278,10 +320,14 @@ def generate_movielens_params():
                         LS_flag=False,
                         dual_flag=True,
                         old_flag=True,
-                        core_flag=True,
+                        core_flag=False,
                         del_list=[0,1,2],
-                        hyperits_count=10,
-                        epochs_count=20
+                        hyperits_count=5,
+                        epochs_count=15,
+                        R_max=15,
+                        a=1e-2,
+                        b=100
+
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_multivariate/',
                          dataset_ind=1,
@@ -292,8 +338,13 @@ def generate_movielens_params():
                         old_flag=False,
                         del_list=None,
                         core_flag=True,
-                        hyperits_count=10,
-                        epochs_count=20
+                        hyperits_count=5,
+                        epochs_count=15,
+                        R_max=15,
+                        a=10,
+                        b=100,
+                        init=1e-2
+
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_multivariate_LS/',
                          dataset_ind=1,
@@ -304,8 +355,13 @@ def generate_movielens_params():
                         old_flag=False,
                         del_list=None,
                         core_flag=True,
-                        hyperits_count=10,
-                        epochs_count=20
+                        hyperits_count=5,
+                        epochs_count=15,
+                        R_max = 15,
+                        a=1,
+                        b=100,
+                        init=1e-2
+
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_univariate/',
                          dataset_ind=1,
@@ -316,8 +372,12 @@ def generate_movielens_params():
                         old_flag=False,
                         del_list=None,
                         core_flag=True,
-                        hyperits_count=10,
-                        epochs_count=20
+                        hyperits_count=5,
+                        epochs_count=15,
+                        R_max=15,
+                        a=10,
+                        b=100,
+
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_univariate_LS/',
                          dataset_ind=1,
@@ -328,8 +388,12 @@ def generate_movielens_params():
                         old_flag=False,
                         del_list=None,
                         core_flag=True,
-                        hyperits_count=10,
-                        epochs_count=20
+                        hyperits_count=5,
+                        epochs_count=15,
+                        R_max=15,
+                        a=1e-2,
+                        b=100
+
                         )
 
 if __name__ == '__main__':

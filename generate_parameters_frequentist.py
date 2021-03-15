@@ -43,7 +43,7 @@ def generate_job_params(
     reg_para_b = [0]*len(PATH)
     max_lr = [1e-2]*len(PATH)
     max_R = [75,25,40]
-    architecture = [0,0,0] #[0,0,1]
+    architecture = [0,0,1] #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
     delete_side_info[dataset_ind]=del_list
@@ -156,7 +156,7 @@ def generate_retail_param():
                         hyperits_count=10,
                         epochs_count=15
                         )
-    generate_job_params(directory='retail_20_bayesian_dual/',
+    generate_job_params(directory='retail_20_dual_arch_1/',
                          dataset_ind=2,
                         bayesian_flag=False,
                         mv_flag=True,

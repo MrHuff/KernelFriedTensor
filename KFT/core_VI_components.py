@@ -398,7 +398,7 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 else:
                     prior_log_det = -(gpytorch.logdet(raw_cov+prior_eye*sig_p_2)) + torch.log(sig_p_2)*(RFF_dim_const)
             setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale * torch.tensor([1.]), requires_grad=True))
-            setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))
+            setattr(self, f'B_{key}', torch.nn.Parameter(self.init_scale*torch.randn(self.shape_list[key], R), requires_grad=True))
         else:
             R = int(round(20.*math.log(self.n_dict[key].shape[0])))
             self.register_buffer(f'reg_diag_cholesky_{key}',torch.eye(val.shape[0],device=self.device)*1e-3)
@@ -407,16 +407,20 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
                 prior_log_det = -gpytorch.logdet(mat)*(mat.shape[0])
             else:
                 prior_log_det = -gpytorch.logdet(mat)
-            setattr(self, f'D_{key}', torch.nn.Parameter(1e-3*torch.ones(mat.shape[0], 1), requires_grad=True))
+            setattr(self, f'D_{key}', torch.nn.Parameter(self.init_scale*torch.ones(mat.shape[0], 1), requires_grad=True))
             self.register_buffer(f'priors_inv_{key}', mat)
-            setattr(self, f'B_{key}', torch.nn.Parameter(1e-5*torch.randn(self.shape_list[key], R), requires_grad=True))
+            setattr(self, f'B_{key}', torch.nn.Parameter(self.init_scale*torch.randn(self.shape_list[key], R), requires_grad=True))
 
         self.noise_shape.append(R)
         self.register_buffer(f'prior_log_det_{key}',prior_log_det)
         self.register_buffer(f'n_const_{key}',torch.tensor(self.shape_list[key]).float())
 
     def fast_log_det(self,L):
-        return torch.log(torch.prod(L.diag())**2+1e-5)
+        if L.shape[0]>50:
+            return torch.log(torch.prod( torch.clamp(L.diag(),-1,1))**2+1e-3)
+        else:
+            return torch.log(torch.prod( torch.clamp(L.diag(),-2,2))**2+1e-3)
+
 
     def get_trace_term_KL(self,key):
         if self.RFF_dict[key]:
@@ -441,14 +445,15 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             dim_const = getattr(self, f'RFF_dim_const_{key}')
             input = cov+getattr(self,f'eye_{key}')*D
             if len(self.shape_list) > 3:
-                det = torch.logdet(input)*n + dim_const * torch.log(D)
+                det = torch.logdet(input)*n + dim_const * torch.log(D+1e-3)
             else:
-                det = torch.logdet(input) + dim_const * torch.log(D)
+                det = torch.logdet(input) + dim_const * torch.log(D+1e-3)
         else:
             if len(self.shape_list) > 3:
                 det = self.fast_log_det(B)*n
             else:
                 det = self.fast_log_det(B)
+        # print('det',det)
         return det.squeeze()
 
     def get_KL(self,indices=[]):
@@ -472,7 +477,12 @@ class multivariate_variational_kernel_TT(TT_kernel_component):
             else:
                 ref = lazy_mode_product(T,cov,key)
         log_term = log_term_1 - log_term_2
+        # middle_term = torch.sum(ref * T).clip(0,1e3)
         middle_term = torch.sum(ref * T)
+        # tr_term = tr_term.clip(0,1e3)
+        # print('log_term',log_term)
+        # print('middle_term',middle_term)
+        # print('tr_term',tr_term)
         return tr_term + middle_term + log_term
 
     def get_L(self,key):

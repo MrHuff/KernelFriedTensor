@@ -139,7 +139,7 @@ class variational_KFT(KFT):
             second_term_b.append((M_prime**2)*extra)
             second_term_c.append(base**2*sigma_prime)
             if (i in self.current_update_pointers):
-                total_KL = torch.relu(KL) + KL_prime
+                total_KL = KL + KL_prime
         if self.full_grad:
             group_func = self.edge_mode_collate
         else:
@@ -163,7 +163,7 @@ class variational_KFT(KFT):
             pred= tt.sample(ix)
             pred_outputs.append(pred)
             KL = tt.get_KL(ix)
-            total_KL += KL
+            total_KL += torch.clip(KL,0,1e6)
 
         return pred_outputs,total_KL
 
@@ -180,7 +180,7 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
             KL = tt.get_KL(ix)
             KL_prime =tt_prime.get_KL(ix)
-            total_KL += KL + KL_prime
+            total_KL += torch.clip(KL,0,1e6) + KL_prime
 
         return pred_outputs,total_KL
 
@@ -305,7 +305,7 @@ class varitional_KFT_scale(KFT_scale):
             scale.append(V_s)
             bias.append(V_b)
             core.append(base)
-            total_KL+= KL_s+KL_b+torch.relu(KL)
+            total_KL+= KL_s+KL_b+KL
 
         if self.full_grad:
             group_func = self.edge_mode_collate
@@ -348,7 +348,7 @@ class varitional_KFT_scale(KFT_scale):
             bias_var.append(var_b)
             core.append(base)
             core_var.append(extra)
-            total_KL+= KL_s+KL_b+torch.relu(KL)
+            total_KL+= KL_s+KL_b+KL
 
         if self.full_grad:
             group_func = self.edge_mode_collate

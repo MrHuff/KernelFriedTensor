@@ -7,7 +7,6 @@ import gc
 from hyperopt import hp,tpe,Trials,fmin,space_eval,STATUS_OK,STATUS_FAIL
 from KFT.util import *
 from sklearn import metrics
-from RAdam.radam import RAdam
 import time
 import numpy as np
 import multiprocessing as mp
@@ -429,7 +428,7 @@ class job_object():
 
             for values in train_dict.values():
                 for val in values.values():
-                    opt = RAdam(self.model.parameters(), lr=self.train_config[val['para']])
+                    opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
                     val['opt'] = opt
         else:
             core_dict = {}
@@ -447,10 +446,10 @@ class job_object():
 
             for values in train_dict.values():
                 for val in values.values():
-                    opt = RAdam(self.model.parameters(), lr=self.train_config[val['para']])
+                    opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config[val['para']])
                     val['opt'] = opt
         if self.forecast:
-            self.forecast_opt = RAdam(self.model.parameters(), lr=self.train_config['V_lr'])
+            self.forecast_opt = torch.optim.Adam(self.model.parameters(), lr=self.train_config['V_lr'])
         return train_dict
 
     def train_epoch_loop(self):
@@ -459,7 +458,7 @@ class job_object():
         for i in range(self.train_config['epochs']):
             print(f'----------epoch: {i}')
             if self.bayesian:
-                for train_mean in [True, False]:
+                for train_mean in [True,False]:
                     self.model.toggle(train_mean)
                     ERROR = self.outer_train_loop( train_dict)
             else:
@@ -734,7 +733,7 @@ class job_object():
         torch.cuda.empty_cache()
 
     def elbo_sample(self, y_samples, y_true, KL):
-        pred_loss = (y_samples-y_true)**2
+        pred_loss = (y_samples.squeeze()-y_true.squeeze())**2
         total_loss = pred_loss*self.train_config['sigma_y'] + KL
         return total_loss
 
@@ -905,7 +904,7 @@ class job_object():
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
         training_params['prime_lr'] = parameters['lr_2']
-        training_params['ls_lr'] = 1e-2
+        training_params['ls_lr'] =1e-2
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda

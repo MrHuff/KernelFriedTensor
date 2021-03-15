@@ -1,7 +1,9 @@
 from generate_parameters_bayesian import *
 
 
-def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=False,mv=False,bayesian=False,forecast=False,normalize=False,seperate_train=False,a=1.0,b=100):
+def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=False,
+                        mv=False,bayesian=False,forecast=False,normalize=False,
+                        seperate_train=False,a=1.0,b=100,max_R = 75):
     if not os.path.exists(directory):
         os.makedirs(directory)
     else:
@@ -20,16 +22,16 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
         'hyperits':hyperits,
         'architecture':0,
         'task':'regression',
-        'epochs':75,
+        'epochs':25,
         'bayesian':bayesian,
         'data_path':PATH[dataset]+'all_data.pt',
         'cuda':True,
-        'max_R':100,
+        'max_R':max_R,
         'max_lr':1e-2,
         'old_setup':False,
         'latent_scale':LS,
         'dual':dual,
-        'init_max':1e-1,
+        'init_max':1e-2,
         'multivariate':mv,
         'mu_a':1e-2,
         'sigma_a':-1,
@@ -51,7 +53,7 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
         'lambda_T_x_b': 1e-1,#625.1,
         'normalize_Y':normalize,
         'patience': 100,
-        'periods':7 if dataset in [0,2] else 3,
+        'periods':3,
         'period_size':24 if dataset in [0,2] else 15,
         'validation_per_epoch': 5,
         'validation_patience': 2,
@@ -60,15 +62,15 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
         'log_errors': False
     }
     counter = 0
-    rang = 7 if dataset in [0,2] else 5
+    rang = 3
     for W in [1e-2]:
     # for W in [0.0,0.1,1.0,2.0,5.0,10.]:
         for lt in [1e-2]:
         # for lt in [10.,100.,1000.,10000.]:
             for t in range(rang):
-                base_dict['lambda_T_x_a']=lt*0.5
-                base_dict['lambda_T_x_b']=lt*2
-                base_dict['lambda_W_a']=W
+                base_dict['lambda_T_x_a']=lt*1e-1
+                base_dict['lambda_T_x_b']=lt*10
+                base_dict['lambda_W_a']=W*1e-1
                 base_dict['lambda_W_b']=W*10
                 base_dict['temporal_folds']=[t]
                 print(base_dict)
@@ -85,12 +87,11 @@ if __name__ == '__main__':
                         seperate_train=True,a=1e6,b=2e6
                         )
 
-
     generate_job_params(dataset=1,directory='jobs_CCDS_baysian_WLR_3/',
                         hyperits=10, LS=False, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
-                        seperate_train=True,a=1e6,b=2e6
+                        seperate_train=True,a=1,b=1e4,max_R=100
                         )
     generate_job_params(dataset=1,directory='jobs_CCDS_baysian_LS_3/',
                         hyperits=10, LS=True, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
-                        seperate_train=True,a=1e6,b=2e6
+                        seperate_train=True,a=1e-2,b=1,max_R=100
                         )
