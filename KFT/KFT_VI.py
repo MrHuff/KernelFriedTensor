@@ -163,7 +163,7 @@ class variational_KFT(KFT):
             pred= tt.sample(ix)
             pred_outputs.append(pred)
             KL = tt.get_KL(ix)
-            total_KL += torch.clip(KL,0,1e6)
+            total_KL += KL
 
         return pred_outputs,total_KL
 
@@ -180,7 +180,7 @@ class variational_KFT(KFT):
             pred_outputs.append(pred*prime_pred)
             KL = tt.get_KL(ix)
             KL_prime =tt_prime.get_KL(ix)
-            total_KL += torch.clip(KL,0,1e6) + KL_prime
+            total_KL += KL + KL_prime
 
         return pred_outputs,total_KL
 
@@ -237,6 +237,8 @@ class varitional_KFT_scale(KFT_scale):
                                                               config=config,
                                                               mu_prior=v['mu_prior_s'],
                                                               sigma_prior=v['sigma_prior_s'],
+                                                          init_scale=v['init_scale'],
+
                                                           )
             tmp_dict_b[str(i)] = variational_TT_component(r_1=v['r_1_latent'],
                                                           n_list=v['prime_list'],
@@ -244,7 +246,8 @@ class varitional_KFT_scale(KFT_scale):
                                                           cuda=cuda,
                                                           config=config,
                                                           mu_prior=v['mu_prior_b'],
-                                                          sigma_prior=v['sigma_prior_b']
+                                                          sigma_prior=v['sigma_prior_b'],
+                                                          init_scale=v['init_scale'],
 
                                                           )
             if v['has_side_info']:
@@ -256,7 +259,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                           kernel_para_dict=v['kernel_para'],
                                                                           cuda=cuda,
                                                                           config=config,
-                                                                          init_scale=1.0,
+                                                                          init_scale=v['init_scale'],
                                                                           mu_prior=v['mu_prior'],
 
                                                                           )
@@ -268,7 +271,7 @@ class varitional_KFT_scale(KFT_scale):
                                                                         kernel_para_dict=v['kernel_para'],
                                                                         cuda=cuda,
                                                                         config=config,
-                                                                        init_scale=1.0,
+                                                                        init_scale=v['init_scale'],
                                                                         mu_prior=v['mu_prior'],
                                                                         sigma_prior=v['sigma_prior']
                                                                         )
@@ -278,7 +281,7 @@ class varitional_KFT_scale(KFT_scale):
                                                             r_2=v['r_2'],
                                                             cuda=cuda,
                                                             config=config,
-                                                            init_scale=1.0,
+                                                            init_scale=v['init_scale'],
                                                             mu_prior=v['mu_prior'],
                                                             sigma_prior=v['sigma_prior']
                                                             )

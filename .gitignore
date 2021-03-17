@@ -2,6 +2,7 @@
 *.iml
 *.idea
 *.mat
+*.tex
 *.pt
 *.csv
 *.pyc

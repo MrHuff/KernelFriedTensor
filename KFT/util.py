@@ -13,17 +13,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns; sns.set()
 import GPUtil
 
-def plot_VI(save_path,idx_list,seed=None):
-    if seed is None:
-        try:
-            predictions = pd.read_hdf(save_path+f'VI_predictions.h5')
-        except:
-            predictions = pd.read_parquet(save_path+f'VI_predictions')
-    else:
-        try:
-            predictions = pd.read_hdf(save_path+f'VI_predictions_{seed}.h5')
-        except:
-            predictions = pd.read_parquet(save_path+f'VI_predictions_{seed}')
+def plot_VI(save_path,idx_list,seed):
+
+    try:
+        predictions = pd.read_hdf(save_path+f'VI_predictions_{seed}.h5')
+    except:
+        predictions = pd.read_parquet(save_path+f'VI_predictions_{seed}')
+    print(predictions.columns)
     df = predictions.groupby(idx_list).agg(['sum','count'])
     cal_list = [5,15,25,35,45]
     fig, ax = plt.subplots(1, len(cal_list)+1,figsize=(30,20),gridspec_kw={'width_ratios':[1,1,1,1,1,0.05]})

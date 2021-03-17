@@ -1,4 +1,14 @@
-from KFT.KFT_VI import *
+import os
+import GPUtil
+try:
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    # Get the first available GPU
+    DEVICE_ID_LIST = GPUtil.getAvailable(order='memory', limit=1)
+    DEVICE_ID = DEVICE_ID_LIST[0] # grab first element from list
+    # Set CUDA_VISIBLE_DEVICES to mask out all other GPUs than the first available device id
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(DEVICE_ID)
+except:
+    print('no gpu rip')
 from KFT.KFT_forecast import *
 from KFT.KFT_forecast_VI import *
 from torch.nn.modules.loss import _Loss
@@ -184,8 +194,9 @@ class job_object():
 
     def process_input(self,args):
         print(args)
-        devices = GPUtil.getAvailable(order='memory', limit=1)
-        device = devices[0]
+        # devices = GPUtil.getAvailable(order='memory', limit=1)
+        device = 0
+        print(f'USING GPU:{device}')
         torch.cuda.set_device(int(device))
         PATH = args['PATH']
         original_shape = list(pickle.load(open(PATH + 'full_tensor_shape.pickle', 'rb')))
@@ -219,7 +230,6 @@ class job_object():
         shape = [original_shape[el] for el in args['shape_permutation']]
         d_shape = [dual_shape[el] for el in args['shape_permutation']]
         args['kernels'] = ['matern_1', 'matern_2', 'matern_3', 'rbf']  # ['matern_1', 'matern_2', 'matern_3', 'rbf']
-        print(f'USING GPU:{device}')
         args['batch_size_a'] =  args['batch_size_a']
         args['batch_size_b'] =  args['batch_size_b']
         args['data_path'] = PATH + 'all_data.pt'
@@ -520,6 +530,8 @@ class job_object():
         if self.bayesian:
             self.model.turn_on_all()
             self.load_dumped_model(self.hyperits_i)
+            self.model.turn_on_all()
+
             val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
             test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
             total_cal_error_val, val_cal_dict, _, val_likelihood, val_ELBO = self.calculate_calibration(mode='val',
@@ -555,6 +567,7 @@ class job_object():
     def post_train_eval(self):
         self.model.turn_on_all()
         self.load_dumped_model(self.hyperits_i)
+        self.model.turn_on_all()
         if self.bayesian:
             val_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='val')
             test_loss_final = self.calculate_validation_metrics(task=self.train_config['task'], mode='test')
@@ -904,7 +917,7 @@ class job_object():
         training_params['task'] = self.task
         training_params['epochs'] = self.epochs
         training_params['prime_lr'] = parameters['lr_2']
-        training_params['ls_lr'] =1e-2
+        training_params['ls_lr'] =1e-3 if self.multivariate else 1e-2
         training_params['V_lr'] = parameters['lr_2']
         training_params['device'] = self.device
         training_params['cuda'] = self.cuda

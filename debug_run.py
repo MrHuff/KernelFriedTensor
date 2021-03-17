@@ -2,6 +2,9 @@
 import warnings
 from KFT.job_utils import run_job_func
 
+# devices = GPUtil.getAvailable(order='memory', limit=1)
+# device = devices[0]
+
 # PATH = ['public_data/' ,'public_movielens_data/' ,'tensor_data/' ,'CCDS_data/' ,'eletric_data/' ,'traffic_data/']
 PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t_fixed/'  ,'electric_data/' ,'CCDS_data/','traffic_data/','report_movielens_data_ml-1m/','report_movielens_data_ml-10m/']
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
@@ -15,32 +18,32 @@ if __name__ == '__main__': #forecasts tends to converge to constant value for so
     warnings.simplefilter("ignore") #memory issues for some reason as well. Likelihood???
     base_dict = {
         'PATH': PATH[dataset],
-        'reg_para_a':100, #for VI dont screw this up #Seems that it becomes overregularized in the bayesian case... But what's causing it?!
-        'reg_para_b': 1e4, #regularization sets all params to 0? Does not work, figure out why...
+        'reg_para_a':1e6, #for VI dont screw this up #Seems that it becomes overregularized in the bayesian case... But what's causing it?!
+        'reg_para_b': 1e7+1, #regularization sets all params to 0? Does not work, figure out why...
         'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
         'batch_size_b': 1e-2*1.1,#1.1e-2,
         'hyperits': 1,
         'save_path': 'test_run',
         'architecture': 0,
         'task': 'regression',
-        'epochs': 20,
+        'epochs': 5,
         'data_path': PATH[dataset]+'all_data.pt',
         'cuda': True,
-        'max_R': 15, #24 is about max 10gig memory
+        'max_R': 20, #24 is about max 10gig memory
         'max_lr': 1e-2,
         'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
         'latent_scale': False,
         'dual': True,
         'init_max': 1e-1, #fixes regularization issues... Trick for succesfull VI
         'bayesian': True,
-        'multivariate': False,
-        'mu_a': 0,
-        'mu_b': 0,
-        'sigma_a': -1,
+        'multivariate': True,
+        'mu_a': 0.0,
+        'mu_b': 0.1,
+        'sigma_a': -2,
         'sigma_b': 0,
         'split_mode': 0,
         'seed': 1,
-        'temporal_tag': None if dataset in [3,5,6,7] else 2,
+        'temporal_tag': 0 if dataset in [3,5,6,7] else 2,
         'delete_side_info':None,#"[1,2],#[0],
         'special_mode': 0,
         'shape_permutation': [0,1] if dataset in [3,5,6,7] else [0,1,2],#[0,1],
@@ -51,10 +54,10 @@ if __name__ == '__main__': #forecasts tends to converge to constant value for so
         'forecast':False,
         'lags':lags,
         'base_ref_int':lags[-1]+1,
-        'lambda_W_a':1.0,
-        'lambda_W_b':1.1, #might need to adjust this. CCDS requires higher lambda reg...
-        'lambda_T_x_a':0.01,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
-        'lambda_T_x_b': 0.011,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
+        'lambda_W_a':1e-2,
+        'lambda_W_b':1e-1, #might need to adjust this. CCDS requires higher lambda reg...
+        'lambda_T_x_a':1e-2,#625., for none kernel approach  TRAFFIC: 100-625, CCDS: 500 - 1000
+        'lambda_T_x_b': 1e-1,#625.1, Try lower values actually for KFT! #Regularization term seems to blow up if "overtrained on entire set"
         'patience': 500,#100,
         'periods':5 if dataset in [4] else 7,#7, 1
         'period_size':15 if dataset==4 else 24,

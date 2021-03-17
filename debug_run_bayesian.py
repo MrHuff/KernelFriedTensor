@@ -7,7 +7,7 @@ PATH = ['public_data_t_fixed/' ,'public_movielens_data_t_fixed/' ,'tensor_data_t
 shape_permutation = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1],
                      [0, 1]]  # Remove this swap this for dimension order
 temporal_tag = [2, 2, 2, 0, 2, 0]  # First find the temporal dim mark it if not None
-dataset = 0
+dataset = 1
 lags = list(range(0, 25)) + list(range(7 * 24, 8 * 24)) if dataset in [3,5] else [i for i in range(12)]
 print(lags)
 #stuck on train loss for CCDs data Not converging for some reason wtf...
@@ -15,8 +15,8 @@ if __name__ == '__main__': #forecasts tends to converge to constant value for so
     warnings.simplefilter("ignore") #memory issues for some reason as well. Likelihood???
     base_dict = {
         'PATH': PATH[dataset],
-        'reg_para_a':1e-2, #for VI dont screw this up #Seems that it becomes overregularized in the bayesian case... But what's causing it?!
-        'reg_para_b': 1, #regularization sets all params to 0? Does not work, figure out why...
+        'reg_para_a':1e6, #for VI dont screw this up #Seems that it becomes overregularized in the bayesian case... But what's causing it?!
+        'reg_para_b': 1e6+1, #regularization sets all params to 0? Does not work, figure out why...
         'batch_size_a': 1e-3*8, #8e-3, #Batch size controls "iterations FYI, so might wanna keep this around 100 its"...
         'batch_size_b': 1e-2*1.1,#1.1e-2,
         'hyperits': 1,
@@ -31,7 +31,7 @@ if __name__ == '__main__': #forecasts tends to converge to constant value for so
         'old_setup': False, #Doesnt seem to "train" properly when adding extra terms...
         'latent_scale': False,
         'dual': True,
-        'init_max': 1e-2, #fixes regularization issues... Trick for succesfull VI
+        'init_max': 1e-1, #fixes regularization issues... Trick for succesfull VI
         'bayesian': True,
         'multivariate': True,
         'mu_a': 0,

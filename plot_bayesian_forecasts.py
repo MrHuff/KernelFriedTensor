@@ -2,9 +2,9 @@ import pandas as pd
 import torch
 import pickle
 from calculate_overall_score_forecast import *
-folder_2 = 'jobs_traffic_baysian_WLR_2'
+folder_2 = 'jobs_traffic_baysian_WLR_3'
 folder = f'{folder_2}_results'
-i = 6
+i = 2
 job_ind = f'job_{i}'
 
 
@@ -58,17 +58,21 @@ if __name__ == '__main__':
     X,preds,y_t = get_exact_preds(j_tmp,job_ind,best_tid,i)
     mean  = np.mean(preds,axis=1)
     std = preds.std(axis=1)
-    slice_indices = [100]
-    mask = np.isin(X[:,1],slice_indices)
-    y_true = y_t[mask]
-    mean = mean[mask]
-    std = std[mask]
-    x_subset = X[mask,:]
-    df = pd.DataFrame(np.concatenate([x_subset,y_true[:,np.newaxis],mean[:,np.newaxis],std[:,np.newaxis]],axis=1))
-    df = df.sort_values(by=[1, 0])
-
-    plt.plot(df[0], df[2], label='Ground truth')
-    plt.plot(df[0], df[3], label='Predictions')
-    plt.fill_between(df[0], df[3]-df[4], df[3]+df[4], color='b', alpha=0.1)
-    plt.savefig("bayesian_plot_test.png")
-    plt.clf()
+    slice_indices= [0,1,100,236,45]
+    for idx in slice_indices:
+        mask = np.isin(X[:,1], [idx])
+        y_true = y_t[mask]
+        mean_plot = mean[mask]
+        std_plot = std[mask]
+        x_subset = X[mask,:]
+        df = pd.DataFrame(np.concatenate([x_subset,y_true[:,np.newaxis],mean_plot[:,np.newaxis],std_plot[:,np.newaxis]],axis=1))
+        df = df.sort_values(by=[1, 0])
+        plt.plot(df[0], df[2], label='Ground truth')
+        plt.plot(df[0], df[3], label='Predictions')
+        plt.fill_between(df[0], df[3]-df[4], df[3]+df[4], color='b', alpha=0.1)
+        plt.title(f'Series index {idx}')
+        plt.xlabel('Time index')
+        plt.ylabel('Value')
+        plt.legend()
+        plt.savefig(f"bayesian_plot_traffic_{idx}.png")
+        plt.clf()

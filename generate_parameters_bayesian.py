@@ -26,7 +26,11 @@ def generate_job_params(
                         R_max = 10,
                         a=1,
                         b=10,
-                        init=1e-1
+                        init=1e-1,
+                        mu_alpha=0.0,
+                        mu_beta=0.5,
+                        sigma_alpha=-1,
+                        sigma_beta=0
                         ):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -44,8 +48,6 @@ def generate_job_params(
     seed = [1337]*len(PATH)
     batch_size_a = [1e-3*8]*len(PATH)
     batch_size_b = [1e-2*1.2]*len(PATH)
-    # reg_para_a = [1e-2,10,1]
-    # reg_para_b = [10,100,1e5]
     reg_para_a = [a]*len(PATH)
     reg_para_b = [b]*len(PATH)
     max_lr = [input_lr]*len(PATH)
@@ -84,10 +86,10 @@ def generate_job_params(
     """
     bayesian = [bayesian_flag]*len(PATH)
     multivariate = [mv_flag]*len(PATH)
-    mu_a = [0.]*len(PATH)
-    mu_b =[0.]*len(PATH)
-    sigma_a = [-1]*len(PATH)
-    sigma_b = [2]*len(PATH)
+    mu_a = [mu_alpha]*len(PATH)
+    mu_b =[mu_beta]*len(PATH)
+    sigma_a = [sigma_alpha]*len(PATH)
+    sigma_b = [sigma_beta]*len(PATH)
 
     base_dict={
         'PATH':0,
@@ -164,7 +166,8 @@ def generate_retail_param():
                         epochs_count=10,
                         R_max=10,
                         a=1,
-                        b=100
+                        b=1e6,
+
                         )
     generate_job_params(directory='retail_20_bayesian_dual_multivariate/',
                          dataset_ind=2,
@@ -180,7 +183,8 @@ def generate_retail_param():
                         input_lr=1e-2,
                         R_max=10,
                         a=100,
-                        b=1e5
+                        b=1e5,
+
 
                         )
     generate_job_params(directory='retail_20_bayesian_dual_multivariate_LS/',
@@ -197,7 +201,8 @@ def generate_retail_param():
                         input_lr= 1e-2,
                         R_max=5,
                         a=1,
-                        b=100
+                        b=100,
+
                         )
     generate_job_params(directory='retail_20_bayesian_dual_univariate/',
                          dataset_ind=2,
@@ -211,7 +216,8 @@ def generate_retail_param():
                         hyperits_count=5,
                         epochs_count=10,
                         a=100,
-                        b=1e5
+                        b=1e5,
+
                         )
     generate_job_params(directory='retail_20_bayesian_dual_univariate_LS/',
                          dataset_ind=2,
@@ -226,7 +232,8 @@ def generate_retail_param():
                         epochs_count=10,
                         R_max=5,
                         a = 1,
-                        b = 100
+                        b = 100,
+
                         )
 
 def generate_alcohol_param():
@@ -257,9 +264,9 @@ def generate_alcohol_param():
                         hyperits_count=10,
                         epochs_count=20,
                         R_max=30,
-                        a = 1,
-                            b = 100,
-                        init=1e-2
+                        a = 1000,
+                        b = 1e6,
+                        init=1e0
                         )
     generate_job_params(directory='alcohol_bayesian_dual_multivariate_LS/',
                         dataset_ind=0,
@@ -273,10 +280,11 @@ def generate_alcohol_param():
                         hyperits_count=10,
                         epochs_count=20,
                         R_max=30,
-                        a=1e-3,
-                        b=1,
-                        init = 1e-2
-    )
+                        a = 1000,
+                        b = 1e6,
+                        init=1e0
+
+                        )
     generate_job_params(directory='alcohol_bayesian_dual_univariate/',
                         dataset_ind=0,
                         bayesian_flag=True,
@@ -321,13 +329,16 @@ def generate_movielens_params():
                         dual_flag=True,
                         old_flag=True,
                         core_flag=False,
-                        del_list=[0,1,2],
+                        del_list=[1,2],
                         hyperits_count=5,
-                        epochs_count=15,
+                        epochs_count=25,
                         R_max=15,
-                        a=1e-2,
-                        b=100
-
+                        a=1,
+                        b=1e3,
+                        mu_alpha=0.0,
+                        mu_beta=0.5,
+                        sigma_alpha=-2,
+                        sigma_beta=0.0
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_multivariate/',
                          dataset_ind=1,
@@ -337,13 +348,16 @@ def generate_movielens_params():
                         dual_flag=True,
                         old_flag=False,
                         del_list=None,
-                        core_flag=True,
+                        core_flag=False,
                         hyperits_count=5,
-                        epochs_count=15,
+                        epochs_count=25,
                         R_max=15,
-                        a=10,
-                        b=100,
-                        init=1e-2
+                        a=1e6,
+                        b=1e7,
+                        mu_alpha=0.0,
+                        mu_beta=0.5,
+                        sigma_alpha=-2,
+                        sigma_beta=0.0
 
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_multivariate_LS/',
@@ -356,11 +370,14 @@ def generate_movielens_params():
                         del_list=None,
                         core_flag=True,
                         hyperits_count=5,
-                        epochs_count=15,
+                        epochs_count=25,
                         R_max = 15,
-                        a=1,
-                        b=100,
-                        init=1e-2
+                        a=1e3,
+                        b=2e6,
+                        mu_alpha=0.0,
+                        mu_beta=0.5,
+                        sigma_alpha=-2,
+                        sigma_beta=0.0
 
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_univariate/',
@@ -371,13 +388,16 @@ def generate_movielens_params():
                         dual_flag=True,
                         old_flag=False,
                         del_list=None,
-                        core_flag=True,
+                        core_flag=False,
                         hyperits_count=5,
-                        epochs_count=15,
+                        epochs_count=25,
                         R_max=15,
-                        a=10,
-                        b=100,
-
+                        a=1e6,
+                        b=1e7,
+                        mu_alpha=0.0,
+                        mu_beta=0.5,
+                        sigma_alpha=-2,
+                        sigma_beta=0.0
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_univariate_LS/',
                          dataset_ind=1,
@@ -391,9 +411,12 @@ def generate_movielens_params():
                         hyperits_count=5,
                         epochs_count=15,
                         R_max=15,
-                        a=1e-2,
-                        b=100
-
+                        a=1e3,
+                        b=2e6,
+                        mu_alpha=0.0,
+                        mu_beta=0.5,
+                        sigma_alpha=-2,
+                        sigma_beta=0.0
                         )
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@ from generate_parameters_bayesian import *
 
 def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=False,
                         mv=False,bayesian=False,forecast=False,normalize=False,
-                        seperate_train=False,a=1.0,b=100,max_R = 75):
+                        seperate_train=False,a=1.0,b=100,max_R = 75,init_val=1e-1):
     if not os.path.exists(directory):
         os.makedirs(directory)
     else:
@@ -31,7 +31,7 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
         'old_setup':False,
         'latent_scale':LS,
         'dual':dual,
-        'init_max':1e-2,
+        'init_max':init_val,
         'multivariate':mv,
         'mu_a':1e-2,
         'sigma_a':-1,
@@ -79,19 +79,19 @@ def generate_job_params(dataset=2,directory='job_dir/',hyperits=5,LS=False,dual=
 
 if __name__ == '__main__':
     generate_job_params(dataset=2,directory='jobs_traffic_baysian_WLR_3/',
-                        hyperits=10, LS=False, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
-                        seperate_train=True,a=1e6,b=2e6
+                        hyperits=5, LS=False, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
+                        seperate_train=True,a=1e6,b=2e6,init_val=1e-2
                         )
     generate_job_params(dataset=2,directory='jobs_traffic_baysian_LS_3/',
-                        hyperits=10, LS=True, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
-                        seperate_train=True,a=1e6,b=2e6
+                        hyperits=5, LS=True, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
+                        seperate_train=True,a=1e6,b=2e6,init_val=1e-2
                         )
 
     generate_job_params(dataset=1,directory='jobs_CCDS_baysian_WLR_3/',
                         hyperits=10, LS=False, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
-                        seperate_train=True,a=1,b=1e4,max_R=100
+                        seperate_train=True,a=1,b=1e6,max_R=100,init_val=1e-1
                         )
     generate_job_params(dataset=1,directory='jobs_CCDS_baysian_LS_3/',
                         hyperits=10, LS=True, dual=True, mv=False, bayesian=True, forecast=True, normalize=True,
-                        seperate_train=True,a=1e-2,b=1,max_R=100
+                        seperate_train=True,a=1,b=100,max_R=100,init_val=1e-1
                         )

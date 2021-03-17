@@ -11,27 +11,33 @@ def get_likelihood(j_tmp,best_ind):
         mode='test', task=j_tmp.train_config['task'])
     return test_ELBO,test_likelihood
 
-
 def find_p_file(path):
+    print(path)
     files = os.listdir(path)
     for el in files:
         if el[-2:]=='.p':
-            return el
+            return el,int(el.split('_')[-1].split('.')[0])
 
 def save_likelihood_metrics(folder,folder_2,job_indices):
+    columns = ['dataset', 'model', '$\Xi_{0.05}$', '$\Xi_{0.15}$', '$\Xi_{0.25}$', '$\Xi_{0.35}$', '$\Xi_{0.45}$',
+               '$\Xi$', '$R^2$', '$\eta_{\text{criteria}}$', 'ELBO', 'log-likelihood']
     if not os.path.exists(folder+'/all_results.csv'):
         trial_list = []
-        columns = ['dataset','model','$\Xi_{0.05}$','$\Xi_{0.15}$','$\Xi_{0.25}$','$\Xi_{0.35}$','$\Xi_{0.45}$','$\Xi$','$R^2$','$\eta_{\text{criteria}}$','ELBO','log-likelihood']
         for job_ind in job_indices:
             path_a = folder + f'/job_{job_ind}'
-            fname = find_p_file(path_a)
+            fname,j_seed = find_p_file(path_a)
             trials = pickle.load(open(folder + f'/job_{job_ind}/{fname}', "rb"))
             best_trial = sorted(trials.trials, key=lambda x: x['result']['test_loss'], reverse=False)[0]
             best_tid = best_trial['tid']
-            key_init = load_obj(f'job_{job_ind}.pkl', f"{folder_2}/")
+            key_init = load_obj(f'job_{j_seed}.pkl', f"{folder_2}/")
             j_tmp = job_object(key_init)
             j_tmp.save_path = f'{folder}/job_{job_ind}'
-            ELBO,likelihood = get_likelihood(j_tmp,best_tid)
+
+            if ('test_ELBO' in best_trial['result'].keys()) and ('test_likelihood' in best_trial['result'].keys()):
+                ELBO = best_trial['result']['test_ELBO']
+                likelihood = best_trial['result']['test_likelihood']
+            else:
+                ELBO,likelihood = get_likelihood(j_tmp,best_tid)
             best_trial['test_ELBO'] = ELBO
             best_trial['test_likelihood'] = likelihood
             trial_list.append([folder_2,folder_2,
@@ -53,12 +59,27 @@ def save_likelihood_metrics(folder,folder_2,job_indices):
 if __name__ == '__main__':
     columns = ['dataset', 'model', '$\Xi_{0.05}$', '$\Xi_{0.15}$', '$\Xi_{0.25}$', '$\Xi_{0.35}$', '$\Xi_{0.45}$',
                '$\Xi$', '$R^2$', '$\eta_{\text{criteria}}$', 'ELBO', 'log-likelihood']
-    tex_final_name = 'retail_bayesian_results'
-    folder_2_list = ['retail_benchmark_bayesian',
-                     'retail_20_bayesian_dual_univariate_LS',
-                     'retail_20_bayesian_dual_multivariate_LS',
-                     'retail_20_bayesian_dual_multivariate',
-                     'retail_20_bayesian_dual_univariate',
+    # tex_final_name = 'retail_bayesian_results'
+    # folder_2_list = [
+    #                  'retail_20_bayesian_dual_univariate',
+    #                  'retail_20_bayesian_dual_multivariate',
+    #                  'retail_20_bayesian_dual_univariate_LS',
+    #                  'retail_20_bayesian_dual_multivariate_LS',
+    #                         'retail_benchmark_bayesian',
+    #                  ]
+
+    # tex_final_name = 'alcohol_bayesian_results'
+    # folder_2_list = [
+    #                 'alcohol_bayesian_dual_univariate'
+    #                 'alcohol_bayesian_dual_multivariate',
+    #                  'alcohol_bayesian_dual_univariate_LS',
+    #                  'alcohol_bayesian_dual_multivariate_LS',
+    #                  'alchohol_bayesian_benchmark',
+    #
+    # ]
+    tex_final_name = 'traffic_bayesian'
+    folder_2_list = [
+                     'jobs_traffic_baysian_WLR_3',
                      ]
     job_indices = [0, 1, 2]
     summary_df_list = []
