@@ -333,8 +333,8 @@ def generate_movielens_params():
                         hyperits_count=5,
                         epochs_count=25,
                         R_max=15,
-                        a=1,
-                        b=1e3,
+                        a=1e-2,
+                        b=1e-1,
                         mu_alpha=0.0,
                         mu_beta=0.5,
                         sigma_alpha=-2,
@@ -354,9 +354,9 @@ def generate_movielens_params():
                         R_max=15,
                         a=1e6,
                         b=1e7,
-                        mu_alpha=0.0,
-                        mu_beta=0.5,
-                        sigma_alpha=-2,
+                        mu_alpha=1e-2,
+                        mu_beta=0.1,
+                        sigma_alpha=-0.5,
                         sigma_beta=0.0
 
                         )
@@ -394,9 +394,9 @@ def generate_movielens_params():
                         R_max=15,
                         a=1e6,
                         b=1e7,
-                        mu_alpha=0.0,
-                        mu_beta=0.5,
-                        sigma_alpha=-2,
+                        mu_alpha=1e-2,
+                        mu_beta=0.1,
+                        sigma_alpha=-0.5,
                         sigma_beta=0.0
                         )
     generate_job_params(directory='movielens_20_bayesian_dual_univariate_LS/',

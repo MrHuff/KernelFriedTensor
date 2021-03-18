@@ -145,7 +145,7 @@ def para_func(df):
 def calculate_calibration_objective(predictions,indices):
     cal_list_error= []
     for i in range(indices.shape[1]):
-        predictions[f'idx_{i}'] = indices[:,i].numpy()
+        predictions[f'idx_{i}'] = indices[:,i]
     for cal in cal_list:
         predictions[f'calibrated_{cal}'] = (predictions['y_true'] > predictions[f'{cal}%']) & (predictions['y_true'] < predictions[f'{100-cal}%'])
         _cal_rate = predictions[f'calibrated_{cal}'].sum() / len(predictions)
@@ -551,6 +551,8 @@ class job_object():
                                        'other_test': test_loss_final,
                                        'val_likelihood': val_likelihood,
                                        'test_likelihood': test_likelihood,
+                                       'val_ELBO': val_ELBO,
+                                       'test_ELBO': test_ELBO,
                                        },
                            'predictions': predictions,
                            }
@@ -747,7 +749,7 @@ class job_object():
 
     def elbo_sample(self, y_samples, y_true, KL):
         pred_loss = (y_samples.squeeze()-y_true.squeeze())**2
-        total_loss = pred_loss*self.train_config['sigma_y'] + KL
+        total_loss = pred_loss + KL
         return total_loss
 
     def calculate_calibration(self,mode='val',task='regression',samples=100):
@@ -757,6 +759,7 @@ class job_object():
         tensor_s = torch.tensor(samples).float()
         all_samples = []
         Y = []
+        X_s = []
         with torch.no_grad():
             for i, (X, y) in enumerate(self.dataloader):
                 if self.train_config['cuda']:
@@ -782,6 +785,7 @@ class job_object():
                 _loglikelihood_estimates.append(torch.logsumexp(likelihood_est, dim=1).cpu() - torch.log(tensor_s))
                 y_sample = np.stack(_y_preds,axis=1)
                 all_samples.append(y_sample)
+                X_s.append(X.cpu().numpy())
             _elbo_estimates = torch.cat(_elbo_estimates, dim=0)
             _loglikelihood_estimates = torch.cat(_loglikelihood_estimates, dim=0)
             loglikelihood_estimate = _loglikelihood_estimates.mean()
@@ -789,7 +793,8 @@ class job_object():
             Y_preds = np.concatenate(all_samples,axis=0)
             df = para_summary(Y_preds)
             df['y_true'] = np.concatenate(Y,axis=0)
-            total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,self.dataloader.dataset.X)
+            input_X = np.concatenate(X_s,axis=0)
+            total_cal_error,cal_dict ,predictions  =  calculate_calibration_objective(df,input_X)
             return total_cal_error,cal_dict ,predictions,loglikelihood_estimate.item(),ELBO_mean.item()
 
     def __call__(self, parameters):

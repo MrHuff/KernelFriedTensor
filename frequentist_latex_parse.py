@@ -29,9 +29,9 @@ def parse_folder_frequentist(folder, folder_2, job_indices):
 
 if __name__ == '__main__':
     columns = ['dataset', 'model', '$R^2$', 'RSME', 'ND']
-    tex_final_name = 'alcohol_results'
+    tex_final_name = 'movielens_primal_old_setup_results'
     folder_2_list = [
-        'alcohol_benchmark'
+        'movielens_primal_old_setup'
                      ]
     job_indices = [0, 1, 2,3,4]
     summary_df_list = []

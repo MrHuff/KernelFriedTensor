@@ -21,7 +21,8 @@ def generate_job_params(
                         del_list=None,
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=15,
+                        arch = 0
                         ):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -40,10 +41,10 @@ def generate_job_params(
     batch_size_a = [1e-3*8]*len(PATH)
     batch_size_b = [1e-2*1.2]*len(PATH)
     reg_para_a = [0]*len(PATH)
-    reg_para_b = [0]*len(PATH)
+    reg_para_b = [1]*len(PATH)
     max_lr = [1e-2]*len(PATH)
-    max_R = [75,25,40]
-    architecture = [0,0,1] #[0,0,1]
+    max_R = [75,12,10]
+    architecture = [arch]*len(PATH) #[0,0,1]
     temporal_tag = [2,2,2] #First find the temporal dim mark it if not None
     delete_side_info = [None]*len(PATH) #Remove side info, i.e. set to no side info
     delete_side_info[dataset_ind]=del_list
@@ -154,7 +155,8 @@ def generate_retail_param():
                         core_flag=True,
                         del_list=[0,1,2],
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=15,
+                        arch=1
                         )
     generate_job_params(directory='retail_20_dual_arch_1/',
                          dataset_ind=2,
@@ -166,7 +168,9 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=15,
+                        arch=1
+
                         )
     generate_job_params(directory='retail_20_bayesian_dual_LS/',
                          dataset_ind=2,
@@ -178,7 +182,9 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=15,
+                        arch=1
+
                         )
     generate_job_params(directory='retail_20_bayesian_primal/',
                          dataset_ind=2,
@@ -190,7 +196,9 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=15,
+                        arch=1
+
                         )
     generate_job_params(directory='retail_20_bayesian_primal_LS/',
                          dataset_ind=2,
@@ -202,7 +210,23 @@ def generate_retail_param():
                         del_list=[0,1],
                         core_flag=True,
                         hyperits_count=10,
-                        epochs_count=15
+                        epochs_count=15,
+                        arch=1
+
+                        )
+
+    generate_job_params(directory='retail_old_setup_primal/',
+                         dataset_ind=2,
+                        bayesian_flag=False,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=False,
+                        old_flag=True,
+                        del_list=None,
+                        core_flag=False,
+                        hyperits_count=20,
+                        epochs_count=10,
+                        arch=0
                         )
 
 def generate_alcohol_param():
@@ -266,7 +290,18 @@ def generate_alcohol_param():
                         hyperits_count=10,
                         epochs_count=20
                         )
-
+    generate_job_params(directory='alcohol_old_setup_primal/',
+                        dataset_ind=0,
+                        bayesian_flag=False,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=False,
+                        old_flag=True,
+                        del_list=None,
+                        core_flag=False,
+                        hyperits_count=20,
+                        epochs_count=10
+                        )
 
 
 def generate_movielens_params():
@@ -331,6 +366,18 @@ def generate_movielens_params():
                         epochs_count=20
                         )
 
+    generate_job_params(directory='movielens_primal_old_setup/',
+                         dataset_ind=1,
+                        bayesian_flag=False,
+                        mv_flag=False,
+                        LS_flag=False,
+                        dual_flag=False,
+                        old_flag=True,
+                        del_list=None,
+                        core_flag=False,
+                        hyperits_count=20,
+                        epochs_count=10
+                        )
 
 if __name__ == '__main__':
     generate_retail_param()

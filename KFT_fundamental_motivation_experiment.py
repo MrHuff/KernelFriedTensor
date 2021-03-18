@@ -31,7 +31,7 @@ base_dict = {
     'dual': True,
     'init_max': 1e-1, #fixes regularization issues...
     'bayesian': False,
-    'multivariate': True,
+    'multivariate': False,
     'mu_a': 0,
     'mu_b': 0,
     'sigma_a': -1.01,
@@ -93,14 +93,14 @@ def mean_std(vec):
     x = np.arange(1,mean.shape[0]+1)
     return mean,ci_neg,ci_pos,x
 
-def plot_point(save_name,errors,title):
-    path = 'KFT_motivation'
+def plot_point(save_name,errors,title,path,mode):
+
     path_2 = 'KFT_motivation_old_setup'
     vec = load_and_concat(path,errors)
     # for el in vec:
     #     plt.plot(el,color='b')
     mean,ci_neg,ci_pos,x = mean_std(vec)
-    plt.plot(x,mean,label='KFT')
+    plt.plot(x,mean,label=f'{mode}')
     plt.fill_between(x,ci_neg,ci_pos,color='b',alpha=0.1)
     vec_2 = load_and_concat(path_2, errors)
     # for el in vec_2:c
@@ -124,13 +124,22 @@ if __name__ == '__main__':
         base_dict['save_path'] = 'KFT_motivation'
         base_dict['old_setup'] = False
         run_job_func(base_dict)
+    if not os.path.exists('KFT_motivation_LS'):
+        base_dict['save_path'] = 'KFT_motivation_LS'
+        base_dict['latent_scale']=True
+        base_dict['old_setup'] = False
+        run_job_func(base_dict)
     if not os.path.exists('KFT_motivation_old_setup'):
         base_dict['save_path'] = 'KFT_motivation_old_setup'
         base_dict['old_setup'] = True
         run_job_func(base_dict)
 
-    plot_point('train','train_errors','Training error')
-    plot_point('val','val_errors','Validation error')
-    plot_point('test','test_errors','Test error')
+    plot_point('train','train_errors','Training error',path = 'KFT_motivation',mode='KFT-WLR')
+    plot_point('val','val_errors','Validation error',path = 'KFT_motivation',mode='KFT-WLR')
+    plot_point('test','test_errors','Test error',path = 'KFT_motivation',mode='KFT-WLR')
+
+    plot_point('train_LS','train_errors','Training error',path = 'KFT_motivation_LS',mode='KFT-LS')
+    plot_point('val_LS','val_errors','Validation error',path = 'KFT_motivation_LS',mode='KFT-LS')
+    plot_point('test_LS','test_errors','Test error',path = 'KFT_motivation_LS',mode='KFT-LS')
 
 
