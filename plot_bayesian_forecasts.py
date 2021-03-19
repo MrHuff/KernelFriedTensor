@@ -74,5 +74,6 @@ if __name__ == '__main__':
         plt.xlabel('Time index')
         plt.ylabel('Value')
         plt.legend()
-        plt.savefig(f"bayesian_plot_traffic_{idx}.png")
+        plt.savefig(f"bayesian_plot_traffic_{idx}.png",bbox_inches = 'tight',
+    pad_inches = 0.1)
         plt.clf()
